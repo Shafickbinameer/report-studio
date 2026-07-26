@@ -1,0 +1,1 @@
+export const vesrion = "report-studio-0.0.1";
