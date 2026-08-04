@@ -1,0 +1,471 @@
+{
+  "version": 1,
+  "name": "Statement of Account (Letter)",
+  "page": {
+    "width": 816,
+    "height": 1056,
+    "margin": { "top": 40, "right": 40, "bottom": 40, "left": 40 }
+  },
+  "dataset": "entries",
+  "groupBy": null,
+  "bands": [
+    {
+      "type": "reportHeader",
+      "height": 162,
+      "items": [
+        {
+          "id": "sh_company",
+          "type": "text",
+          "x": 0, "y": 0, "w": 400, "h": 24,
+          "value": "{company.name}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 16,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_address",
+          "type": "text",
+          "x": 0, "y": 26, "w": 340, "h": 32,
+          "value": "{company.address}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_title",
+          "type": "text",
+          "x": 336, "y": 0, "w": 400, "h": 30,
+          "value": "STATEMENT OF ACCOUNT",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 20,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_account",
+          "type": "text",
+          "x": 336, "y": 34, "w": 400, "h": 20,
+          "value": "Account {account.number}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 13,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_period",
+          "type": "text",
+          "x": 336, "y": 56, "w": 400, "h": 16,
+          "value": "{account.periodFrom} to {account.periodTo}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_holder_label",
+          "type": "text",
+          "x": 0, "y": 74, "w": 300, "h": 14,
+          "value": "Account holder",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 10,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_holder",
+          "type": "text",
+          "x": 0, "y": 90, "w": 400, "h": 22,
+          "value": "{account.holder}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_holder_city",
+          "type": "text",
+          "x": 0, "y": 114, "w": 400, "h": 18,
+          "value": "{account.city}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_opening_label",
+          "type": "text",
+          "x": 436, "y": 96, "w": 300, "h": 16,
+          "value": "Opening balance",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "sh_opening",
+          "type": "text",
+          "x": 436, "y": 114, "w": 300, "h": 26,
+          "value": "{account.openingBalance}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 16,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "pageHeader",
+      "height": 28,
+      "items": [
+        {
+          "id": "ph_holder",
+          "type": "text",
+          "x": 0, "y": 0, "w": 340, "h": 16,
+          "value": "{account.holder}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "ph_account",
+          "type": "text",
+          "x": 436, "y": 0, "w": 300, "h": 16,
+          "value": "Account {account.number}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "detail",
+      "items": [
+        {
+          "id": "tbl_ledger",
+          "type": "table",
+          "x": 0, "y": 0, "w": 736,
+          "dataset": "entries",
+          "rowHeight": 26,
+          "headerHeight": 30,
+          "showHeader": true,
+          "columns": [
+            { "field": "date",        "label": "Date",        "width": 100, "align": "left" },
+            { "field": "reference",   "label": "Reference",   "width": 110, "align": "left" },
+            { "field": "description", "label": "Description", "width": 306, "align": "left" },
+            { "field": "debit",       "label": "Debit",       "width": 110, "align": "right" },
+            { "field": "credit",      "label": "Credit",      "width": 110, "align": "right" }
+          ],
+          "style": {
+            "fontSize": 11,
+            "color": "#000000",
+            "borderColor": "#cccccc"
+          }
+        }
+      ]
+    },
+    {
+      "type": "reportFooter",
+      "height": 206,
+      "items": [
+        {
+          "id": "rf_entries_label",
+          "type": "text",
+          "x": 336, "y": 8, "w": 200, "h": 16,
+          "value": "Entries",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_entries",
+          "type": "text",
+          "x": 536, "y": 8, "w": 200, "h": 16,
+          "value": "{count()}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_debits_label",
+          "type": "text",
+          "x": 336, "y": 30, "w": 200, "h": 18,
+          "value": "Total debits",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_debits",
+          "type": "text",
+          "x": 536, "y": 30, "w": 200, "h": 18,
+          "value": "{sum(debit)}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_credits_label",
+          "type": "text",
+          "x": 336, "y": 52, "w": 200, "h": 18,
+          "value": "Total credits",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_credits",
+          "type": "text",
+          "x": 536, "y": 52, "w": 200, "h": 18,
+          "value": "{sum(credit)}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_closing_label",
+          "type": "text",
+          "x": 336, "y": 82, "w": 200, "h": 26,
+          "value": "CLOSING BALANCE",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 15,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_closing",
+          "type": "text",
+          "x": 536, "y": 82, "w": 200, "h": 26,
+          "value": "{account.closingBalance}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 15,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_terms_label",
+          "type": "text",
+          "x": 0, "y": 120, "w": 300, "h": 14,
+          "value": "Terms",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 10,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_terms",
+          "type": "text",
+          "x": 0, "y": 138, "w": 736, "h": 60,
+          "value": "Payment is due within thirty days of the statement date. Amounts outstanding beyond that period may attract interest at the rate stated in the supply agreement. Please quote the account number shown above on every remittance, and report any discrepancy in this statement within fourteen days of receipt.",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 10,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "pageFooter",
+      "height": 26,
+      "items": [
+        {
+          "id": "pf_generated",
+          "type": "text",
+          "x": 0, "y": 4, "w": 300, "h": 16,
+          "value": "Generated {today}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 10,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "pf_pageno",
+          "type": "text",
+          "x": 436, "y": 4, "w": 300, "h": 16,
+          "value": "Page {page} of {totalPages}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 10,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    }
+  ]
+}

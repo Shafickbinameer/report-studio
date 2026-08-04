@@ -1,0 +1,39 @@
+
+                
+                {
+                    "id": "tbl1",
+                    "type": "table",
+                    "x": 0,
+                    "y": 0,
+                    "w": 714,
+                    "dataset": "items", 
+                    "rowHeight": 28,
+                    "headerHeight": 32,
+                    "showHeader": true,
+                    "comment" : "here the dataset is the array of data that tables need",
+                    "columns": [
+                        {
+                            "field": "name",
+                            "label": "Item",
+                            "width": 400,
+                            "align": "left"
+                        },
+                        {
+                            "field": "qty",
+                            "label": "Qty",
+                            "width": 100,
+                            "align": "right"
+                        },
+                        {
+                            "field": "price",
+                            "label": "Price",
+                            "width": 214,
+                            "align": "right"
+                        }
+                    ],
+                    "style": {
+                        "fontSize": 12,
+                        "color": "#000000",
+                        "borderColor": "#cccccc"
+                    }
+                }

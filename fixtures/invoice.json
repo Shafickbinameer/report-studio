@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "name": "Sale Invoice A4",
+  "page": {
+    "width": 794,
+    "height": 1123,
+    "margin": { "top": 40, "right": 40, "bottom": 40, "left": 40 }
+  },
+  "dataset": "items",
+  "groupBy": null,
+  "bands": [
+    {
+      "type": "reportHeader",
+      "height": 120,
+      "items": [
+        {
+          "id": "rh_title",
+          "type": "text",
+          "x": 0, "y": 0, "w": 300, "h": 34,
+          "value": "INVOICE",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 24,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_number",
+          "type": "text",
+          "x": 414, "y": 0, "w": 300, "h": 20,
+          "value": "Invoice #{invoice.number}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_date",
+          "type": "text",
+          "x": 414, "y": 22, "w": 300, "h": 18,
+          "value": "Date: {invoice.date}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_billto",
+          "type": "text",
+          "x": 0, "y": 52, "w": 300, "h": 16,
+          "value": "Bill to",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_customer",
+          "type": "text",
+          "x": 0, "y": 70, "w": 300, "h": 22,
+          "value": "{customer.name}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_city",
+          "type": "text",
+          "x": 0, "y": 94, "w": 300, "h": 18,
+          "value": "{customer.city}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "pageHeader",
+      "height": 26,
+      "items": [
+        {
+          "id": "ph_ref",
+          "type": "text",
+          "x": 0, "y": 0, "w": 714, "h": 16,
+          "value": "Invoice #{invoice.number}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "detail",
+      "items": [
+        {
+          "id": "tbl1",
+          "type": "table",
+          "x": 0, "y": 0, "w": 714,
+          "dataset": "items",
+          "rowHeight": 28,
+          "headerHeight": 32,
+          "showHeader": true,
+          "columns": [
+            { "field": "name",  "label": "Item",  "width": 400, "align": "left" },
+            { "field": "qty",   "label": "Qty",   "width": 100, "align": "right" },
+            { "field": "price", "label": "Price", "width": 214, "align": "right" }
+          ],
+          "style": {
+            "fontSize": 12,
+            "color": "#000000",
+            "borderColor": "#cccccc"
+          }
+        }
+      ]
+    },
+    {
+      "type": "reportFooter",
+      "height": 150,
+      "items": [
+        {
+          "id": "rf_count_label",
+          "type": "text",
+          "x": 314, "y": 8, "w": 200, "h": 18,
+          "value": "Items",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_count",
+          "type": "text",
+          "x": 514, "y": 8, "w": 200, "h": 18,
+          "value": "{count()}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_total_label",
+          "type": "text",
+          "x": 314, "y": 30, "w": 200, "h": 24,
+          "value": "Total",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 16,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_total",
+          "type": "text",
+          "x": 514, "y": 30, "w": 200, "h": 24,
+          "value": "{sum(price)}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 16,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_approved_label",
+          "type": "text",
+          "x": 0, "y": 96, "w": 260, "h": 16,
+          "value": "APPROVED BY",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rf_approved_name",
+          "type": "text",
+          "x": 0, "y": 116, "w": 260, "h": 24,
+          "value": "{authorizer}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "pageFooter",
+      "height": 24,
+      "items": [
+        {
+          "id": "pf_pageno",
+          "type": "text",
+          "x": 0, "y": 4, "w": 714, "h": 16,
+          "value": "Page {page} of {totalPages}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 11,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#666666",
+            "align": "right",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    }
+  ]
+}

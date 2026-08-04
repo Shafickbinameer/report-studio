@@ -1,0 +1,269 @@
+{
+  "company": {
+    "name": "Westbridge Distribution",
+    "address": "14 Mill Road, Industrial Estate, Kochi 682030"
+  },
+  "account": {
+    "number": "AC-4471",
+    "holder": "Anand Traders",
+    "city": "Kozhikode",
+    "periodFrom": "2026-04-01",
+    "periodTo": "2026-07-31",
+    "openingBalance": 42500,
+    "closingBalance": 132700
+  },
+  "entries": [
+    {
+      "date": "2026-04-01",
+      "reference": "TX-3131",
+      "description": "Invoice INV-2041",
+      "debit": 19500,
+      "credit": ""
+    },
+    {
+      "date": "2026-04-04",
+      "reference": "TX-3105",
+      "description": "Payment received - cheque",
+      "debit": "",
+      "credit": 16150
+    },
+    {
+      "date": "2026-04-07",
+      "reference": "TX-3102",
+      "description": "Invoice INV-1994",
+      "debit": 11050,
+      "credit": ""
+    },
+    {
+      "date": "2026-04-11",
+      "reference": "TX-3104",
+      "description": "Invoice INV-2003",
+      "debit": 4950,
+      "credit": ""
+    },
+    {
+      "date": "2026-04-23",
+      "reference": "TX-3122",
+      "description": "Freight charges",
+      "debit": 22900,
+      "credit": ""
+    },
+    {
+      "date": "2026-04-24",
+      "reference": "TX-3115",
+      "description": "Invoice INV-2041",
+      "debit": 4450,
+      "credit": ""
+    },
+    {
+      "date": "2026-04-25",
+      "reference": "TX-3120",
+      "description": "Invoice INV-2003",
+      "debit": 14700,
+      "credit": ""
+    },
+    {
+      "date": "2026-04-28",
+      "reference": "TX-3108",
+      "description": "Discount adjustment",
+      "debit": "",
+      "credit": 1450
+    },
+    {
+      "date": "2026-04-28",
+      "reference": "TX-3112",
+      "description": "Late payment interest",
+      "debit": 3900,
+      "credit": ""
+    },
+    {
+      "date": "2026-05-07",
+      "reference": "TX-3129",
+      "description": "Invoice INV-2033",
+      "debit": 21350,
+      "credit": ""
+    },
+    {
+      "date": "2026-05-12",
+      "reference": "TX-3124",
+      "description": "Discount adjustment",
+      "debit": "",
+      "credit": 10150
+    },
+    {
+      "date": "2026-05-15",
+      "reference": "TX-3103",
+      "description": "Credit note CN-0112",
+      "debit": "",
+      "credit": 2500
+    },
+    {
+      "date": "2026-05-17",
+      "reference": "TX-3117",
+      "description": "Payment received - NEFT",
+      "debit": "",
+      "credit": 22000
+    },
+    {
+      "date": "2026-05-17",
+      "reference": "TX-3118",
+      "description": "Invoice INV-1994",
+      "debit": 1350,
+      "credit": ""
+    },
+    {
+      "date": "2026-05-18",
+      "reference": "TX-3106",
+      "description": "Freight charges",
+      "debit": 800,
+      "credit": ""
+    },
+    {
+      "date": "2026-05-18",
+      "reference": "TX-3125",
+      "description": "Invoice INV-2019",
+      "debit": 20550,
+      "credit": ""
+    },
+    {
+      "date": "2026-05-23",
+      "reference": "TX-3119",
+      "description": "Credit note CN-0112",
+      "debit": "",
+      "credit": 10050
+    },
+    {
+      "date": "2026-05-23",
+      "reference": "TX-3133",
+      "description": "Payment received - NEFT",
+      "debit": "",
+      "credit": 7400
+    },
+    {
+      "date": "2026-05-26",
+      "reference": "TX-3127",
+      "description": "Invoice INV-2027",
+      "debit": 6500,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-03",
+      "reference": "TX-3114",
+      "description": "Returned goods credit",
+      "debit": "",
+      "credit": 13150
+    },
+    {
+      "date": "2026-06-12",
+      "reference": "TX-3110",
+      "description": "Payment received - UPI",
+      "debit": "",
+      "credit": 17000
+    },
+    {
+      "date": "2026-06-12",
+      "reference": "TX-3135",
+      "description": "Credit note CN-0112",
+      "debit": "",
+      "credit": 21450
+    },
+    {
+      "date": "2026-06-15",
+      "reference": "TX-3134",
+      "description": "Invoice INV-1994",
+      "debit": 16250,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-16",
+      "reference": "TX-3111",
+      "description": "Invoice INV-2027",
+      "debit": 16200,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-16",
+      "reference": "TX-3116",
+      "description": "Invoice INV-1988",
+      "debit": 9550,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-16",
+      "reference": "TX-3132",
+      "description": "Invoice INV-1988",
+      "debit": 21000,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-17",
+      "reference": "TX-3123",
+      "description": "Invoice INV-2011",
+      "debit": 22400,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-20",
+      "reference": "TX-3107",
+      "description": "Invoice INV-2011",
+      "debit": 3350,
+      "credit": ""
+    },
+    {
+      "date": "2026-06-21",
+      "reference": "TX-3121",
+      "description": "Payment received - cheque",
+      "debit": "",
+      "credit": 14300
+    },
+    {
+      "date": "2026-06-21",
+      "reference": "TX-3126",
+      "description": "Payment received - UPI",
+      "debit": "",
+      "credit": 14650
+    },
+    {
+      "date": "2026-07-05",
+      "reference": "TX-3109",
+      "description": "Invoice INV-2019",
+      "debit": 6100,
+      "credit": ""
+    },
+    {
+      "date": "2026-07-12",
+      "reference": "TX-3130",
+      "description": "Returned goods credit",
+      "debit": "",
+      "credit": 14050
+    },
+    {
+      "date": "2026-07-13",
+      "reference": "TX-3100",
+      "description": "Invoice INV-1988",
+      "debit": 10950,
+      "credit": ""
+    },
+    {
+      "date": "2026-07-16",
+      "reference": "TX-3113",
+      "description": "Invoice INV-2033",
+      "debit": 13250,
+      "credit": ""
+    },
+    {
+      "date": "2026-07-21",
+      "reference": "TX-3101",
+      "description": "Payment received - NEFT",
+      "debit": "",
+      "credit": 3450
+    },
+    {
+      "date": "2026-07-24",
+      "reference": "TX-3128",
+      "description": "Late payment interest",
+      "debit": 6900,
+      "credit": ""
+    }
+  ]
+}
