@@ -1,6 +1,6 @@
 export function group(resolvedJson, data) {
     const json = structuredClone(resolvedJson);
-    const hasGroup = data.groupBy != null;
+    const hasGroup = json.groupBy != null;
     if (hasGroup) {
         return withGroup(json, data);
     } else {
@@ -12,7 +12,18 @@ export function group(resolvedJson, data) {
 function withGroup(json, data) {
     const bands = json.bands;
     const tableBand = findTableBand(bands);
-    const groupedData = groupedRows(data[tableBand.dataset], data.groupBy);
+    const groupedData = groupedRows(data[tableBand.dataset], json.groupBy);
+    const groupedAggregates = groupedAggregate(bands, groupedData);
+    tableBand.groups =
+        Object.entries(groupedData).map(
+            ([key, rows]) => ({
+                key,
+                rows,
+                aggregates: groupedAggregates[key]
+            })
+        );
+    aggregate(bands, data[tableBand.dataset]);
+    return json;
 }
 
 
@@ -39,24 +50,9 @@ function aggregate(bands, dataset) {
     for (const band of bands) {
         for (const item of band.items) {
             if (item.type == "text") {
-                const match = item.value.match(/\{([^}]+)\}/);
-                if (!match) continue;
-                const aggregateExpr = parseAggregate(match[1]);
-                switch (aggregateExpr?.key) {
-                    case 'sum':
-                        const sum = dataset.reduce((acc, row) => acc + (parseFloat(row[aggregateExpr.field]) || 0), 0);
-                        item.text = sum.toString();
-                        break;
-                    case 'count':
-                        item.text = dataset.length.toString();
-                        break;
-                    case 'avg':
-                        const avg = dataset.reduce((acc, row) => acc + (parseFloat(row[aggregateExpr.field]) || 0), 0) / dataset.length;
-                        item.text = avg.toString();
-                        break;
-                    default:
-                        console.debug(`No aggregate function found for key: ${aggregateExpr?.key}`);
-                }
+                const opera = arithmeticOpera(item, dataset);
+                if (opera == null) continue;
+                item.text = opera.text;
             }
         }
     }
@@ -73,8 +69,50 @@ function parseAggregate(expr) {
 }
 
 
-function groupedAggregate(bands, dataset) {
-    const groupFooter = null;
+function groupedAggregate(bands, dataset, groupBy) {
+    const aggregates = {};
+    for (const band of bands) {
+        if (band.type === "groupFooter") {
+            for (const item of band.items) {
+                if (item.type == "text") {
+                    for (const [key, data] of Object.entries(dataset)) {
+                        if (!aggregates[key]) {
+                            aggregates[key] = {
+                                count: null,
+                                sum: null,
+                                avg: null,
+                                min: null,
+                                max: null
+                            };
+                        }
+                        const opera = arithmeticOpera(item, data);
+
+                        if (!opera) continue;
+
+                        switch (opera.key) {
+                            case 'count':
+                                aggregates[key].count = Number(opera.text);
+                                break;
+
+                            case 'sum':
+                                aggregates[key].sum = Number(opera.text);
+                                break;
+                            case 'avg':
+                                aggregates[key].avg = Number(opera.text);
+                                break;
+                            case 'max':
+                                aggregates[key].max = Number(opera.text);
+                                break;
+                            case 'min':
+                                aggregates[key].min = Number(opera.text);
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return aggregates;
 }
 
 
@@ -88,4 +126,54 @@ function groupedRows(dataset, groupBy) {
         grouped[key].push(row);
     }
     return grouped;
+}
+
+
+function arithmeticOpera(item, dataset) {
+    const match = item.value.match(/\{([^}]+)\}/);
+    if (!match) return null;
+    const aggregateExpr = parseAggregate(match[1]);
+    switch (aggregateExpr?.key) {
+        case 'sum':
+            const sum = dataset.reduce((acc, row) => acc + (parseFloat(row[aggregateExpr.field]) || 0), 0);
+            return {
+                ...aggregateExpr,
+                text: sum.toString()
+            };
+            break;
+        case 'count':
+            return {
+                ...aggregateExpr,
+                text: dataset.length.toString()
+            };
+            break;
+        case 'avg':
+            const avg = dataset.reduce((acc, row) => acc + (parseFloat(row[aggregateExpr.field]) || 0), 0) / dataset.length;
+            return {
+                ...aggregateExpr,
+                text: avg.toString()
+            };
+            break;
+        case 'max':
+            const max = Math.max(
+                ...dataset.map(row => Number(row[aggregateExpr.field]) || 0)
+            );
+            return {
+                ...aggregateExpr,
+                text: max.toString()
+            };
+            break;
+        case 'min':
+            const min = Math.min(
+                ...dataset.map(row => Number(row[aggregateExpr.field]) || 0)
+            );
+            return {
+                ...aggregateExpr,
+                text: min.toString()
+            };
+            break;
+        default:
+            console.debug(`No aggregate function found for key: ${aggregateExpr?.key}`);
+            return null;
+    }
 }
