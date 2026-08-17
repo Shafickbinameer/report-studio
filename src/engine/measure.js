@@ -1,49 +1,47 @@
 export function measure(json) {
-    let H = 0;
-    const page = json.page;
-    const noOfGroups = json.bands.flatMap(band => band.items || [])
-        .find(item => item.type == 'table')?.groups.length || 0;
-    console.debug(noOfGroups);
-    for (const band of json.bands) {
-        if (band.type == 'detail') {
-            H = H + detailBand(band, json.groupBy);
-            continue;
-        }
+    let measureJson = structuredClone(json);
+    const page = measureJson.page;
+    const noOfGroups = measureJson.groupBy != null ? measureJson.bands.flatMap(band => band.items || [])
+        .find(item => item.type == 'table')?.groups.length || 0 : 0;
 
-        if (band.type == 'groupHeader' || band.type == 'groupFooter') {
-            H = H + (band.height * noOfGroups);
-            continue;
-        }
 
-        H = H + band.height;
+    for (const band of measureJson.bands) {
+        if (!band.items) continue;
+        calItemHgt(band, measureJson.groupBy);
     }
-    return H + page.margin.top + page.margin.bottom;
+    return measureJson;
 }
 
-function detailBand(band, group) {
-    let h = 0;
+
+function calItemHgt(band, group) {
+    let calBandHgt = 0;
     let axisY = null;
-
     for (const item of band.items) {
+        switch (item.type) {
+            case 'text':
+                item.measuredHeight = item.h;
+                if (axisY != null && axisY == item.y) continue;
+                calBandHgt += item.measuredHeight;
+                break
+            case 'table':
+                let datasetLength = 0;
 
-        if (item.type == ' text') {
-            if (axisY != null && axisY == item.y) continue;
-            h = h + item.h;
-            axisY = item.y
-        }
-
-        if (item.type == 'table') {
-            let datasetLength = 0;
-            if (group != null) {
-                for (const group of item.groups) {
-                    datasetLength += group.rows.length;
+                if (group != null) {
+                    for (const group of item.groups) {
+                        datasetLength += group.rows.length;
+                    }
+                } else {
+                    datasetLength = item.row.length;
                 }
-            } else {
-                datasetLength = item.row.length;
-            }
-            h = h + (datasetLength * item.rowHeight) + item.headerHeight;
+                item.measuredHeight = datasetLength * item.rowHeight
+                calBandHgt += item.measuredHeight;
+                break;
+            default:
+                console.warn("Invalid item type");
         }
-    }
 
-    return h;
+        axisY = item.y;
+    }
+    band.measuredHeight = calBandHgt;
+    return band;
 }

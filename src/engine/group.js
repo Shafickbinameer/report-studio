@@ -1,5 +1,5 @@
 export function group(resolvedJson, data) {
-    const json = structuredClone(resolvedJson);
+    let json = structuredClone(resolvedJson);
     const hasGroup = json.groupBy != null;
     if (hasGroup) {
         return withGroup(json, data);

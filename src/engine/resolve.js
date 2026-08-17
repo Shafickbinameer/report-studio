@@ -18,7 +18,7 @@ export function resolve(rptJson, rptData) {
     try {
         // cloning the report json and assigning it to new var
         // so that report will not affect
-        const resolved = structuredClone(rptJson);
+        let resolved = structuredClone(rptJson);
 
         for (const band of resolved.bands) {
             for (const item of band.items) {

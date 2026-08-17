@@ -286,7 +286,12 @@ export const rptData = {
 
 
 
-export const rptJson ={
+
+
+
+
+
+export const rptJson = {
   "version": 1,
   "name": "Sales Summary by Region",
   "page": {
@@ -446,10 +451,10 @@ export const rptJson ={
           "headerHeight": 30,
           "showHeader": true,
           "columns": [
-            { "field": "date",     "label": "Date",     "width": 110, "align": "left" },
+            { "field": "date", "label": "Date", "width": 110, "align": "left" },
             { "field": "customer", "label": "Customer", "width": 264, "align": "left" },
-            { "field": "rep",      "label": "Rep",      "width": 140, "align": "left" },
-            { "field": "amount",   "label": "Amount",   "width": 200, "align": "right" }
+            { "field": "rep", "label": "Rep", "width": 140, "align": "left" },
+            { "field": "amount", "label": "Amount", "width": 200, "align": "right" }
           ],
           "style": {
             "fontSize": 12,
@@ -666,4 +671,5 @@ export const rptJson ={
     }
   ]
 }
+
 
