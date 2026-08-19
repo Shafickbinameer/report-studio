@@ -7,8 +7,8 @@ import { paginate } from './engine/paginate.js';
 const resolved = resolve(rptJson, rptData);
 const grouped = group(resolved, rptData);
 const measured = measure(grouped);
-// const paginated = paginate(measured);
+const paginated = paginate(measured);
 console.debug("++++++++++++++++++++++++++++++++++++")
-console.debug("paginated:", JSON.stringify(measured, null, 2))
+console.debug("paginated:", JSON.stringify(paginated.pages, null, 2))
 console.debug("++++++++++++++++++++++++++++++++++++")
 
