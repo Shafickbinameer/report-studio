@@ -15,8 +15,4 @@ const html = render(paginated);
 
 document.getElementById("preview").innerHTML = html;
 
-const blob = new Blob([html], { type: 'text/html' });
-const url = URL.createObjectURL(blob);
-
-window.open(url, '_blank');
 

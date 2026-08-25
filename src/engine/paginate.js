@@ -89,7 +89,10 @@ function calPages(bands, context) {
                     ...band, items: []
                 };
 
+                
                 calBand.items.push(item);
+                calBand.measuredHeight =
+                    calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                 currentPage.usedHeight += item.measuredHeight;
 
             }
@@ -197,6 +200,9 @@ function calPages(bands, context) {
                         dupItem.groups = calGroups;
                         dupItem.measuredHeight = calItemHeight;
 
+                        calBand.measuredHeight =
+                            calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
+
                         calBand.items.push(dupItem);
                         currentPage.bands.push(calBand);
 
@@ -227,13 +233,18 @@ function calPages(bands, context) {
 
                         const rows = item.row.slice(currIdx, currIdx + canFitRows);
 
-                        const occHgt = (canFitRows * item.rowHeight) + item.headerHeight;
+                        const occHgt =
+                            (rows.length * item.rowHeight) +
+                            (item.showHeader ? item.headerHeight : 0);
 
 
                         dupItem.row = rows;
                         dupItem.measuredHeight = occHgt;
 
+                        
                         calBand.items.push(dupItem);
+                        calBand.measuredHeight =
+                            calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                         currentPage.usedHeight += occHgt;
                         currentPage.bands.push(calBand);
 
@@ -254,6 +265,8 @@ function calPages(bands, context) {
             }
             else {
                 calBand.items.push(item);
+                calBand.measuredHeight =
+                    calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                 currentPage.usedHeight += item.measuredHeight;
             }
         }

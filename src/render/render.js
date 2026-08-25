@@ -4,8 +4,9 @@
  */
 
 
-/** used to return the margin config */
-const margin = (m) => `margin-top:${m.top}px;margin-left:${m.left}px;margin-bottom:${m.bottom}px;margin-right:${m.right}px;`
+/** used to return the padding config */
+const padding = (m) => `padding-top:${m.top}px;padding-left:${m.left}px;padding-bottom:${m.bottom}px;padding-right:${m.right}px;`
+const position = (p) => `position:absolute;top:${p.y}px;left:${p.x}px;`
 
 /** display order */
 const order = ['pageHeader', 'reportHeader', 'detail', 'reportFooter', 'pageFooter'];
@@ -18,7 +19,7 @@ export function render(json) {
         <main id="main-page">
             ${json.pages.map(p =>
         `
-                <section id="page-${p.pageNO}"  style="height:${pageConf.height}px; width:${pageConf.width}px; ${margin(pageConf.margin)}">
+                <section id="page-${p.pageNO}" class="page"  style="height:${pageConf.height}px; width:${pageConf.width}px; ${padding(pageConf.margin)};position:relative">
                     ${page(p)}
                 </section>
                 `
@@ -34,6 +35,9 @@ function page(page) {
         return order.indexOf(a) - order.indexOf(b)
     });
 
+    console.debug(JSON.stringify(sortedPage ,null,2));
+
+
     let pageHtmlStr = [];
 
 
@@ -47,7 +51,7 @@ function page(page) {
 
 function bandConversion(comp, pageNO) {
     return `
-    <div id="${comp.type}-${pageNO}">
+    <div class="band" id="${comp.type}-${pageNO}" style="position:relative;${comp.measuredHeight > 0 ? `height:${comp.measuredHeight}px` : ""}">
         ${comp.items.map(i => {
         switch (i.type) {
             case "text":
@@ -58,7 +62,7 @@ function bandConversion(comp, pageNO) {
                 console.debug("invalid report type")
                 return ''
         }
-    })}
+    }).join("")}
     </div>
     `
 }
@@ -67,18 +71,26 @@ function bandConversion(comp, pageNO) {
 
 function text(i) {
     return `
-    <p id="${i.id}">${i.text}</p>
+    <p id="${i.id}" style="
+    width:${i.w};
+    height:${i.h};
+    ${position(i)};
+    font-size:${i.style.fontSize}px;
+    font-weight:${i.style.fontWeight};
+    text-align:${i.style.align};
+        color:${i.style.color};
+    ">${i.text}</p>
     `
 }
 
 
 function table(i) {
     return `
-    <table id="${i.id}" style="width:${i.w}px;">
+    <table id="${i.id}" style="width:${i.w}px;height:${i.measuredHeight}px;${position(i)}">
         ${i.showHeader
             ? `<thead>
-                <tr>
-                ${i.columns.map(c => `<th style="width:${c.width}px;" id="${c.field}">${c.label}</th>`)}
+                <tr style="height:${i.rowHeight}px">
+                ${i.columns.map(c => `<th style="width:${c.width}px;" id="${c.field}">${c.label}</th>`).join("")}
                 </tr>
             </thead>`
             : ""
@@ -86,15 +98,16 @@ function table(i) {
         <tbody>
             ${i.row.map((r) => {
             return (
-                `<tr>
-                ${i.columns.map(c => `<td style="width:${c.width}px;" id="${c.field}">${r[c.field]}</td>`)}
+                `<tr style="height:${i.rowHeight}px">
+                ${i.columns.map(c => `<td style="width:${c.width}px;text-align:${c.align};" id="${c.field}">${r[c.field]}</td>`).join("")}
                 </tr > `
             )
 
-        })}
+        }).join("")}
         </tbody>
     </table>
     `
 }
+
 
 
