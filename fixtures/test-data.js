@@ -1,282 +1,254 @@
 
 export const rptData = {
-  "report": {
-    "period": "June 2026",
-    "currency": "INR"
+  "invoice": {
+    "number": "INV-2041",
+    "date": "2026-07-25"
   },
-  "sales": [
+  "customer": {
+    "name": "Anand Traders",
+    "city": "Kozhikode"
+  },
+  "authorizer": "R. Menon",
+  "items": [
     {
-      "region": "North",
-      "date": "2026-06-17",
-      "customer": "Orbit Systems",
-      "rep": "S. Nair",
-      "amount": 5600
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "South",
-      "date": "2026-06-08",
-      "customer": "Vertex Supplies",
-      "rep": "K. Pillai",
-      "amount": 16550
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "North",
-      "date": "2026-06-02",
-      "customer": "Vertex Supplies",
-      "rep": "A. Das",
-      "amount": 6000
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
     },
     {
-      "region": "South",
-      "date": "2026-06-12",
-      "customer": "Vertex Supplies",
-      "rep": "K. Pillai",
-      "amount": 37650
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
     },
     {
-      "region": "South",
-      "date": "2026-06-26",
-      "customer": "Harbour Works",
-      "rep": "M. Iyer",
-      "amount": 44200
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
     },
     {
-      "region": "South",
-      "date": "2026-06-04",
-      "customer": "Silverline Co",
-      "rep": "V. Raman",
-      "amount": 9600
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     },
     {
-      "region": "North",
-      "date": "2026-06-18",
-      "customer": "Vertex Supplies",
-      "rep": "A. Das",
-      "amount": 16950
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "South",
-      "date": "2026-06-19",
-      "customer": "Northgate Stores",
-      "rep": "K. Pillai",
-      "amount": 10800
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "North",
-      "date": "2026-06-05",
-      "customer": "Meridian Corp",
-      "rep": "P. Kurian",
-      "amount": 8550
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
     },
     {
-      "region": "South",
-      "date": "2026-06-30",
-      "customer": "Harbour Works",
-      "rep": "V. Raman",
-      "amount": 16500
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
     },
     {
-      "region": "East",
-      "date": "2026-06-23",
-      "customer": "Pinepoint Ltd",
-      "rep": "R. Sen",
-      "amount": 2350
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
     },
     {
-      "region": "South",
-      "date": "2026-06-07",
-      "customer": "Harbour Works",
-      "rep": "K. Pillai",
-      "amount": 28400
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     },
     {
-      "region": "North",
-      "date": "2026-06-27",
-      "customer": "Northgate Stores",
-      "rep": "S. Nair",
-      "amount": 12600
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "East",
-      "date": "2026-06-16",
-      "customer": "Vertex Supplies",
-      "rep": "T. Bose",
-      "amount": 24150
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "South",
-      "date": "2026-06-08",
-      "customer": "Lakeside Retail",
-      "rep": "K. Pillai",
-      "amount": 41100
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
     },
     {
-      "region": "North",
-      "date": "2026-06-08",
-      "customer": "Anand Traders",
-      "rep": "A. Das",
-      "amount": 45150
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
     },
     {
-      "region": "East",
-      "date": "2026-06-08",
-      "customer": "Pinepoint Ltd",
-      "rep": "R. Sen",
-      "amount": 45800
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
     },
     {
-      "region": "South",
-      "date": "2026-06-25",
-      "customer": "Cascade Foods",
-      "rep": "M. Iyer",
-      "amount": 26200
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     },
     {
-      "region": "South",
-      "date": "2026-06-03",
-      "customer": "Northgate Stores",
-      "rep": "M. Iyer",
-      "amount": 32850
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "North",
-      "date": "2026-06-11",
-      "customer": "Lakeside Retail",
-      "rep": "P. Kurian",
-      "amount": 34500
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "East",
-      "date": "2026-06-22",
-      "customer": "Vertex Supplies",
-      "rep": "T. Bose",
-      "amount": 38600
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
     },
     {
-      "region": "East",
-      "date": "2026-06-03",
-      "customer": "Meridian Corp",
-      "rep": "R. Sen",
-      "amount": 36850
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
     },
     {
-      "region": "East",
-      "date": "2026-06-15",
-      "customer": "Cascade Foods",
-      "rep": "T. Bose",
-      "amount": 32450
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
     },
     {
-      "region": "East",
-      "date": "2026-06-23",
-      "customer": "Meridian Corp",
-      "rep": "R. Sen",
-      "amount": 15750
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     },
     {
-      "region": "North",
-      "date": "2026-06-03",
-      "customer": "Silverline Co",
-      "rep": "P. Kurian",
-      "amount": 4200
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "North",
-      "date": "2026-06-12",
-      "customer": "Northgate Stores",
-      "rep": "S. Nair",
-      "amount": 47750
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "North",
-      "date": "2026-06-14",
-      "customer": "Pinepoint Ltd",
-      "rep": "S. Nair",
-      "amount": 13500
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
     },
     {
-      "region": "North",
-      "date": "2026-06-21",
-      "customer": "Redwood Agency",
-      "rep": "A. Das",
-      "amount": 4350
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
     },
     {
-      "region": "South",
-      "date": "2026-06-18",
-      "customer": "Redwood Agency",
-      "rep": "M. Iyer",
-      "amount": 6450
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
     },
     {
-      "region": "South",
-      "date": "2026-06-12",
-      "customer": "Northgate Stores",
-      "rep": "V. Raman",
-      "amount": 30850
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     },
     {
-      "region": "South",
-      "date": "2026-06-17",
-      "customer": "Harbour Works",
-      "rep": "V. Raman",
-      "amount": 38500
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "South",
-      "date": "2026-06-15",
-      "customer": "Meridian Corp",
-      "rep": "K. Pillai",
-      "amount": 4900
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "South",
-      "date": "2026-06-25",
-      "customer": "Silverline Co",
-      "rep": "K. Pillai",
-      "amount": 41600
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
     },
     {
-      "region": "East",
-      "date": "2026-06-25",
-      "customer": "Meridian Corp",
-      "rep": "T. Bose",
-      "amount": 39000
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
     },
     {
-      "region": "South",
-      "date": "2026-06-29",
-      "customer": "Cascade Foods",
-      "rep": "V. Raman",
-      "amount": 36750
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
     },
     {
-      "region": "North",
-      "date": "2026-06-19",
-      "customer": "Northgate Stores",
-      "rep": "P. Kurian",
-      "amount": 3700
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     },
     {
-      "region": "South",
-      "date": "2026-06-14",
-      "customer": "Cascade Foods",
-      "rep": "V. Raman",
-      "amount": 31150
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
     },
     {
-      "region": "East",
-      "date": "2026-06-04",
-      "customer": "Harbour Works",
-      "rep": "T. Bose",
-      "amount": 12350
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
     },
     {
-      "region": "South",
-      "date": "2026-06-14",
-      "customer": "Anand Traders",
-      "rep": "K. Pillai",
-      "amount": 5150
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
+    },
+    {
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
+    },
+    {
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
+    },
+    {
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
+    },
+    {
+      "name": "Cable 2m",
+      "qty": 4,
+      "price": 120
+    },
+    {
+      "name": "Adapter 12V",
+      "qty": 2,
+      "price": 450
+    },
+    {
+      "name": "Wall mount bracket",
+      "qty": 6,
+      "price": 275
+    },
+    {
+      "name": "HDMI splitter",
+      "qty": 1,
+      "price": 1890
+    },
+    {
+      "name": "Cat6 patch cord 1m",
+      "qty": 12,
+      "price": 95
+    },
+    {
+      "name": "Surge protector",
+      "qty": 3,
+      "price": 640
     }
   ]
 }
@@ -293,24 +265,24 @@ export const rptData = {
 
 export const rptJson = {
   "version": 1,
-  "name": "Sales Summary by Region",
+  "name": "Sale Invoice A4",
   "page": {
     "width": 794,
     "height": 1123,
     "margin": { "top": 40, "right": 40, "bottom": 40, "left": 40 }
   },
-  "dataset": "sales",
-  "groupBy": "region",
+  "dataset": "items",
+  "groupBy": null,
   "bands": [
     {
       "type": "reportHeader",
-      "height": 76,
+      "height": 120,
       "items": [
         {
           "id": "rh_title",
           "type": "text",
-          "x": 0, "y": 0, "w": 400, "h": 34,
-          "value": "SALES SUMMARY",
+          "x": 0, "y": 0, "w": 300, "h": 34,
+          "value": "INVOICE",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
             "fontSize": 24,
@@ -324,27 +296,10 @@ export const rptJson = {
           }
         },
         {
-          "id": "rh_scope",
+          "id": "rh_number",
           "type": "text",
-          "x": 0, "y": 38, "w": 400, "h": 18,
-          "value": "Grouped by region",
-          "style": {
-            "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 12,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "color": "#666666",
-            "align": "left",
-            "background": null,
-            "border": null,
-            "padding": 0
-          }
-        },
-        {
-          "id": "rh_period",
-          "type": "text",
-          "x": 414, "y": 2, "w": 300, "h": 20,
-          "value": "{report.period}",
+          "x": 414, "y": 0, "w": 300, "h": 20,
+          "value": "Invoice #{invoice.number}",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
             "fontSize": 14,
@@ -358,16 +313,16 @@ export const rptJson = {
           }
         },
         {
-          "id": "rh_generated",
+          "id": "rh_date",
           "type": "text",
-          "x": 414, "y": 26, "w": 300, "h": 16,
-          "value": "Generated {today}",
+          "x": 414, "y": 22, "w": 300, "h": 18,
+          "value": "Date: {invoice.date}",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 11,
+            "fontSize": 12,
             "fontWeight": "normal",
             "fontStyle": "normal",
-            "color": "#666666",
+            "color": "#000000",
             "align": "right",
             "background": null,
             "border": null,
@@ -375,17 +330,51 @@ export const rptJson = {
           }
         },
         {
-          "id": "rh_currency",
+          "id": "rh_billto",
           "type": "text",
-          "x": 414, "y": 44, "w": 300, "h": 16,
-          "value": "All amounts in {report.currency}",
+          "x": 0, "y": 52, "w": 300, "h": 16,
+          "value": "Bill to",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
             "fontSize": 11,
             "fontWeight": "normal",
             "fontStyle": "normal",
             "color": "#666666",
-            "align": "right",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_customer",
+          "type": "text",
+          "x": 0, "y": 70, "w": 300, "h": 22,
+          "value": "{customer.name}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "rh_city",
+          "type": "text",
+          "x": 0, "y": 94, "w": 300, "h": 18,
+          "value": "{customer.city}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
             "background": null,
             "border": null,
             "padding": 0
@@ -398,10 +387,10 @@ export const rptJson = {
       "height": 26,
       "items": [
         {
-          "id": "ph_label",
+          "id": "ph_ref",
           "type": "text",
           "x": 0, "y": 0, "w": 714, "h": 16,
-          "value": "Sales Summary — {report.period}",
+          "value": "Invoice #{invoice.number}",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
             "fontSize": 11,
@@ -417,44 +406,20 @@ export const rptJson = {
       ]
     },
     {
-      "type": "groupHeader",
-      "height": 38,
-      "items": [
-        {
-          "id": "gh_region",
-          "type": "text",
-          "x": 0, "y": 8, "w": 400, "h": 24,
-          "value": "Region: {region}",
-          "style": {
-            "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 16,
-            "fontWeight": "bold",
-            "fontStyle": "normal",
-            "color": "#000000",
-            "align": "left",
-            "background": null,
-            "border": null,
-            "padding": 0
-          }
-        }
-      ]
-    },
-    {
       "type": "detail",
       "items": [
         {
-          "id": "tbl_sales",
+          "id": "tbl1",
           "type": "table",
           "x": 0, "y": 0, "w": 714,
-          "dataset": "sales",
-          "rowHeight": 26,
-          "headerHeight": 30,
+          "dataset": "items",
+          "rowHeight": 28,
+          "headerHeight": 32,
           "showHeader": true,
           "columns": [
-            { "field": "date", "label": "Date", "width": 110, "align": "left" },
-            { "field": "customer", "label": "Customer", "width": 264, "align": "left" },
-            { "field": "rep", "label": "Rep", "width": 140, "align": "left" },
-            { "field": "amount", "label": "Amount", "width": 200, "align": "right" }
+            { "field": "name", "label": "Item", "width": 400, "align": "left" },
+            { "field": "qty", "label": "Qty", "width": 100, "align": "right" },
+            { "field": "price", "label": "Price", "width": 214, "align": "right" }
           ],
           "style": {
             "fontSize": 12,
@@ -465,88 +430,14 @@ export const rptJson = {
       ]
     },
     {
-      "type": "groupFooter",
-      "height": 42,
-      "items": [
-        {
-          "id": "gf_label",
-          "type": "text",
-          "x": 214, "y": 8, "w": 300, "h": 20,
-          "value": "Subtotal ({count()} sales)",
-          "style": {
-            "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 12,
-            "fontWeight": "bold",
-            "fontStyle": "normal",
-            "color": "#000000",
-            "align": "right",
-            "background": null,
-            "border": null,
-            "padding": 0
-          }
-        },
-        {
-          "id": "gf_amount",
-          "type": "text",
-          "x": 514, "y": 8, "w": 200, "h": 20,
-          "value": "{sum(amount)}",
-          "style": {
-            "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 13,
-            "fontWeight": "bold",
-            "fontStyle": "normal",
-            "color": "#000000",
-            "align": "right",
-            "background": null,
-            "border": null,
-            "padding": 0
-          }
-        }
-      ]
-    },
-    {
       "type": "reportFooter",
-      "height": 128,
+      "height": 150,
       "items": [
-        {
-          "id": "rf_total_label",
-          "type": "text",
-          "x": 314, "y": 12, "w": 200, "h": 26,
-          "value": "GRAND TOTAL",
-          "style": {
-            "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 16,
-            "fontWeight": "bold",
-            "fontStyle": "normal",
-            "color": "#000000",
-            "align": "right",
-            "background": null,
-            "border": null,
-            "padding": 0
-          }
-        },
-        {
-          "id": "rf_total",
-          "type": "text",
-          "x": 514, "y": 12, "w": 200, "h": 26,
-          "value": "{sum(amount)}",
-          "style": {
-            "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 16,
-            "fontWeight": "bold",
-            "fontStyle": "normal",
-            "color": "#000000",
-            "align": "right",
-            "background": null,
-            "border": null,
-            "padding": 0
-          }
-        },
         {
           "id": "rf_count_label",
           "type": "text",
-          "x": 314, "y": 48, "w": 200, "h": 18,
-          "value": "Sales recorded",
+          "x": 314, "y": 8, "w": 200, "h": 18,
+          "value": "Items",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
             "fontSize": 12,
@@ -562,7 +453,7 @@ export const rptJson = {
         {
           "id": "rf_count",
           "type": "text",
-          "x": 514, "y": 48, "w": 200, "h": 18,
+          "x": 514, "y": 8, "w": 200, "h": 18,
           "value": "{count()}",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
@@ -577,14 +468,14 @@ export const rptJson = {
           }
         },
         {
-          "id": "rf_avg_label",
+          "id": "rf_total_label",
           "type": "text",
-          "x": 314, "y": 70, "w": 200, "h": 18,
-          "value": "Average sale",
+          "x": 314, "y": 30, "w": 200, "h": 24,
+          "value": "Total",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 12,
-            "fontWeight": "normal",
+            "fontSize": 16,
+            "fontWeight": "bold",
             "fontStyle": "normal",
             "color": "#000000",
             "align": "right",
@@ -594,14 +485,14 @@ export const rptJson = {
           }
         },
         {
-          "id": "rf_avg",
+          "id": "rf_total",
           "type": "text",
-          "x": 514, "y": 70, "w": 200, "h": 18,
-          "value": "{avg(amount)}",
+          "x": 514, "y": 30, "w": 200, "h": 24,
+          "value": "{sum(price)}",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 12,
-            "fontWeight": "normal",
+            "fontSize": 16,
+            "fontWeight": "bold",
             "fontStyle": "normal",
             "color": "#000000",
             "align": "right",
@@ -611,34 +502,34 @@ export const rptJson = {
           }
         },
         {
-          "id": "rf_max_label",
+          "id": "rf_approved_label",
           "type": "text",
-          "x": 314, "y": 92, "w": 200, "h": 18,
-          "value": "Largest sale",
+          "x": 0, "y": 96, "w": 260, "h": 16,
+          "value": "APPROVED BY",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 12,
+            "fontSize": 11,
             "fontWeight": "normal",
             "fontStyle": "normal",
-            "color": "#000000",
-            "align": "right",
+            "color": "#666666",
+            "align": "left",
             "background": null,
             "border": null,
             "padding": 0
           }
         },
         {
-          "id": "rf_max",
+          "id": "rf_approved_name",
           "type": "text",
-          "x": 514, "y": 92, "w": 200, "h": 18,
-          "value": "{max(amount)}",
+          "x": 0, "y": 116, "w": 260, "h": 24,
+          "value": "{authorizer}",
           "style": {
             "fontFamily": "Helvetica, Arial, sans-serif",
-            "fontSize": 12,
+            "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
             "color": "#000000",
-            "align": "right",
+            "align": "left",
             "background": null,
             "border": null,
             "padding": 0
@@ -671,5 +562,3 @@ export const rptJson = {
     }
   ]
 }
-
-

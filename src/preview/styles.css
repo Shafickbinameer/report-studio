@@ -1,0 +1,16 @@
+body {
+  margin: 0;
+  background: #e5e7eb;
+}
+
+#main-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+section {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
