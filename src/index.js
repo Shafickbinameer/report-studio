@@ -1,18 +1,27 @@
-import { resolve } from './engine/resolve.js';
-import { rptData, rptJson } from './../fixtures/test-data.js';
-import { group } from './engine/group.js';
-import { measure } from './engine/measure.js';
-import { paginate } from './engine/paginate.js';
-import { render } from './render/render.js';
+/**
+ * report-studio - the framework-free entry point.
+ *
+ * Spec 7.4: consumers import the engine from here and the screens from
+ * report-studio/react, so an application using only the engine never downloads
+ * the React code. Nothing in this module touches the document on import.
+ */
 
-const resolved = resolve(rptJson, rptData);
-const grouped = group(resolved, rptData);
-const measured = measure(grouped);
-const paginated = paginate(measured);
+export {
+    buildPages,
+    resolve,
+    group,
+    measure,
+    paginate,
+    validateLayout,
+    ReportError,
+    search,
+    searchPages,
+    toCSV,
+    reportFilename,
+    measureText,
+    wrapLines,
+    textHeight,
+    LINE_HEIGHT_RATIO
+} from './engine/index.js';
 
-
-const html = render(paginated);
-
-document.getElementById("preview").innerHTML = html;
-
-
+export { render } from './render/render.js';

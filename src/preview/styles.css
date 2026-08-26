@@ -1,7 +1,47 @@
-
+/**
+ * 60 - 30 - 10.
+ *
+ *   60%  --surface   #fdfdfe   paper, toolbar, dialog: every calm surface
+ *   30%  --accent    #ff9c4b   every action, highlight and selected state
+ *   10%  --border    #cdd4db   borders and dividers, nothing else
+ *
+ * The backdrop is neutral rather than accent-tinted, so the accent has to earn
+ * its share through the Export button, search hits and selected cards instead
+ * of through one large wash. Tint --backdrop toward --accent to give it more.
+ *
+ * The three shades below are mixes of those, not new colours - each one exists
+ * because the base is too light to carry contrast on its own, and each says
+ * which ratio it buys. Change the three above and the shades stay in family.
+ */
 :root {
-  --bg-color: #f2f2f2;
-  --line-color: #c2c2c2;
+  /* the palette */
+  --surface: #fdfdfe;
+  --accent: #ff9c4b;
+  --border: #cdd4db;
+
+  /* the ground the page sits on - a shade cooler than the paper, so the sheet
+     is told apart by its border rather than by a change in temperature */
+  --backdrop: #fbfcfd;
+  /* accent at 12% over surface - selected rows and cards */
+  --accent-soft: #fdf1e9;
+  /* accent at 70% over surface - a search hit you can see but are not standing on.
+     1.66:1 against the paper, where the yellow it replaces managed 1.23:1 */
+  --accent-tint: #feb981;
+  /* accent darkened - 3.5:1 on surface, enough for focus rings and active borders */
+  --accent-strong: #cc6f20;
+  /* darker still - 5.8:1 both ways, so it can carry text or sit under it */
+  --accent-ink: #8f572a;
+  /* border at 25% over surface - table headers and other quiet fills */
+  --surface-muted: #f1f3f5;
+
+  /* ink. #ff9c4b is light, so text on the accent is dark, never white: 7.25:1 */
+  --ink: #22272c;
+  --ink-soft: #667080;
+
+  --bar-height: 56px;
+  --pager-height: 44px;
+  /* how far the floating pager sits off the bottom edge */
+  --pager-offset: 20px;
 }
 
 * {
@@ -17,26 +57,57 @@ body {
 }
 
 .graph-paper {
-  height: 100%;
-  background-color: var(--bg-color);
-  background-image: 
-    conic-gradient(at calc(100% - 1px) calc(100% - 1px),var(--line-color) 270deg, #0000 0),
-    conic-gradient(at calc(100% - 1px) calc(100% - 1px),var(--line-color) 270deg, #0000 0);
-  background-size: 100px 100px, 20px 20px;
+  min-height: 100vh;
+  background-color: var(--backdrop);
 }
 
+/**
+ * The viewport is the scroll container, sized to leave the fixed bar alone.
+ * It scrolls only when a page is taller than the window - the report itself is
+ * paged, not scrolled.
+ */
+/**
+ * The pager floats over this rather than taking a strip of it, so the bottom
+ * padding is what lets the end of a page scroll clear of the pill.
+ */
+.viewport {
+  margin-top: var(--bar-height);
+  height: calc(100vh - var(--bar-height));
+  overflow: auto;
+  padding: 24px 24px calc(var(--pager-height) + var(--pager-offset) + 24px);
+}
+
+/**
+ * The stack is the page's scaled footprint. A CSS transform does not affect
+ * layout, so without an explicit size here there would be nothing to scroll at
+ * 200% - viewer.js sets width/height from the layout's page size times zoom.
+ * margin:auto centres it while it is narrower than the viewport.
+ */
 #main-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  padding: 24px;
+  margin: 0 auto;
 }
 
+/**
+ * One page on screen at a time. The others stay in the DOM so that paging is
+ * instant and the browser's own find still reaches them if someone wants it.
+ */
 .page {
-  background: #fff;
+  background: var(--surface);
   position: relative;
   overflow: hidden;
+  display: none;
+  border: 1px solid var(--border);
+
+  /**
+   * Scale the drawn page rather than its font sizes: re-computing type would
+   * re-wrap the text and stop matching what the engine paginated.
+   */
+  transform: scale(var(--zoom, 1));
+  transform-origin: top left;
+}
+
+.page.is-current {
+  display: block;
 }
 
 .band {
@@ -58,12 +129,648 @@ table {
 
 th,
 td {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border);
   padding: 6px 8px;
   font-size: 12px;
 }
 
 th {
   font-weight: 600;
-  background: #f9fafb;
+  background: var(--surface-muted);
+}
+
+/* group bands live inside the table, so the cell must not add chrome of its own */
+.group-band-cell {
+  padding: 0;
+  border: none;
+}
+
+/* warm, so a group break reads differently from a column header */
+.group-header .group-band-cell {
+  background: var(--accent-soft);
+}
+
+.group-band-cell .band p {
+  padding: 0 8px;
+}
+
+
+/* ---------------- the floating pager ---------------- */
+
+.pager {
+  position: fixed;
+  left: 50%;
+  bottom: var(--pager-offset);
+  transform: translateX(-50%);
+  z-index: 10;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--pager-height);
+  padding: 0 8px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* a pill, to read as floating rather than as a docked strip */
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(34, 39, 44, .12);
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.pager button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pager button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.pager button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.pager input {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.pager input:focus-visible,
+.pager button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+
+/* ---------------- viewer chrome ---------------- */
+
+.toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--bar-height);
+
+  /**
+   * Three columns, not a flex row: the outer two share the slack equally, so
+   * the search sits on the centre of the window rather than on the centre of
+   * whatever the zoom and export controls left over.
+   */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  z-index: 10;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* the wordmark holds the left column, so the centre column stays centred */
+.toolbar-brand {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.toolbar-brand::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* search, then zoom to its right - one cluster on the centre of the window */
+.toolbar-centre {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-save {
+  justify-self: end;
+}
+
+.toolbar button {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.toolbar button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.toolbar-save button {
+  min-width: 0;
+  padding: 0 14px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/**
+ * Export is the primary action and carries the accent; Print sits beside it as
+ * an ordinary button. Two accent fills next to each other would leave neither
+ * looking primary.
+ */
+.toolbar-save [data-role="export"] {
+  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* accent-strong is only 3.5:1, too thin to put surface-coloured text on */
+.toolbar-save [data-role="export"]:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  color: var(--surface);
+}
+
+/* the accent alone is 2:1 on this surface - the ring uses the darker mix */
+.toolbar button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.page-of {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+}
+
+.page-of input {
+  width: 56px;
+  text-align: center;
+  color: var(--ink);
+}
+
+/* the spinners fight the fixed width and add nothing here */
+.page-of input::-webkit-outer-spin-button,
+.page-of input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.page-of input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/**
+ * The field is the control: it carries the border, the background and the focus
+ * ring, so the count and the match arrows sit inside the box with the text.
+ */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: min(380px, 44vw);
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.search-field:focus-within {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.search-field input[type="search"] {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+}
+
+/* the wrapper shows the ring, so the input must not draw a second one */
+.search-field input[type="search"]:focus,
+.search-field input[type="search"]:focus-visible {
+  outline: none;
+}
+
+.search-field button {
+  flex: none;
+  min-width: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font-size: 12px;
+}
+
+.search-field button:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.hits {
+  flex: none;
+  min-width: 62px;
+  padding-right: 2px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * "no matches" is information, not an error, so it stays in the palette rather
+ * than reaching for a red the rest of the page never uses.
+ */
+.hits[data-state="empty"] {
+  color: var(--accent-ink);
+}
+
+/**
+ * Two levels: every hit on the page is tinted, the one you are standing on
+ * takes the accent outright. accent-soft is too close to the paper to see.
+ */
+mark.hit {
+  background: var(--accent-tint);
+  color: inherit;
+  padding: 5px;
+}
+
+mark.hit.is-focused {
+  background: var(--accent);
+  outline: 1px solid var(--accent-ink);
+}
+
+@media print {
+  .toolbar, .pager { display: none; }
+  /* margin-top holds a gap for the bar, which is not printed */
+  .viewport { margin-top: 0; height: auto; overflow: visible; padding: 0; }
+  /* print at true size - zoom is a screen convenience, not a layout change */
+  #main-page { width: auto !important; height: auto !important; margin: 0; }
+
+  /* the sheet's own background must not print over the report */
+  body, .graph-paper { background: none; }
+
+  .page {
+    display: block;
+    border: none;
+    transform: none;
+
+    /**
+     * Table header fills and group bands are how a report is read. Browsers
+     * strip backgrounds when printing unless told not to.
+     */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /**
+   * Only *between* pages. break-after on the last one asks the printer for a
+   * sheet after the final page, which is where the trailing blank comes from.
+   */
+  .page:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
+  }
+}
+
+/* ---------------- export dialog ---------------- */
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  color: var(--ink);
+}
+
+/* the scrim is the ink colour, so nothing new enters the palette */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 39, 44, .45);
+}
+
+.modal-card {
+  position: relative;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(34, 39, 44, .22);
+}
+
+.modal-card h2 {
+  margin-bottom: 14px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-formats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.format {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.format:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* the selected card uses the darker mix on its border so the state is legible */
+.format:has(input:checked) {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.format:has(input:focus-visible) {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.format.is-unavailable {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.format input {
+  margin-top: 2px;
+  accent-color: var(--accent-strong);
+}
+
+.format-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.format-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.format-note {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.modal-summary {
+  min-height: 18px;
+  margin: 12px 2px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-actions button {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modal-actions button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* dark ink on the accent, never white: 7.25:1 against 2.08:1 */
+.modal-actions button.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.modal-actions button.is-primary:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  color: var(--surface);
+}
+
+.modal-actions button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.modal-actions button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+@media print {
+  .modal { display: none; }
+}
+
+
+/* ---------------- the zoom listbox ---------------- */
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 92px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.dropdown-trigger:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.dropdown-trigger[aria-expanded="true"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.dropdown-value {
+  flex: 1;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+/* drawn rather than typed, so it does not depend on a glyph being present */
+.dropdown-caret {
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border-right: 1.5px solid var(--ink-soft);
+  border-bottom: 1.5px solid var(--ink-soft);
+  transform: rotate(45deg);
+  transition: transform .12s ease;
+}
+
+.dropdown-trigger[aria-expanded="true"] .dropdown-caret {
+  margin-top: 2px;
+  transform: rotate(-135deg);
+}
+
+/* the bar is at the top of the window, so the menu always has room below it */
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  z-index: 30;
+
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(34, 39, 44, .16);
+}
+
+.dropdown-menu[hidden] {
+  display: none;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * The tick occupies its width whether or not it is showing, so choosing a
+ * different zoom does not shuffle every label sideways.
+ */
+.dropdown-item::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  flex: none;
+  background: none;
+}
+
+.dropdown-item[aria-selected="true"] {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.dropdown-item[aria-selected="true"]::before {
+  /* a tick drawn from two borders - no glyph, no icon font */
+  width: 5px;
+  height: 9px;
+  margin: -3px 4px 0 3px;
+  border-right: 2px solid var(--accent-ink);
+  border-bottom: 2px solid var(--accent-ink);
+  transform: rotate(45deg);
+}
+
+.dropdown-item:hover,
+.dropdown-item.is-active {
+  background: var(--accent-tint);
+}
+
+.dropdown-item:focus {
+  outline: none;
+}
+
+.dropdown-item.is-active {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
 }

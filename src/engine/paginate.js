@@ -1,5 +1,11 @@
 
+import { pageRegions, bandZoneHeight } from './regions.js';
+
+
 const REGEX = /\{([^{}]+)\}/g;
+
+/** placeholders only this stage can resolve, once the page count is known */
+const PAGE_KEYS = ['page', 'totalPages'];
 
 
 
@@ -16,7 +22,7 @@ export function paginate(json) {
             reportFooter: paginateJSON.bands.find(b => b.type === "reportFooter"),
             pageHeader: paginateJSON.bands.find(b => b.type === "pageHeader"),
             pageFooter: paginateJSON.bands.find(b => b.type === "pageFooter"),
-            details: paginateJSON.bands.find(b => b.type === "details"),
+            detail: paginateJSON.bands.find(b => b.type === "detail"),
             groupHeader: paginateJSON.bands.find(b => b.type === "groupHeader") || null,
             groupFooter: paginateJSON.bands.find(b => b.type === "groupFooter") || null,
         }
@@ -24,6 +30,17 @@ export function paginate(json) {
 
 
     context.availableHeight = calAvailableHeight(paginateJSON.page);
+
+    /**
+     * Bands are anchored to zones rather than stacked, so a short detail band
+     * no longer drags the page footer up off the bottom edge.
+     */
+    context.regionsFor = (pageNO, isLastPage) => pageRegions({
+        bands: context.assignedBands,
+        contentHeight: context.availableHeight,
+        isFirstPage: pageNO === 1,
+        isLastPage
+    });
 
 
     const flowBands = paginateJSON.bands.filter(
@@ -52,14 +69,21 @@ function calPages(bands, context) {
 
     // spreading the report header and footer from the context.assignedBands
     const { assignedBands, availableHeight, group } = context;
-    const { reportFooter, reportHeader, groupHeader, groupFooter } = assignedBands;
+    const { reportFooter, reportHeader, groupHeader, groupFooter, pageHeader, pageFooter } = assignedBands;
 
+    /**
+     * The detail zone of a continuation page - no report header, no report
+     * footer, so it is the largest zone any page offers. Nothing can be split
+     * smaller than this, which makes it the yardstick for "will this fit at all".
+     */
+    const freshPageHeight = context.regionsFor(2, false).detail.height;
 
-    // handling the first page 
-    // note : need to handle overflow
-    if (reportHeader) {
-        currentPage.bands.push(reportHeader);
-        currentPage.usedHeight += reportHeader.measuredHeight;
+    /** the report header now owns a zone; newPage placed it on page 1 already */
+    if (reportHeader && currentPage.regions.detail.height <= 0) {
+        console.warn(
+            `The header zones leave no room for detail on page 1. ` +
+            `Reduce the reportHeader or pageHeader height.`
+        );
     }
 
 
@@ -79,18 +103,17 @@ function calPages(bands, context) {
             if (
                 (item.measuredHeight + currentPage.usedHeight) > availableHeight && item.type != "table"
             ) {
-                if (calBand.items.length > 0) currentPage.bands.push(calBand);
-
-                currentPage = newPage(pages.length + 1, context);
-                currentPage.bands.push(calBand);
-                pages.push(currentPage);
-
-                calBand = {
-                    ...band, items: []
+                if (calBand.items.length > 0) {
+                    currentPage.bands.push(calBand);
+                    calBand = {
+                        ...band, items: []
+                    };
                 };
 
-                
-                calBand.items.push(item);
+                currentPage = newPage(pages.length + 1, context);
+                pages.push(currentPage);
+
+                calBand.items.push(structuredClone(item));
                 calBand.measuredHeight =
                     calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                 currentPage.usedHeight += item.measuredHeight;
@@ -108,6 +131,21 @@ function calPages(bands, context) {
                     const grpFooterHgt = groupFooter?.measuredHeight ?? 0;
                     const tblHeaderHgt = item?.headerHeight ?? 0;
                     const reservedSpace = tblHeaderHgt + grpHeaderHgt + item.rowHeight;
+
+                    /**
+                     * same trap as the ungrouped path: if the minimum viable slice
+                     * (table header + group header + one row) is taller than an empty
+                     * page, {hasMinHgt} never becomes true and we allocate pages forever.
+                     */
+                    const sliceFitsAnyPage = reservedSpace <= freshPageHeight;
+
+                    if (!sliceFitsAnyPage) {
+                        console.warn(
+                            `Table "${item.id}": table header + group header + one row (${reservedSpace}px) ` +
+                            `exceeds the ${freshPageHeight}px printable page. Falling back to one row per page; ` +
+                            `rows will overflow their page.`
+                        );
+                    }
 
 
                     /**
@@ -137,7 +175,13 @@ function calPages(bands, context) {
 
                             const remainingHgt = availableHeight - currentPage.usedHeight;
 
-                            const hasMinHgt = remainingHgt >= reservedSpace;
+                            /** a page we have already emptied cannot be emptied again - take the slice as is */
+                            const isFreshPage = calGroups.length === 0
+                                && calBand.items.length === 0
+                                && currentPage.usedHeight <= availableHeight - freshPageHeight;
+
+                            const hasMinHgt = remainingHgt >= reservedSpace
+                                || (!sliceFitsAnyPage && isFreshPage);
 
                             /** while the {hasMinHgt} is false then create new page */
                             if (!hasMinHgt) {
@@ -145,7 +189,12 @@ function calPages(bands, context) {
                                     let dupItem = structuredClone(item);
 
                                     dupItem.groups = calGroups;
+                                    dupItem.measuredHeight = calItemHeight;
                                     calBand.items.push(dupItem);
+                                }
+                                if (calBand.items.length > 0) {
+                                    calBand.measuredHeight =
+                                        calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                                     currentPage.bands.push(calBand);
                                 }
                                 currentPage = newPage(pages.length + 1, context);
@@ -162,12 +211,26 @@ function calPages(bands, context) {
 
                             let canFitRows = Math.floor(availableRowHgt / item.rowHeight);
 
+                            /** the oversized-slice fallback still has to place one row to make progress */
+                            if (canFitRows < 1 && !sliceFitsAnyPage && isFreshPage) canFitRows = 1;
+
                             canFitRows = Math.min(
                                 canFitRows,
                                 rowLen - currIdx
                             );
 
-                            if (canFitRows <= 0) continue;
+                            /**
+                             * {hasMinHgt} should already guarantee at least one row, so reaching
+                             * here means the height figures disagree. Bail out of this group rather
+                             * than spin - a silent hang is far worse than a short page.
+                             */
+                            if (canFitRows <= 0) {
+                                console.warn(
+                                    `Table "${item.id}", group "${grp.key}": no row fits despite ${remainingHgt}px ` +
+                                    `remaining. Skipping ${rowLen - currIdx} row(s).`
+                                );
+                                break;
+                            }
 
 
                             const rows = grp.rows.slice(currIdx, currIdx + canFitRows);
@@ -180,12 +243,21 @@ function calPages(bands, context) {
 
                             calItemHeight += occHgt;
 
+                            /**
+                             * groupHeader / groupFooter are templates, not flow bands - they never
+                             * land on a page of their own. Resolve them per fragment here, where the
+                             * group's own rows and aggregates are in hand, so render/ only has to draw.
+                             */
                             let grpFragment = {
                                 key: grp.key,
                                 rows: rows,
                                 aggregates: grp.aggregates,
                                 showHeader: true,
-                                showFooter: !hasMoreRows
+                                showFooter: !hasMoreRows,
+                                headerBand: resolveGroupBand(groupHeader, grp, rows[0]),
+                                footerBand: !hasMoreRows
+                                    ? resolveGroupBand(groupFooter, grp, rows[0])
+                                    : null
                             }
 
                             currentPage.usedHeight += occHgt;
@@ -200,11 +272,11 @@ function calPages(bands, context) {
                         dupItem.groups = calGroups;
                         dupItem.measuredHeight = calItemHeight;
 
+                        calBand.items.push(dupItem);
+
+                        /** measure after the push so the band height includes its own table */
                         calBand.measuredHeight =
                             calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
-
-                        calBand.items.push(dupItem);
-                        currentPage.bands.push(calBand);
 
                         calGroups = [];
                     }
@@ -213,13 +285,42 @@ function calPages(bands, context) {
                     const rowLen = item.row.length;
                     let currIdx = 0;
 
+                    const tblHeaderHgt = item.showHeader ? item.headerHeight : 0;
+
+                    /**
+                     * a row taller than an empty page can never be placed by the normal
+                     * rule, and asking for a new page forever is an infinite loop.
+                     * detect it once, up front, and fall back to one row per page.
+                     */
+                    const rowFitsAnyPage =
+                        Math.floor((freshPageHeight - tblHeaderHgt) / item.rowHeight) >= 1;
+
+                    if (!rowFitsAnyPage) {
+                        console.warn(
+                            `Table "${item.id}": rowHeight ${item.rowHeight} plus header ${tblHeaderHgt} ` +
+                            `exceeds the ${freshPageHeight}px printable page. Falling back to one row per page; ` +
+                            `rows will overflow their page.`
+                        );
+                    }
+
                     while (currIdx < rowLen) {
                         const remainingHgt = availableHeight - currentPage.usedHeight;
 
-                        const canFitRows = Math.floor((remainingHgt - (item.showHeader ? item.headerHeight : 0)) / item.rowHeight);
+                        let canFitRows = Math.floor((remainingHgt - tblHeaderHgt) / item.rowHeight);
 
+                        /** on a page we have already emptied, take one row anyway so currIdx advances */
+                        const isFreshPage = calBand.items.length === 0
+                            && currentPage.usedHeight <= availableHeight - freshPageHeight;
+
+                        if (!rowFitsAnyPage && isFreshPage) canFitRows = 1;
 
                         if (remainingHgt <= 0 || canFitRows < 1) {
+                            /** anything already placed on this page must land before we leave it */
+                            if (calBand.items.length > 0) {
+                                calBand.measuredHeight =
+                                    calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
+                                currentPage.bands.push(calBand);
+                            }
                             currentPage = newPage(pages.length + 1, context);
                             pages.push(currentPage);
                             calBand = {
@@ -241,18 +342,22 @@ function calPages(bands, context) {
                         dupItem.row = rows;
                         dupItem.measuredHeight = occHgt;
 
-                        
+
                         calBand.items.push(dupItem);
                         calBand.measuredHeight =
                             calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                         currentPage.usedHeight += occHgt;
-                        currentPage.bands.push(calBand);
 
 
                         currIdx += rows.length;
                         const hasMoreRows = currIdx < rowLen;
 
+                        /**
+                         * only push when we are leaving this page behind
+                         * the final partial band is handed to the flush after the item loop
+                         */
                         if (hasMoreRows) {
+                            currentPage.bands.push(calBand);
                             currentPage = newPage(pages.length + 1, context);
                             pages.push(currentPage);
                             calBand = {
@@ -264,30 +369,155 @@ function calPages(bands, context) {
 
             }
             else {
-                calBand.items.push(item);
+                /**
+                 * a grouped table that never splits still has to reach render as
+                 * fragments, otherwise its group bands only appear on reports long
+                 * enough to overflow.
+                 */
+                const placed = item.type === "table" && item.groups
+                    ? { ...item, groups: wholeGroupFragments(item, groupHeader, groupFooter) }
+                    : item;
+
+                calBand.items.push(structuredClone(placed));
                 calBand.measuredHeight =
                     calBand.items.reduce((sum, item) => sum + item.measuredHeight, 0);
                 currentPage.usedHeight += item.measuredHeight;
             }
         }
 
+        /** after the loop if their is any kind of data is their in calBand */
+        if (calBand.items.length > 0) {
+            currentPage.bands.push(calBand);
+            calBand = {
+                ...band, items: []
+            };
+        }
+
     }
 
 
-    // handle report footer
+    /**
+     * The report footer takes a zone above the page footer on the last page,
+     * which shrinks that page's detail zone. If the detail already filled more
+     * than the smaller zone allows, the footer starts a page of its own.
+     */
     if (reportFooter) {
-        if (
-            currentPage.usedHeight + reportFooter.measuredHeight > availableHeight
-        ) {
+        const zone = bandZoneHeight(reportFooter, availableHeight);
+
+        if (currentPage.usedHeight + zone > availableHeight) {
             currentPage = newPage(pages.length + 1, context);
             pages.push(currentPage);
         }
-        currentPage.bands.push(reportFooter);
-        currentPage.usedHeight += reportFooter.measuredHeight;
+
+        currentPage.bands.push(structuredClone(reportFooter));
+        currentPage.usedHeight += zone;
     }
+
+    /** the last page is only known now, so its zones are recomputed here */
+    const lastPage = pages[pages.length - 1];
+    lastPage.regions = context.regionsFor(lastPage.pageNO, Boolean(reportFooter));
+
+    anchorBands(pages);
 
     return pages;
 }
+
+
+/**
+ * Gives every placed band the top of its zone, in coordinates relative to the
+ * printable area. This is what the renderer positions against, and it is the
+ * whole point of the exercise: the page footer's top comes from the bottom of
+ * the page, never from how far the detail happened to reach.
+ * @param {object[]} pages
+ */
+function anchorBands(pages) {
+    for (const page of pages) {
+        for (const band of page.bands) {
+            const zone = page.regions[band.type] ?? page.regions.detail;
+
+            band.top = zone.top;
+            band.zoneHeight = zone.height;
+        }
+    }
+}
+
+/**
+ * Every group of a table that fits on one page, as unsplit fragments. Gives the
+ * no-overflow path the same shape the splitting path produces.
+ * @param {object} item the table item carrying groups
+ * @param {object|null} groupHeader
+ * @param {object|null} groupFooter
+ * @returns {object[]}
+ */
+function wholeGroupFragments(item, groupHeader, groupFooter) {
+    return item.groups.map(grp => ({
+        key: grp.key,
+        rows: grp.rows,
+        aggregates: grp.aggregates,
+        showHeader: true,
+        showFooter: true,
+        headerBand: resolveGroupBand(groupHeader, grp, grp.rows[0]),
+        footerBand: resolveGroupBand(groupFooter, grp, grp.rows[0])
+    }));
+}
+
+
+/**
+ * Fills in a groupHeader / groupFooter template for one group fragment.
+ * Unlike the aggregate pass in group.js this keeps the literal text around a
+ * placeholder, so "Subtotal: {sum(price)}" stays "Subtotal: 160".
+ * @param {object|null} bandTemplate the shared groupHeader / groupFooter band
+ * @param {object} grp the group being placed, carrying its aggregates
+ * @param {object} sampleRow any row of the group - all share the groupBy value
+ * @returns {object|null} a resolved clone, or null when no template exists
+ */
+function resolveGroupBand(bandTemplate, grp, sampleRow) {
+    if (!bandTemplate) return null;
+
+    const resolved = structuredClone(bandTemplate);
+
+    for (const item of resolved.items) {
+        if (item.type !== "text") continue;
+        /**
+         * Build on `text`, not `value` - resolve.js has already put the root
+         * data in and deliberately left everything group-scoped standing.
+         */
+        item.text = (item.text ?? item.value).replace(
+            REGEX,
+            (match, key) => groupPlaceholder(match, key.trim(), grp, sampleRow)
+        );
+    }
+
+    return resolved;
+}
+
+
+/**
+ * Resolves one placeholder inside a group band. An aggregate expression reads
+ * the group's own aggregates; anything else reads a field off the group's rows.
+ * {page} and {totalPages} are left standing - the page they land on is not
+ * known until every page exists, so resolve() fills those in at the end.
+ * @param {string} match the whole `{...}` token
+ * @param {string} key
+ * @param {object} grp
+ * @param {object} sampleRow
+ * @returns {string}
+ */
+function groupPlaceholder(match, key, grp, sampleRow) {
+    if (PAGE_KEYS.includes(key)) return match;
+
+    const expr = key.match(/^(\w+)\((.*?)\)$/);
+
+    if (expr) {
+        const [, fn, field] = expr;
+        const value = grp.aggregates?.[field]?.[fn.trim()];
+        return value == null ? '' : String(value);
+    }
+
+    const value = sampleRow?.[key];
+    return value == null ? '' : String(value);
+}
+
 
 /**
  * this is fn to create new pages whenever the report need
@@ -298,24 +528,28 @@ function calPages(bands, context) {
  * @returns object
  */
 function newPage(pageNO, context) {
-    const { pageHeader, pageFooter } = context.assignedBands;
+    const { pageHeader, pageFooter, reportHeader } = context.assignedBands;
 
+    const regions = context.regionsFor(pageNO, false);
     const bands = [];
 
-    if (pageHeader) {
-        bands.push(structuredClone(pageHeader));
-    }
+    if (pageHeader) bands.push(structuredClone(pageHeader));
+    if (pageFooter) bands.push(structuredClone(pageFooter));
 
-    if (pageFooter) {
-        bands.push(structuredClone(pageFooter));
-    }
+    /** the report header owns a zone of its own, on the first page only */
+    if (reportHeader && pageNO === 1) bands.push(structuredClone(reportHeader));
 
     return {
         pageNO,
         bands,
-        usedHeight:
-            (pageHeader?.measuredHeight ?? 0) +
-            (pageFooter?.measuredHeight ?? 0),
+        regions,
+
+        /**
+         * Everything the header and footer zones have already taken. The loop
+         * reads capacity as availableHeight - usedHeight, which is now exactly
+         * the detail zone rather than whatever the stack happened to leave.
+         */
+        usedHeight: context.availableHeight - regions.detail.height
     };
 }
 
@@ -332,26 +566,57 @@ function calAvailableHeight(page) {
     return page.height - (page.margin.top + page.margin.bottom);
 }
 
+/**
+ * Fills in {page} and {totalPages}, which only become knowable once every page
+ * exists. Spec 3.4 allows both in any band, not just the page footer.
+ *
+ * This works on `text`, never on `value`. Re-resolving from `value` here would
+ * throw away everything resolve.js and group.js already put in, which is why
+ * those stages leave these two tokens standing rather than blanking them.
+ * @param {object[]} pages
+ * @returns {object[]} the same pages
+ */
 function resolve(pages) {
     for (const page of pages) {
         for (const band of page.bands) {
-            if (band.type == "pageFooter") {
-                for (const item of band.items) {
-                    if (item.type == "text") {
-                        item.text = item.value.replace(REGEX, (match, key) => {
-                            switch (key) {
-                                case "page":
-                                    return page.pageNO;
-                                case "totalPages":
-                                    return pages.length;
-                                default:
-                                    return "";
-                            }
-                        })
-                    }
-                }
-            }
+            resolvePageKeys(band, page.pageNO, pages.length);
         }
     }
     return pages;
+}
+
+
+/**
+ * Walks one band, including the group header and footer bands carried inside a
+ * grouped table's fragments - those never appear in page.bands of their own.
+ * @param {object} band
+ * @param {number} pageNO
+ * @param {number} totalPages
+ */
+function resolvePageKeys(band, pageNO, totalPages) {
+    for (const item of (band?.items ?? [])) {
+        if (item.type === "text") {
+            const source = item.text ?? item.value ?? '';
+            if (!source.includes('{')) continue;
+
+            item.text = source.replace(REGEX, (match, key) => {
+                switch (key.trim()) {
+                    case "page":
+                        return pageNO;
+                    case "totalPages":
+                        return totalPages;
+                    default:
+                        return match;
+                }
+            });
+            continue;
+        }
+
+        if (item.type === "table" && item.groups) {
+            for (const fragment of item.groups) {
+                resolvePageKeys(fragment.headerBand, pageNO, totalPages);
+                resolvePageKeys(fragment.footerBand, pageNO, totalPages);
+            }
+        }
+    }
 }
