@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports</title>
+
+    <!-- the viewer's stylesheet; it includes the report's own -->
+    <link rel="stylesheet"
+          href="./node_modules/report-studio/src/preview/styles.css">
+
+    <!--
+        A browser resolves imports by URL - there is no node_modules lookup - so
+        a bare name has to be mapped to one. This is the whole of what a bundler
+        would otherwise do here; the package has no dependencies to map.
+    -->
+    <script type="importmap">
+    {
+      "imports": {
+        "report-studio": "./node_modules/report-studio/dist/index.js"
+      }
+    }
+    </script>
+
+    <style>
+        html, body { height: 100%; margin: 0; }
+    </style>
+</head>
+
+<body>
+    <!-- one empty element; the viewer builds the rest inside it -->
+    <div id="out" style="height: 100vh"></div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+
+</html>

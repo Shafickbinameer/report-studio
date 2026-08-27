@@ -1,15 +1,22 @@
 /**
- * viewer.js turns the rendered page list into a page-at-a-time viewer.
+ * viewer.js turns a page list into a page-at-a-time viewer: navigation, zoom,
+ * search, print and CSV.
  *
- * This is playground chrome, not library code: it owns the DOM, the navigation
- * bar, and the highlighting. All it knows about the report is the page list,
- * which it hands to the engine's search. A React <Preview /> would reuse that
- * same search and replace only this file.
+ * It takes one empty element and builds everything inside it - the chrome is
+ * chrome.js and the report is render.js - so an application mounts it the same
+ * way it mounts the designer, with a div and nothing else.
+ *
+ * All it knows about the report is the page list, which it hands to the
+ * engine's search. That is the seam in spec 2.2: a viewer for another framework
+ * reuses the same search, the same CSV and the same rendering, and replaces
+ * only the event handlers in this file.
  */
 
 import { search, searchPages } from '../engine/search.js';
 import { toCSV, reportFilename } from '../engine/csv.js';
-import { createDropdown } from './dropdown.js';
+import { createDropdown } from '../shared/dropdown.js';
+import { render } from '../render/render.js';
+import { chrome } from './chrome.js';
 
 
 /** the zoom levels the -/+ buttons step through, matching the select */
@@ -20,32 +27,53 @@ const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
 
 /**
+ * Mounts the viewer.
+ *
  * @param {object} options
- * @param {HTMLElement} options.mount where the rendered report already lives
- * @param {HTMLElement} options.bar the fixed bottom bar
- * @param {object} options.paginated the buildPages result, for searching
+ * @param {Element|string} options.mount the element to take over, or a selector
+ * @param {object} options.paginated the buildPages result
+ * @param {string} [options.title] what the brand corner reads
+ * @returns {object} a handle: paging, zoom, search, print, export and destroy
  */
-export function createViewer({ mount, bar, pager, paginated, modal }) {
-    const pages = [...mount.querySelectorAll('.page')];
+export function createViewer({ mount, paginated, title } = {}) {
+    const root = typeof mount === 'string' ? document.querySelector(mount) : mount;
+
+    if (!root) {
+        throw new Error(
+            `createViewer: no element for mount ${JSON.stringify(mount)}. ` +
+            `Add <div id="report"></div> to the page first.`
+        );
+    }
+
+    if (!paginated?.pages) {
+        throw new Error(
+            'createViewer: paginated must be a buildPages(layout, data) result.'
+        );
+    }
+
+    root.classList.add('report-viewer');
+    root.innerHTML = chrome({ title });
+
+    const viewport = root.querySelector('[data-role="viewport"]');
+    viewport.innerHTML = render(paginated);
+
+    const pages = [...viewport.querySelectorAll('.page')];
     const total = pages.length;
 
-    const stack = mount.querySelector('#main-page');
+    const stack = viewport.querySelector('#main-page');
+
+    /** the report itself is what scrolls and what the highlighting sits in */
+    const mountEl = viewport;
+
+    const modal = root.querySelector('[data-role="export-modal"]');
 
     /**
-     * The controls live in two places - the bar across the top and the pager
-     * floating over the report - so a control is found by its role, not by
-     * which container happens to hold it. Moving one between the two is then a
-     * change to the markup alone.
+     * One search root now that the viewer owns all of its chrome. A control is
+     * still found by its role rather than by which container holds it, so
+     * moving one between the toolbar and the pager stays a change to chrome.js
+     * alone.
      */
-    const roots = [bar, pager].filter(Boolean);
-
-    const find = (role) => {
-        for (const root of roots) {
-            const node = root.querySelector(`[data-role="${role}"]`);
-            if (node) return node;
-        }
-        return null;
-    };
+    const find = (role) => root.querySelector(`[data-role="${role}"]`);
 
     const ui = {
         prev: find('prev'),
@@ -98,7 +126,8 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
         ui.next.disabled = index === total - 1;
 
         paint();
-        mount.scrollTo({ top: 0 });
+        /** absent in jsdom, so a consumer testing there is not stopped by it */
+        mountEl.scrollTo?.({ top: 0 });
     }
 
     /* ---------------- zoom ---------------- */
@@ -114,7 +143,7 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
      * before first paint and does not depend on a live layout engine.
      */
     function applyZoom() {
-        mount.style.setProperty('--zoom', String(zoom));
+        mountEl.style.setProperty('--zoom', String(zoom));
 
         if (stack) {
             stack.style.width = `${paginated.page.width * zoom}px`;
@@ -141,7 +170,7 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
         fitWidth = true;
         ui.zoom.value = 'fit';
 
-        const available = mount.clientWidth - 48;
+        const available = mountEl.clientWidth - 48;
         if (available > 0) {
             zoom = Math.min(Math.max(available / paginated.page.width, MIN_ZOOM), MAX_ZOOM);
         }
@@ -392,7 +421,7 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
     /* ---------------- highlighting ---------------- */
 
     function clearMarks() {
-        for (const mark of mount.querySelectorAll('mark.hit')) {
+        for (const mark of mountEl.querySelectorAll('mark.hit')) {
             const parent = mark.parentNode;
             parent.replaceChild(document.createTextNode(mark.textContent), mark);
             parent.normalize();
@@ -448,7 +477,7 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
 
     /** the focused hit gets a stronger colour and is scrolled into view */
     function focusMark() {
-        const marks = [...mount.querySelectorAll('mark.hit')];
+        const marks = [...mountEl.querySelectorAll('mark.hit')];
         if (!marks.length) return;
 
         /** how many of the run of matches fall on this page before the focused one */
@@ -458,7 +487,7 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
 
         marks.forEach(m => m.classList.remove('is-focused'));
         mark.classList.add('is-focused');
-        mark.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        mark.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     }
 
     /* ---------------- wiring ---------------- */
@@ -591,6 +620,10 @@ export function createViewer({ mount, bar, pager, paginated, modal }) {
         document.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('resize', onResize);
         window.removeEventListener('afterprint', restoreAfterPrint);
+
+        /** the viewer built everything in here, so it takes it all away again */
+        root.innerHTML = '';
+        root.classList.remove('report-viewer');
     }
 
     applyPrintPageSize();

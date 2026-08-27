@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "name": "Tetsing package",
+  "page": {
+    "width": 794,
+    "height": 1123,
+    "margin": {
+      "top": 40,
+      "right": 40,
+      "bottom": 40,
+      "left": 40
+    }
+  },
+  "dataset": "friends",
+  "groupBy": null,
+  "bands": [
+    {
+      "type": "pageHeader",
+      "height": 60,
+      "items": [
+        {
+          "id": "text-1",
+          "type": "text",
+          "x": 220,
+          "y": 20,
+          "w": 200,
+          "h": 20,
+          "value": "Testing the report",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "bold",
+            "fontStyle": "italic",
+            "color": "#000000",
+            "align": "center",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "detail",
+      "items": [
+        {
+          "id": "text-2",
+          "type": "text",
+          "x": 1,
+          "y": 14,
+          "w": 84.80001831054688,
+          "h": 20,
+          "value": "Name: {name}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "text-3",
+          "type": "text",
+          "x": 1,
+          "y": 44,
+          "w": 341.5999755859375,
+          "h": 16.79998779296875,
+          "value": "Address: {address}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "table-1",
+          "type": "table",
+          "x": 0,
+          "y": 123,
+          "w": 711.5999755859375,
+          "dataset": null,
+          "rowHeight": 24,
+          "headerHeight": 28,
+          "showHeader": true,
+          "columns": [
+            {
+              "field": "name",
+              "label": "Name",
+              "width": 50,
+              "align": "left"
+            },
+            {
+              "field": "age",
+              "label": "Age",
+              "width": 50,
+              "align": "center"
+            },
+            {
+              "field": "salary",
+              "label": "Salary",
+              "width": 50,
+              "align": "right"
+            }
+          ],
+          "style": {
+            "fontSize": 12,
+            "color": "#000000",
+            "borderColor": "#a8a3a3"
+          }
+        }
+      ]
+    },
+    {
+      "type": "pageFooter",
+      "height": 40,
+      "items": [
+        {
+          "id": "text-4",
+          "type": "text",
+          "x": 240,
+          "y": 10,
+          "w": 200,
+          "h": 20,
+          "value": "Page {page} of {totalPages}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "center",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    }
+  ]
+}

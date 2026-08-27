@@ -1,0 +1,1153 @@
+/**
+ * The designer's chrome. How the report itself looks is render/report.css,
+ * shared with the preview - so this file styles the bar, the gutter, the zone
+ * outlines and the error panel, and nothing that ends up on paper.
+ */
+
+@import "../shared/theme.css";
+@import "../render/report.css";
+@import "../shared/modal.css";
+@import "../shared/dropdown.css";
+
+:root {
+  --dz-bar-height: 56px;
+  /* wide enough for "reportHeader", the longest band name */
+  --dz-gutter: 96px;
+  --dz-panel: 268px;
+  --dz-foot-height: 44px;
+  /* how far the floating tools sit off the bottom edge, as the pager does */
+  --dz-foot-offset: 20px;
+}
+
+.report-designer {
+  min-height: 100vh;
+  background-color: var(--backdrop);
+}
+
+/* ---------------- the bar ---------------- */
+
+.dz-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 10;
+
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--dz-bar-height);
+  padding: 0 20px;
+
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.dz-brand {
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.dz-brand::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* the report's name is the subject of the screen, so it takes the middle */
+.dz-name {
+  flex: 1;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.dz-size {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- the canvas ---------------- */
+
+/* the bar is fixed, so the row below it starts where the bar ends */
+.dz-body {
+  display: flex;
+  align-items: stretch;
+  margin-top: var(--dz-bar-height);
+  height: calc(100vh - var(--dz-bar-height));
+}
+
+/**
+ * The page and its tools; the rail is the other half of .dz-body. Positioned,
+ * because the tool pill floats inside it - centring on the window instead would
+ * put the pill off-centre from the page by half the width of the rail.
+ */
+.dz-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/**
+ * The tools float over this rather than taking a strip of it, so the bottom
+ * padding is what lets the end of the page scroll clear of the pill.
+ */
+.dz-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 24px calc(var(--dz-foot-height) + var(--dz-foot-offset) + 24px);
+}
+
+/* the gutter and the page scroll together, so they stay in step vertically */
+.dz-sheet {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: max-content;
+  margin: 0 auto;
+}
+
+.dz-gutter {
+  position: relative;
+  flex: none;
+  width: var(--dz-gutter);
+  height: var(--page-height);
+}
+
+/**
+ * Band names sit beside the page, not on it. Over the design they would cover
+ * an item at the top-left of every band - which is exactly where a title goes.
+ */
+.dz-tag {
+  position: absolute;
+  right: 0;
+  transform: translateY(-1px);
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.dz-page {
+  flex: none;
+}
+
+/**
+ * Dashed, and drawn inside the zone with a negative offset, so the boundary is
+ * visible while designing without adding a pixel to anything's position.
+ */
+.dz-zone {
+  outline: 1px dashed var(--border);
+  outline-offset: -1px;
+}
+
+/* ---------------- the error panel ---------------- */
+
+.dz-problems h2 {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dz-problems ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.dz-problems li {
+  margin: 4px 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* ---------------- selection ---------------- */
+
+/**
+ * The outline is a sibling of the bands, laid over the page - spec 5.2 asks for
+ * the preview's drawing plus chrome on top, and drawing selection *into* an
+ * item is how the two paths start to differ.
+ *
+ * pointer-events: none, or the outline would swallow the click that lands on
+ * the item beneath it. The handles opt back in.
+ */
+.dz-select {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  outline: 1px solid var(--accent-strong);
+  outline-offset: 0;
+}
+
+.dz-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: auto;
+
+  background: var(--surface);
+  border: 1px solid var(--accent-strong);
+  border-radius: 1px;
+}
+
+/* the four corners, then the four edge midpoints */
+.dz-handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.dz-handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.dz-handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.dz-handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+
+.dz-handle-n { top: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+.dz-handle-s { bottom: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+.dz-handle-w { left: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
+.dz-handle-e { right: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
+
+/* an item is grabbable, so it says so before it is grabbed */
+.dz-page [data-item-id] {
+  cursor: move;
+}
+
+/**
+ * A drag that crosses a text item would otherwise select its text, and the
+ * browser's selection highlight then sits under the outline for the rest of
+ * the gesture.
+ */
+.dz-canvas.is-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* ---------------- the properties rail ---------------- */
+
+.dz-panel {
+  flex: none;
+  width: var(--dz-panel);
+  overflow-y: auto;
+  padding: 16px;
+
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.dz-panel-empty {
+  padding: 24px 4px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.dz-panel-empty p {
+  margin-bottom: 6px;
+}
+
+.dz-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dz-panel-type {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.dz-panel-id {
+  color: var(--ink-soft);
+  font-family: "Courier Prime", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dz-section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dz-section:last-child {
+  border-bottom: none;
+}
+
+.dz-section h3 {
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/**
+ * Label left, control right, on one line. Two lines per field would make the
+ * rail twice as tall as the page it describes.
+ */
+.dz-field {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dz-field label {
+  color: var(--ink-soft);
+}
+
+/* the value box and its hint take the full width instead */
+.dz-field-textarea {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.dz-field input,
+.dz-field select,
+.dz-field textarea {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.dz-field textarea {
+  font-family: "Courier Prime", monospace;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.dz-field input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-field input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  justify-self: start;
+  accent-color: var(--accent-strong);
+}
+
+.dz-field input[type="color"] {
+  height: 26px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.dz-field input:focus-visible,
+.dz-field select:focus-visible,
+.dz-field textarea:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+  border-color: var(--accent-strong);
+}
+
+.dz-hint {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ---------------- the tool footer ---------------- */
+
+/**
+ * The tools sit under the page, not in the bar: the bar is about the report as
+ * a whole, and these act on the band being looked at.
+ *
+ * A floating pill rather than a docked strip, matching the preview's pager - so
+ * the two screens read as the same product, and neither takes a permanent slice
+ * off the height of the page being worked on.
+ */
+.dz-foot {
+  position: absolute;
+  left: 50%;
+  bottom: var(--dz-foot-offset);
+  transform: translateX(-50%);
+  z-index: 5;
+
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--dz-foot-height);
+  padding: 0 8px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(34, 39, 44, .12);
+}
+
+.dz-tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+
+  /* transparent rather than none, so hover adds no width and nothing shifts */
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  /* the glyph is stroked with currentColor, so this colours it too */
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.dz-tool:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.dz-tool:active {
+  background: var(--accent-tint);
+}
+
+.dz-tool:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.dz-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- structure controls ---------------- */
+
+.dz-icon {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dz-icon:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.dz-add-row {
+  width: 100%;
+  padding: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dz-add-row::before {
+  content: "+";
+  margin-right: 5px;
+}
+
+.dz-add-row:hover {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* a column is a card, because four controls will not sit on one rail-wide row */
+.dz-column {
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--backdrop);
+}
+
+.dz-column-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+
+.dz-column .dz-field:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------- the band list ---------------- */
+
+.dz-band-row {
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+}
+
+.dz-band-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+/* an inactive band is legible but plainly off */
+.dz-band-row.is-on .dz-band-name {
+  color: var(--ink);
+}
+
+.dz-band-name input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-strong);
+}
+
+.dz-band-height {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dz-band-height:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+}
+
+.dz-band-height-none {
+  color: var(--ink-soft);
+  font-size: 10px;
+  text-align: right;
+}
+
+.dz-band-row .dz-hint {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  padding-left: 21px;
+  font-size: 10px;
+}
+
+/* ---------------- the problems banner ---------------- */
+
+/**
+ * A banner above the page rather than instead of it. Most validation failures
+ * are one keystroke from fixed - setting groupBy before adding a group band is
+ * the common one - and taking the design away to say so is a punishment.
+ */
+.dz-problems {
+  max-width: 640px;
+  margin: 0 auto 20px;
+  padding: 14px 18px;
+
+  background: var(--surface);
+  border: 1px solid var(--accent-strong);
+  border-radius: 6px;
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* ---------------- the dialog ---------------- */
+
+/* wide enough for a report name to be read in full */
+.modal-card.is-roomy {
+  width: min(560px, calc(100vw - 32px));
+}
+
+/**
+ * A dialog field stacks: the label above, the control across the full card.
+ *
+ * This used to be `auto 90px` for every field inside a modal, which was written
+ * for the column count and then silently squeezed everything else that arrived
+ * later - the report picker and the save dialog's name box were both 90px wide
+ * because of it. Narrow is now the exception, and it asks for itself by name.
+ */
+.modal-card .dz-field {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.modal-card .dz-field label {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* a count is two digits; a box the width of the card would be absurd */
+.modal-card .dz-field-count {
+  grid-template-columns: auto 90px;
+  align-items: center;
+  justify-content: start;
+  gap: 12px;
+}
+
+.modal-card .dz-field-count label {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+/* ---------------- the bar's controls ---------------- */
+
+/* the report's name, with what the disk currently knows underneath it */
+.dz-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dz-status {
+  font-size: 10px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* unsaved is a state to notice, not to be alarmed by */
+.dz-bar[data-dirty="true"] .dz-status {
+  color: var(--accent-ink);
+}
+
+/* a failure the user has to read, so it takes the accent outright */
+.dz-status[data-problem] {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.dz-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-left: 1px solid var(--border);
+}
+
+.dz-bar-group:first-of-type {
+  border-left: none;
+}
+
+.dz-tool:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.dz-tool:disabled:hover {
+  border-color: transparent;
+  background: none;
+  color: var(--ink);
+}
+
+/* ---------------- the report picker ---------------- */
+
+/**
+ * The label sits above the control, not beside it: the picker is the dialog's
+ * one job, and a label in the same row would take a fifth of the width off the
+ * thing being read - which is a report name, and report names are long.
+ */
+.modal-card .dz-field-picker {
+  margin-bottom: 6px;
+}
+
+/* the dropdown fills the card rather than sizing to its longest report name */
+.modal-card .dz-field-picker .dropdown,
+.modal-card .dz-field-picker .dropdown-trigger {
+  width: 100%;
+}
+
+/* and the name gets whatever the caret does not */
+.modal-card .dz-field-picker .dropdown-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/**
+ * The shared component is sized for the preview's zoom control, where the value
+ * is "100%" in a crowded toolbar. Here it carries a report name in a dialog, so
+ * it takes the dialog's type size rather than the toolbar's.
+ */
+.modal-card .dz-field-picker .dropdown-trigger,
+.modal-card .dz-field-picker .dropdown-item {
+  font-size: 13px;
+}
+
+.modal-card .dz-field-picker .dropdown-trigger {
+  height: 38px;
+  padding: 0 12px;
+}
+
+/**
+ * Vertical padding only. The left inset is the tick's ::before placeholder,
+ * which the component already sizes - adding to it here would indent the
+ * selected and unselected items by different amounts.
+ *
+ * A report name is as long as someone typed it and the menu is a fixed width,
+ * so it clips rather than pushing the menu wider than the trigger under it.
+ */
+.modal-card .dz-field-picker .dropdown-item {
+  padding: 9px 12px 9px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-card .dz-field-picker .dropdown-menu {
+  width: 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/**
+ * A dropdown shows one line, so what the name alone does not settle - which
+ * file it is, when it last changed - goes underneath rather than being lost.
+ */
+.dz-report-meta {
+  margin-bottom: 16px;
+  padding-left: 1px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+/* a report that will not parse is still offered - it is the one to go and fix */
+.dz-report-meta[data-unreadable] {
+  color: var(--accent-ink);
+}
+
+.modal-card code {
+  font-family: "Courier Prime", monospace;
+  color: var(--ink);
+}
+
+/* ---------------- the data dialog ---------------- */
+
+/* a payload needs room to be read; the other dialogs do not */
+.modal-card.is-wide {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.dz-payload {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--backdrop);
+  color: var(--ink);
+
+  font-family: "Courier Prime", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 2;
+  resize: vertical;
+}
+
+.dz-payload:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+  border-color: var(--accent-strong);
+}
+
+/**
+ * Beside the box rather than after the click that was meant to save: a payload
+ * someone has pasted and broken should say so while they can still see where.
+ */
+.dz-parse-error {
+  min-height: 16px;
+  margin: 6px 0 12px;
+  color: var(--accent-ink);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.modal-actions button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* ---------------- running the report ---------------- */
+
+/**
+ * The rail and the tools go while the report is running. There is nothing on
+ * the rail that applies to a rendered page, and the insert tools would be
+ * offering to add a text box to something that is no longer a design.
+ */
+.report-designer[data-mode="preview"] .dz-panel,
+.report-designer[data-mode="preview"] .dz-foot {
+  display: none;
+}
+
+/* the pages stack down the canvas, as sheets coming off a printer do */
+.report-designer[data-mode="preview"] #main-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: max-content;
+  margin: 0 auto;
+}
+
+/* nothing here is grabbable; saying so with the cursor stops the invitation */
+.report-designer[data-mode="preview"] .dz-canvas [data-item-id] {
+  cursor: default;
+}
+
+/* the toggle stays lit while it is the thing being looked at */
+.dz-tool[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.dz-pages {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dz-truncated {
+  max-width: 640px;
+  margin: 4px auto 0;
+  padding: 10px 14px;
+
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+/* ---------------- the field list ---------------- */
+
+.dz-tokens {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 42vh;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.dz-token {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dz-token:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* the darker mix on the border, so the chosen one is legible not just tinted */
+.dz-token:has(input:checked) {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.dz-token:has(input:focus-visible) {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.dz-token input {
+  margin-top: 2px;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  accent-color: var(--accent-strong);
+}
+
+.dz-token-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dz-token-name {
+  font-weight: 500;
+}
+
+/**
+ * The syntax is shown rather than hidden behind the label: the point is that
+ * someone stops needing this dialog, and they only stop by seeing what it
+ * writes.
+ */
+.dz-token-syntax {
+  font-family: "Courier Prime", monospace;
+  font-size: 11px;
+  color: var(--accent-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dz-token-note {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* a warning, not a refusal - it is the author's report */
+.dz-token-warning {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent-strong);
+  border-radius: 6px;
+  color: var(--accent-ink);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.dz-token-warning[hidden] {
+  display: none;
+}
+
+/**
+ * The band an item is about to land in, or has just been put in.
+ *
+ * A drag used to leave the item in the band it started from however far it was
+ * moved, so there was nothing to show - and inserting a field chooses a band on
+ * the user's behalf, which is worth pointing at rather than leaving to be found.
+ */
+.dz-zone.is-target {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+/* the gutter name lights with it, so the band is identified and not just lit */
+.dz-sheet:has(.dz-zone.is-target) .dz-tag {
+  opacity: .45;
+}
+
+.dz-tag.is-target {
+  opacity: 1;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* ---------------- several items at once ---------------- */
+
+/**
+ * The one whose handles are drawn is solid; the rest are dashed. Without the
+ * distinction a group of six looks like six things that can each be resized,
+ * and only one of them can.
+ */
+.dz-select.is-secondary {
+  outline-style: dashed;
+}
+
+.dz-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 0;
+  list-style: none;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.dz-selected li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--backdrop);
+}
+
+.dz-selected-type {
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.dz-selected-id {
+  font-family: "Courier Prime", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- the value box ---------------- */
+
+.dz-field-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* the button sits opposite the label, across the top of the value box */
+.dz-brace {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--accent-ink);
+  font-family: "Courier Prime", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.dz-brace:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dz-brace:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+/**
+ * A textarea cannot style its own contents, so the placeholders are marked on a
+ * layer behind it and the box itself is given transparent text.
+ *
+ * Everything that affects where a character lands has to match between the two
+ * exactly - font, size, line height, padding, border width, wrapping - or the
+ * marks drift off the text they belong to. That is why both take their metrics
+ * from the same declarations here rather than inheriting separately.
+ */
+.dz-value {
+  position: relative;
+}
+
+.dz-value textarea,
+.dz-value-marks {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+
+  font-family: "Courier Prime", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: normal;
+
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 2;
+}
+
+.dz-value textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 52px;
+  border-color: var(--border);
+  background: transparent;
+  /* the text is drawn by the layer behind; only the caret shows through */
+  color: transparent;
+  caret-color: var(--ink);
+  resize: vertical;
+}
+
+.dz-value textarea::selection {
+  /* a transparent-text selection would be invisible without a fill */
+  background: var(--accent-tint);
+}
+
+.dz-value textarea:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+  border-color: var(--accent-strong);
+}
+
+.dz-value-marks {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--surface);
+  pointer-events: none;
+}
+
+/**
+ * The braces and what is between them, so a placeholder is told apart from the
+ * words around it - and a half-typed one, with only an opening brace, is told
+ * apart by not being marked at all.
+ */
+.dz-mark {
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* the link to the other screen sits among the tools and behaves like one */
+a.dz-tool {
+  text-decoration: none;
+}
+
+a.dz-tool[aria-disabled="true"] {
+  opacity: .35;
+  cursor: default;
+  pointer-events: auto;
+}
+
+a.dz-tool[aria-disabled="true"]:hover {
+  border-color: transparent;
+  background: none;
+  color: var(--ink);
+}

@@ -7,13 +7,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve as resolvePath } from 'node:path';
-import { createDropdown } from '../src/preview/dropdown.js';
+import { createDropdown } from '../src/shared/dropdown.js';
+import { chrome } from '../src/preview/chrome.js';
 
-const HTML = readFileSync(resolvePath(process.cwd(), 'src/preview/index.html'), 'utf8');
+/**
+ * The zoom control's real markup, taken from the chrome the viewer builds - so
+ * these specs cannot drift from the thing that ships. It used to be sliced out
+ * of preview/index.html, which is now one empty div.
+ */
+const HTML = chrome();
 
-/** the real markup, so the specs cannot drift from the page */
 const MARKUP = HTML.slice(
     HTML.indexOf('<div class="dropdown"'),
     HTML.indexOf('</div>', HTML.indexOf('</ul>')) + '</div>'.length

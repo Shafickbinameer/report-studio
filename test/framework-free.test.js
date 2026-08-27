@@ -3,6 +3,16 @@
  * If this file ever needs a React import to pass, something has leaked.
  */
 import { describe, it, expect } from 'vitest';
+/**
+ * Imported at the top rather than dynamically inside the test.
+ *
+ * The claim is that loading the package entry does nothing at import time - so
+ * loading it at import time is the honest way to check, and a side effect
+ * (touching `document`, reading a fixture) fails the whole file loudly. The
+ * dynamic version raced the default timeout once the suite grew past twenty
+ * files, which failed for a reason that had nothing to do with the claim.
+ */
+import * as entry from '../src/index.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,8 +49,7 @@ describe('framework-free boundary', () => {
         expect(source).not.toMatch(/from\s+['"]react/);
     });
 
-    it('the package entry has no import-time side effects', async () => {
-        const entry = await import('../src/index.js');
+    it('the package entry has no import-time side effects', () => {
         expect(typeof entry.buildPages).toBe('function');
         expect(typeof entry.render).toBe('function');
     });

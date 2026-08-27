@@ -1,0 +1,110 @@
+/**
+ * modal.css is the dialog shell both screens use.
+ *
+ * Lifted out of the preview's stylesheet when the designer grew a dialog of its
+ * own. A second copy would be a second thing to keep in step, and the one that
+ * falls behind is the one nobody is looking at.
+ *
+ * Hand-written rather than <dialog>: that element is still unimplemented in the
+ * environment the specs run in, and a stubbed showModal would test the stub
+ * instead of the behaviour.
+ *
+ * What is NOT here: anything about what a particular dialog contains. The
+ * export format cards stay with the preview, and the designer's own fields stay
+ * with the designer.
+ */
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  color: var(--ink);
+}
+
+/* the scrim is the ink colour, so nothing new enters the palette */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 39, 44, .45);
+}
+
+.modal-card {
+  position: relative;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(34, 39, 44, .22);
+}
+
+.modal-card h2 {
+  margin-bottom: 14px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-summary {
+  min-height: 18px;
+  margin: 12px 2px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-actions button {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modal-actions button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* dark ink on the accent, never white: 7.25:1 against 2.08:1 */
+.modal-actions button.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.modal-actions button.is-primary:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  color: var(--surface);
+}
+
+.modal-actions button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.modal-actions button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+@media print {
+  .modal { display: none; }
+}

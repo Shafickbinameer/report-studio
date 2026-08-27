@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "name": "Something",
+  "page": {
+    "width": 794,
+    "height": 1123,
+    "margin": {
+      "top": 40,
+      "right": 40,
+      "bottom": 40,
+      "left": 40
+    }
+  },
+  "dataset": "sales",
+  "groupBy": "city",
+  "bands": [
+    {
+      "type": "reportHeader",
+      "items": [],
+      "height": 80
+    },
+    {
+      "type": "groupHeader",
+      "items": [
+        {
+          "id": "text-1",
+          "type": "text",
+          "x": 78,
+          "y": 8,
+          "w": 200,
+          "h": 20,
+          "value": "Report {city}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "center",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ],
+      "height": 36
+    },
+    {
+      "type": "detail",
+      "items": [
+        {
+          "id": "table-1",
+          "type": "table",
+          "x": 0,
+          "y": 0,
+          "w": 714,
+          "dataset": null,
+          "rowHeight": 24,
+          "headerHeight": 28,
+          "showHeader": true,
+          "columns": [
+            {
+              "field": "name",
+              "label": "Name",
+              "width": 50,
+              "align": "left"
+            },
+            {
+              "field": "city",
+              "label": "City",
+              "width": 50,
+              "align": "left"
+            },
+            {
+              "field": "amount",
+              "label": "amount",
+              "width": 50,
+              "align": "left"
+            }
+          ],
+          "style": {
+            "fontSize": 12,
+            "color": "#000000",
+            "borderColor": "#cccccc"
+          }
+        },
+        {
+          "id": "text-2",
+          "type": "text",
+          "x": 240,
+          "y": -100,
+          "w": 200,
+          "h": 20,
+          "value": "Sales report",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "center",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    },
+    {
+      "type": "pageFooter",
+      "height": 40,
+      "items": [
+        {
+          "id": "text-3",
+          "type": "text",
+          "x": 299.199951171875,
+          "y": 10,
+          "w": 52.800048828125,
+          "h": 20,
+          "value": "{page}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "center",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "text-4",
+          "type": "text",
+          "x": 240,
+          "y": 10,
+          "w": 58,
+          "h": 20,
+          "value": "Page NO",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        }
+      ]
+    }
+  ]
+}

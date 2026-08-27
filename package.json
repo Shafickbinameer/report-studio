@@ -1,41 +1,63 @@
 {
   "name": "report-studio",
   "version": "0.0.1",
-  "description": "",
-  "main": "index.js",
+  "description": "Design and preview paginated reports in the browser. Zero runtime dependencies.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Shafickbinameer/report-studio.git"
   },
-  "keywords": [],
+  "keywords": [
+    "report",
+    "designer",
+    "pagination",
+    "pdf",
+    "print",
+    "layout"
+  ],
   "author": "",
   "license": "MIT",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "src/cli",
+    "src/designer",
+    "src/engine",
+    "src/preview",
+    "src/render",
+    "src/server",
+    "src/shared",
+    "src/vite",
+    "src/index.html",
+    "src/index.js"
   ],
   "exports": {
     ".": "./dist/index.js",
-    "./react": "./dist/react.js"
-  },
-  "peerDependencies": {
-    "react": ">=18",
-    "react-dom": ">=18"
+    "./designer": "./dist/designer.js",
+    "./vite": "./src/vite/index.js",
+    "./report.css": "./src/render/report.css",
+    "./viewer.css": "./src/preview/styles.css"
   },
   "scripts": {
     "dev": "vite",
+    "design": "node src/cli/index.js design --dir reports",
     "build": "vite build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run test && npm run build"
   },
   "bugs": {
     "url": "https://github.com/Shafickbinameer/report-studio/issues"
   },
   "homepage": "https://github.com/Shafickbinameer/report-studio#readme",
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.0.4",
     "jsdom": "^29.1.1",
     "vite": "^8.1.5",
     "vitest": "^4.1.11"
+  },
+  "bin": {
+    "report-studio": "./src/cli/index.js"
+  },
+  "engines": {
+    "node": ">=18.3"
   }
 }

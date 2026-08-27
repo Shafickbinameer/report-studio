@@ -1,0 +1,136 @@
+/**
+ * dropdown.css is the listbox both screens use.
+ *
+ * Lifted out of the preview's stylesheet when the designer's open dialog grew
+ * one - the same move theme.css, report.css and modal.css made before it. A
+ * second copy is a second thing to keep in step, and the one that falls behind
+ * is always the one nobody is looking at.
+ */
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 92px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.dropdown-trigger:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.dropdown-trigger[aria-expanded="true"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.dropdown-value {
+  flex: 1;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+/* drawn rather than typed, so it does not depend on a glyph being present */
+.dropdown-caret {
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border-right: 1.5px solid var(--ink-soft);
+  border-bottom: 1.5px solid var(--ink-soft);
+  transform: rotate(45deg);
+  transition: transform .12s ease;
+}
+
+.dropdown-trigger[aria-expanded="true"] .dropdown-caret {
+  margin-top: 2px;
+  transform: rotate(-135deg);
+}
+
+/* the bar is at the top of the window, so the menu always has room below it */
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  z-index: 30;
+
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(34, 39, 44, .16);
+}
+
+.dropdown-menu[hidden] {
+  display: none;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * The tick occupies its width whether or not it is showing, so choosing a
+ * different zoom does not shuffle every label sideways.
+ */
+.dropdown-item::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  flex: none;
+  background: none;
+}
+
+.dropdown-item[aria-selected="true"] {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.dropdown-item[aria-selected="true"]::before {
+  /* a tick drawn from two borders - no glyph, no icon font */
+  width: 5px;
+  height: 9px;
+  margin: -3px 4px 0 3px;
+  border-right: 2px solid var(--accent-ink);
+  border-bottom: 2px solid var(--accent-ink);
+  transform: rotate(45deg);
+}
+
+.dropdown-item:hover,
+.dropdown-item.is-active {
+  background: var(--accent-tint);
+}
+
+.dropdown-item:focus {
+  outline: none;
+}
+
+.dropdown-item.is-active {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+}

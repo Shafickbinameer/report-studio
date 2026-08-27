@@ -25,3 +25,12 @@ export {
 } from './engine/index.js';
 
 export { render } from './render/render.js';
+
+/**
+ * The viewer: paging, zoom, search, print and CSV over a page list.
+ *
+ * It takes one empty element and builds the rest, the same way createDesigner
+ * does. Link `report-studio/viewer.css` beside it - the report's own stylesheet
+ * is included there, so that one file is enough.
+ */
+export { createViewer } from './preview/viewer.js';

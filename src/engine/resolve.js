@@ -26,6 +26,51 @@ const GROUP_BANDS = ['groupHeader', 'groupFooter'];
 
 
 /**
+ * The placeholder pattern, and which keys the host is expected to supply.
+ *
+ * Exported because the designer derives a sample data file from a layout, and a
+ * second copy of these rules there would drift from the ones that actually
+ * resolve - so it would ask the user for `{page}` and forget `{customer.name}`.
+ */
+export const PLACEHOLDER = REGEX;
+
+
+/**
+ * Whether a placeholder is answered by the engine rather than by the data.
+ *
+ * Aggregates are group.js's, page numbers are paginate.js's, and `today` is the
+ * clock's. Everything else has to come from the payload.
+ *
+ * @param {string} key the text inside the braces, trimmed
+ * @returns {boolean}
+ */
+export function isEngineKey(key) {
+    return AGGREGATE.test(key) || PAGE_KEYS.includes(key) || key === 'today';
+}
+
+
+/**
+ * Whether a band's placeholders are scoped to a row rather than to the root.
+ *
+ * The group bands, and only those. Spec 3.4's table says a bare `{field}` is
+ * "the current row, else root data" in any band, but that is not what this file
+ * does: `deferUnknown` above is set for the group bands alone, and every other
+ * band - the detail band included - looks its keys up in the root payload.
+ *
+ * The engine is the thing that runs, so this reports the engine. Saying
+ * otherwise put `{name}` in a detail band into the rows of a sample data file,
+ * where the engine never looked for it, and the report printed "Name:" and
+ * nothing after it.
+ *
+ * @param {string} type a band type
+ * @returns {boolean}
+ */
+export function isRowScoped(type) {
+    return GROUP_BANDS.includes(type);
+}
+
+
+/**
  * Resolves the report JSON with the provided data
  * @param {*} rptJson
  * @param {*} rptData

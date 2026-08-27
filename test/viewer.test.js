@@ -16,14 +16,10 @@ import { layout, text, table, band, rows, groupedRows, run } from './helpers/lay
 /**
  * The preview page's own body, minus its module script, so the specs drive the
  * real toolbar, pager and dialog rather than a copy that can drift from them.
- * Parsing beats slicing it up with regexes - an earlier attempt at that ran
- * past the pager and pulled the dialog in twice.
+ *
+ * The viewer builds those itself now, so there is no page to slice up: the host
+ * supplies one empty element, which is the whole of what an application does.
  */
-const HTML = readFileSync(resolvePath(process.cwd(), 'src/preview/index.html'), 'utf8');
-
-const PAGE_BODY = HTML
-    .slice(HTML.indexOf('>', HTML.indexOf('<body')) + 1, HTML.indexOf('</body>'))
-    .replace(/<script[\s\S]*?<\/script>/g, '');
 
 /**
  * The viewer listens on document and window, so each mount is torn down before
@@ -34,9 +30,8 @@ let mounted = null;
 
 function mountReport(data, json) {
     mounted?.destroy();
-    document.body.innerHTML = PAGE_BODY;
+    document.body.innerHTML = '<div id="report"></div>';
 
-    const mount = document.getElementById('preview');
     const paginated = run(json ?? layout({
         bands: [
             band('reportHeader', [text('rh', { value: 'INVOICE for {customer.name}' })]),
@@ -45,18 +40,16 @@ function mountReport(data, json) {
         ]
     }), data);
 
-    mount.innerHTML = render(paginated);
-
-    const viewer = createViewer({
-        mount,
-        bar: document.getElementById('toolbar'),
-        pager: document.getElementById('pager'),
-        modal: document.querySelector('[data-role="export-modal"]'),
-        paginated
-    });
+    const viewer = createViewer({ mount: '#report', paginated });
 
     mounted = viewer;
-    return { viewer, mount, paginated, bar: document.getElementById('toolbar') };
+
+    return {
+        viewer,
+        paginated,
+        mount: document.querySelector('[data-role="viewport"]'),
+        bar: document.querySelector('[data-role="bar"]')
+    };
 }
 
 const visible = () => [...document.querySelectorAll('.page.is-current')];
@@ -85,8 +78,8 @@ describe('viewer - control layout', () => {
     it('keeps paging in the floating pager, not the top bar', () => {
         mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
-        const pager = document.getElementById('pager');
-        const bar = document.getElementById('toolbar');
+        const pager = document.querySelector('[data-role="pager"]');
+        const bar = document.querySelector('[data-role="bar"]');
 
         for (const role of ['prev', 'next', 'current', 'total']) {
             expect(pager.querySelector(`[data-role="${role}"]`), role).not.toBeNull();
@@ -97,7 +90,7 @@ describe('viewer - control layout', () => {
     it('keeps zoom, export and search in the top bar', () => {
         mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
-        const bar = document.getElementById('toolbar');
+        const bar = document.querySelector('[data-role="bar"]');
         for (const role of ['zoom', 'zoom-in', 'zoom-out', 'export', 'query', 'hit-next']) {
             expect(bar.querySelector(`[data-role="${role}"]`), role).not.toBeNull();
         }
@@ -141,7 +134,7 @@ describe('viewer - control layout', () => {
     it('leaves Export alone on the right', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
-        const bar = document.getElementById('toolbar');
+        const bar = document.querySelector('[data-role="bar"]');
         expect(bar.lastElementChild.classList.contains('toolbar-save')).toBe(true);
         expect(bar.lastElementChild.querySelector('[data-role="export"]')).not.toBeNull();
     });
@@ -150,12 +143,17 @@ describe('viewer - control layout', () => {
         const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
         /** the pager's buttons drive the same viewer the top bar does */
-        document.querySelector('#pager [data-role="next"]').click();
+        document.querySelector('[data-role="pager"] [data-role="next"]').click();
         expect(visible()[0].id).toBe('page-2');
         expect(viewer.page).toBe(2);
     });
 
     it('stops handling keys once destroyed', () => {
+        /**
+         * The page itself is gone by then - the viewer built everything inside
+         * the host element and takes it all away again - so what is checked is
+         * that the keystroke reached nothing, not where it left the report.
+         */
         const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
         viewer.next();
@@ -164,7 +162,19 @@ describe('viewer - control layout', () => {
         viewer.destroy();
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
 
-        expect(visible()[0].id).toBe('page-2');
+        expect(viewer.page).toBe(2);
+    });
+
+    it('leaves the host element as it found it', () => {
+        const { viewer } = mountReport({ items: rows(3), customer: { name: 'Anand' } });
+        const host = document.getElementById('report');
+
+        expect(host.querySelector('[data-role="bar"]')).not.toBeNull();
+
+        viewer.destroy();
+
+        expect(host.innerHTML).toBe('');
+        expect(host.className).toBe('');
     });
 
     it('renders each control exactly once', () => {
@@ -637,7 +647,7 @@ describe('viewer - export dialog with nothing to export', () => {
 
 describe('viewer - zoom', () => {
     const stack = () => document.querySelector('#main-page');
-    const scale = () => document.getElementById('preview').style.getPropertyValue('--zoom');
+    const scale = () => document.querySelector('[data-role="viewport"]').style.getPropertyValue('--zoom');
 
     /** the listbox has no .value - what the user reads is the trigger's label */
     const zoomLabel = () => document.querySelector('.dropdown-value').textContent.trim();
@@ -746,7 +756,7 @@ describe('viewer - zoom', () => {
         const { viewer, paginated } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         /** jsdom reports zero, so give the viewport a width to fit against */
-        Object.defineProperty(document.getElementById('preview'), 'clientWidth', {
+        Object.defineProperty(document.querySelector('[data-role="viewport"]'), 'clientWidth', {
             value: paginated.page.width + 48,
             configurable: true
         });

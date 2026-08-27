@@ -1,0 +1,63 @@
+/**
+ * 60 - 30 - 10.
+ *
+ *   60%  --surface   #fdfdfe   paper, toolbar, dialog: every calm surface
+ *   30%  --accent    #ff9c4b   every action, highlight and selected state
+ *   10%  --border    #cdd4db   borders and dividers, nothing else
+ *
+ * The backdrop is neutral rather than accent-tinted, so the accent has to earn
+ * its share through the Export button, search hits and selected cards instead
+ * of through one large wash. Tint --backdrop toward --accent to give it more.
+ *
+ * The three shades below are mixes of those, not new colours - each one exists
+ * because the base is too light to carry contrast on its own, and each says
+ * which ratio it buys. Change the three above and the shades stay in family.
+ */
+:root {
+  /* the palette */
+  --surface: #fdfdfe;
+  --accent: #ff9c4b;
+  --border: #cdd4db;
+
+  /* the ground the page sits on - a shade cooler than the paper, so the sheet
+     is told apart by its border rather than by a change in temperature */
+  --backdrop: #fbfcfd;
+  /* accent at 12% over surface - selected rows and cards */
+  --accent-soft: #fdf1e9;
+  /* accent at 70% over surface - a search hit you can see but are not standing on.
+     1.66:1 against the paper, where the yellow it replaces managed 1.23:1 */
+  --accent-tint: #feb981;
+  /* accent darkened - 3.5:1 on surface, enough for focus rings and active borders */
+  --accent-strong: #cc6f20;
+  /* darker still - 5.8:1 both ways, so it can carry text or sit under it */
+  --accent-ink: #8f572a;
+  /* border at 25% over surface - table headers and other quiet fills */
+  --surface-muted: #f1f3f5;
+
+  /* ink. #ff9c4b is light, so text on the accent is dark, never white: 7.25:1 */
+  --ink: #22272c;
+  --ink-soft: #667080;
+
+  --bar-height: 56px;
+  --pager-height: 44px;
+  /* how far the floating pager sits off the bottom edge */
+  --pager-offset: 20px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Courier Prime", monospace;
+  font-weight: 400;
+  font-style: normal;
+}
+
+/*
+ * Lifted out of the preview's stylesheet so the designer inherits exactly the
+ * same palette. A second copy of these values is a second thing to keep in
+ * step, and the one that falls behind is always the one nobody is looking at.
+ */

@@ -1,33 +1,19 @@
 /**
- * render.js catches the pages json and loop it
- * and render it in the html to visualize
+ * render.js takes the pages json and turns it into the preview's markup.
+ *
+ * It owns page and band composition only - where a band sits on a paginated
+ * page, and how the page box is drawn. Drawing the items inside a band lives in
+ * items.js, because the designer canvas needs that half and none of this one.
  */
+
+import { items, esc } from './items.js';
 
 
 /** used to return the padding config */
 const padding = (m) => `padding-top:${m.top}px;padding-left:${m.left}px;padding-bottom:${m.bottom}px;padding-right:${m.right}px;`
-const position = (p) => `position:absolute;top:${p.y}px;left:${p.x}px;`
 
 /** display order */
 const order = ['pageHeader', 'reportHeader', 'detail', 'reportFooter', 'pageFooter'];
-
-
-/**
- * Everything that reaches the page came from user data, so it is escaped on the
- * way into the markup. Without this a value like "<script>" is executed rather
- * than printed.
- * @param {*} value
- * @returns {string}
- */
-function esc(value) {
-    if (value == null) return '';
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 
 
 export function render(json) {
@@ -97,111 +83,8 @@ function bandConversion(comp, pageNO, pageConf) {
     const height = Math.max(comp.zoneHeight ?? 0, comp.measuredHeight ?? 0);
 
     return `
-    <div class="band" id="${esc(comp.type)}-${esc(pageNO)}" style="${box}${height > 0 ? `height:${height}px` : ""}">
+    <div class="band" id="${esc(comp.type)}-${esc(pageNO)}" style="${box}${height > 0 ? `height:${height}px` : ""}" data-band-type="${esc(comp.type)}">
         ${items(comp.items)}
     </div>
     `
-}
-
-
-function items(list) {
-    return (list || []).map(i => {
-        switch (i.type) {
-            case "text":
-                return text(i);
-            case "table":
-                return table(i)
-            default:
-                console.debug("invalid report type")
-                return ''
-        }
-    }).join("");
-}
-
-
-function text(i) {
-    return `
-    <p id="${esc(i.id)}" style="
-    width:${i.w}px;
-    height:${i.h}px;
-    ${position(i)}
-    font-size:${i.style.fontSize}px;
-    font-family:${i.style.fontFamily ?? 'inherit'};
-    font-weight:${i.style.fontWeight};
-    font-style:${i.style.fontStyle ?? 'normal'};
-    text-align:${i.style.align};
-    color:${i.style.color};
-    ">${esc(i.text)}</p>
-    `
-}
-
-
-function table(i) {
-    return `
-    <table id="${esc(i.id)}" style="width:${i.w}px;height:${i.measuredHeight}px;${position(i)}">
-        ${i.groups ? groupedBody(i) : flatBody(i)}
-    </table>
-    `
-}
-
-
-/** the column header row, shared by both table shapes */
-function columnHeader(i) {
-    return `<thead>
-        <tr style="height:${i.headerHeight ?? i.rowHeight}px">
-        ${i.columns.map(c => `<th style="width:${c.width}px;">${esc(c.label)}</th>`).join("")}
-        </tr>
-    </thead>`;
-}
-
-
-function dataRows(i, rows) {
-    return (rows || []).map(r =>
-        `<tr style="height:${i.rowHeight}px">
-        ${i.columns.map(c => `<td style="width:${c.width}px;text-align:${c.align};">${esc(r[c.field])}</td>`).join("")}
-        </tr>`
-    ).join("");
-}
-
-
-/**
- * A group band is a designed band with absolutely positioned items, so it is
- * dropped into a full-width cell that recreates the band box inside the table.
- */
-function groupBandRow(band, colSpan, cls) {
-    if (!band) return '';
-    const height = band.measuredHeight > 0 ? band.measuredHeight : (band.height ?? 0);
-    return `<tr class="${cls}">
-        <td colspan="${colSpan}" class="group-band-cell">
-            <div class="band" style="position:relative;height:${height}px">${items(band.items)}</div>
-        </td>
-    </tr>`;
-}
-
-
-function flatBody(i) {
-    return `
-        ${i.showHeader ? columnHeader(i) : ""}
-        <tbody>
-            ${dataRows(i, i.row)}
-        </tbody>
-    `;
-}
-
-
-/**
- * One tbody per group fragment, so a group that survives a page break keeps its
- * header on the next page and only prints its footer on the fragment that ends it.
- */
-function groupedBody(i) {
-    const colSpan = i.columns.length;
-
-    return i.groups.map(g => `
-        ${g.showHeader && i.showHeader ? columnHeader(i) : ""}
-        <tbody>
-            ${groupBandRow(g.headerBand, colSpan, "group-header")}
-            ${dataRows(i, g.rows)}
-            ${g.showFooter ? groupBandRow(g.footerBand, colSpan, "group-footer") : ""}
-        </tbody>
-    `).join("");
 }
