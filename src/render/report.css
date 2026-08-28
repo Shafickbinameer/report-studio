@@ -46,16 +46,100 @@
   table-layout: fixed;
 }
 
+/**
+ * No border, no padding, no height of the cell's own: the .cell box inside
+ * carries all three, so a row is exactly as tall as the engine budgeted it.
+ *
+ * Anything here is added to that height instead. `height` on a <tr> is only a
+ * minimum, and under border-collapse a 1px rule costs a further pixel a row -
+ * both invisible until the thirtieth row has pushed the detail band over the
+ * page footer. The engine paginates against headerHeight + rows x rowHeight,
+ * so that is what a row has to measure.
+ */
 .page th,
 .page td {
-  border: 1px solid var(--border, #cdd4db);
-  padding: 6px 8px;
+  border: none;
+  padding: 0;
   font-size: 12px;
+  overflow: hidden;
 }
+
+/**
+ * The cell's own box: the declared row height, with the padding and the rules
+ * drawn inside it. Each cell owns its top and left rule, so the grid lines
+ * between cells are drawn once, by the cell below and the cell to the right.
+ */
+.page .cell {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-top: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) var(--rs-rule-color, var(--border, #cdd4db));
+  border-left: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) var(--rs-rule-color, var(--border, #cdd4db));
+}
+
+/*
+ * The grid the table asked for. items.js sets --rs-rule-style, --rs-rule-color
+ * and --rs-rule-width on the table when it has an opinion, and custom
+ * properties inherit, so one declaration up there reaches every cell. Each
+ * carries its own fallback, so a table that says nothing still takes the
+ * sheet's colour and a hairline.
+ *
+ * .cell is box-sizing: border-box with a fixed height, so the rule is drawn
+ * inside the row rather than added to it - which is what keeps a table exactly
+ * headerHeight + rows x rowHeight tall. items.js clamps the width to half the
+ * shallowest row so that stays true.
+ */
+
+/* the outer right and bottom edges, drawn inside the cells that end the grid */
+.page tr > :last-child .cell {
+  border-right: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) var(--rs-rule-color, var(--border, #cdd4db));
+}
+
+.page tbody tr:last-child .cell {
+  border-bottom: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) var(--rs-rule-color, var(--border, #cdd4db));
+}
+
 
 .page th {
   font-weight: 600;
   background: var(--surface-muted, #f1f3f5);
+}
+
+/**
+ * A box is its own outline: w and h are the outside of it however thick the
+ * border, which is what the designer draws and what the engine measured.
+ */
+.page .box {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+/**
+ * A line is a box with a rule down the middle of it, not a rule that is the box:
+ * see items.js. The box is what the designer can grab and what the engine
+ * paginates against; the mark inside it is what prints.
+ */
+.page .line {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page .line-mark {
+  display: block;
+  width: 100%;
+  /* the one side the item asks for is set inline, and only that side is drawn */
+  border: 0 none;
+}
+
+.page .line.is-vertical .line-mark {
+  width: auto;
+  height: 100%;
 }
 
 /* group bands live inside the table, so the cell must not add chrome of its own */

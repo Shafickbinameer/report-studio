@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '../src/render/render.js';
-import { layout, text, table, band, rows, groupedRows, run } from './helpers/layout.js';
+import { items } from '../src/render/items.js';
+import {
+    layout, text, table, band, rows, groupedRows, run, box as boxItem
+} from './helpers/layout.js';
 
 beforeEach(() => {
     vi.spyOn(console, 'debug').mockImplementation(() => { });
@@ -185,5 +188,156 @@ describe('render - purity', () => {
         const after = paginated.pages.map(p => p.bands.map(b => b.type));
 
         expect(after).toEqual(before);
+    });
+});
+
+describe('render - a row is exactly the height the engine budgeted', () => {
+    /**
+     * `height` on a <tr> is a floor, not a height. When the cell's own padding
+     * and line box needed more, every row came out a few pixels taller than the
+     * rowHeight pagination had counted, and a long table drifted over the page
+     * footer. The height belongs to a box inside the cell, where nothing can
+     * add to it.
+     */
+    it('puts the row height on a box inside the cell', () => {
+        const html = flat({ items: rows(2) },
+            [band('detail', [table({ rowHeight: 24, headerHeight: 28 })])]);
+
+        expect(html).toContain('<tr style="height:24px">');
+        expect((html.match(/class="cell" style="height:24px/g) || []))
+            .toHaveLength(2 * 3);
+        expect((html.match(/class="cell" style="height:28px/g) || []))
+            .toHaveLength(3);
+    });
+
+    it('leaves the cell itself nothing to add to that height', () => {
+        const html = flat({ items: rows(1) }, [band('detail', [table()])]);
+
+        expect(html).not.toMatch(/<t[dh][^>]*padding/);
+        expect(html).not.toMatch(/<t[dh][^>]*height/);
+    });
+
+    it('draws column alignment on the cell box', () => {
+        const html = flat({ items: rows(1) }, [band('detail', [table()])]);
+
+        /* the fixture aligns Item left, Qty and Price right */
+        expect(html).toContain('justify-content:flex-start');
+        expect(html).toContain('justify-content:flex-end');
+    });
+
+    it('gives grouped rows the same fixed-height cells', () => {
+        const html = render(run(groupedLayout(), { items: groupedRows(['A'], 2) }));
+
+        expect((html.match(/class="cell" style="height:28px/g) || []).length)
+            .toBeGreaterThan(0);
+        expect(html).toContain('<tr style="height:28px">');
+    });
+});
+
+
+describe('render - the table grid', () => {
+    const withStyle = (style) => flat({ items: rows(2) },
+        [band('detail', [{ ...table(), style }])]);
+
+    it('carries the style and colour the table asked for', () => {
+        const html = withStyle({ borderStyle: 'dashed', borderColor: '#ff9c4b' });
+
+        expect(html).toContain('--rs-rule-style:dashed');
+        expect(html).toContain('--rs-rule-color:#ff9c4b');
+    });
+
+    it('draws every style a border can be', () => {
+        for (const borderStyle of ['solid', 'dashed', 'dotted', 'double', 'none']) {
+            expect(withStyle({ borderStyle })).toContain(`--rs-rule-style:${borderStyle}`);
+        }
+    });
+
+    /** a table with no opinion keeps taking the stylesheet's own border colour */
+    it('says nothing when the table says nothing', () => {
+        const html = withStyle({ fontSize: 12 });
+
+        expect(html).not.toContain('--rs-rule-style');
+        expect(html).not.toContain('--rs-rule-color');
+    });
+
+    /**
+     * The designer canvas draws straight from the layout without asking the
+     * validator, so a style it does not know has to fall back rather than land
+     * in a style attribute.
+     */
+    it('ignores a border style it does not recognise', () => {
+        /** drawn directly: the validator would turn this layout away first */
+        const html = items([
+            { ...table(), style: { borderStyle: 'squiggly', borderColor: '#000000' } }
+        ]);
+
+        expect(html).not.toContain('squiggly');
+        expect(html).toContain('--rs-rule-color:#000000');
+    });
+
+    /**
+     * Set once on the table and inherited, not written onto every cell: a five
+     * hundred row table would otherwise repeat it fifteen hundred times.
+     */
+    it('declares the grid once, on the table itself', () => {
+        const html = withStyle({ borderStyle: 'dotted' });
+
+        expect((html.match(/--rs-rule-style/g) || [])).toHaveLength(1);
+        expect(html).toMatch(/<table[^>]*--rs-rule-style:dotted/);
+    });
+});
+
+
+describe('render - the table rule width', () => {
+    const withStyle = (style, extra = {}) => items([
+        { ...table(), ...extra, style }
+    ]);
+
+    it('carries the width the table asked for', () => {
+        expect(withStyle({ borderWidth: 3 })).toContain('--rs-rule-width:3px');
+    });
+
+    it('says nothing when the table says nothing, so the hairline stands', () => {
+        expect(withStyle({ borderStyle: 'solid' })).not.toContain('--rs-rule-width');
+    });
+
+    /**
+     * .cell is border-box with a fixed height, so a rule is drawn inside the
+     * row until the two rules of a cell are together taller than it - at which
+     * point the cell grows and the table stops measuring what it declared.
+     */
+    it('clamps a rule too wide for the row it is drawn in', () => {
+        const html = withStyle({ borderWidth: 40 }, { rowHeight: 24, headerHeight: 28 });
+
+        expect(html).toContain('--rs-rule-width:12px');
+    });
+
+    it('clamps against the shallowest row, not the tallest', () => {
+        const html = withStyle({ borderWidth: 40 }, { rowHeight: 40, headerHeight: 10 });
+
+        expect(html).toContain('--rs-rule-width:5px');
+    });
+
+    it('never clamps below a hairline', () => {
+        const html = withStyle({ borderWidth: 4 }, { rowHeight: 1, headerHeight: 1 });
+
+        expect(html).toContain('--rs-rule-width:1px');
+    });
+
+    it('ignores a width that is not a number', () => {
+        expect(withStyle({ borderWidth: 'thick' })).not.toContain('--rs-rule-width');
+        expect(withStyle({ borderWidth: 0 })).not.toContain('--rs-rule-width');
+    });
+});
+
+
+describe('render - a box among other items', () => {
+    it('draws with the rest of its band', () => {
+        const html = flat({ items: rows(2) }, [band('detail', [
+            table(), boxItem('frame', { y: 300, h: 80 })
+        ])]);
+
+        expect(html).toContain('data-item-type="box"');
+        expect(html).toContain('data-item-type="table"');
     });
 });

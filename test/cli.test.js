@@ -14,6 +14,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { serve } from '../src/cli/serve.js';
+import { browserLaunch } from '../src/cli/index.js';
 
 const run = promisify(execFile);
 const CLI = resolve(process.cwd(), 'src/cli/index.js');
@@ -191,5 +192,64 @@ describe('the server it starts', () => {
 
     it('binds to loopback, because it serves a write endpoint', async () => {
         expect(started.url).toContain('127.0.0.1');
+    });
+});
+
+describe('how it opens the designer', () => {
+    /**
+     * The designer is a whole screen with its own bar, tool strip and rail. A
+     * tab strip and an address bar above it are chrome about a page that has
+     * none of its own, so where a Chromium-based browser can be found it is
+     * opened as an app window instead - measured at 36px of browser chrome
+     * against 94px for a tab.
+     */
+    const url = 'http://127.0.0.1:5177/designer/';
+
+    it('always has something to try', () => {
+        expect(browserLaunch(url).length).toBeGreaterThan(0);
+    });
+
+    it('asks for a window of its own before settling for a tab', () => {
+        const tried = browserLaunch(url);
+        const appWindows = tried.slice(0, -1);
+
+        for (const one of appWindows) {
+            expect(one.args).toContain(`--app=${url}`);
+        }
+    });
+
+    it('sizes the window for a page and the chrome round it', () => {
+        for (const one of browserLaunch(url).slice(0, -1)) {
+            expect(one.args.some(a => a.startsWith('--window-size='))).toBe(true);
+        }
+    });
+
+    /** whatever the platform registered for a URL, and never an app window */
+    it('falls back to opening it however the system would', () => {
+        const last = browserLaunch(url).at(-1);
+
+        expect(last.args.join(' ')).toContain(url);
+        expect(last.args.join(' ')).not.toContain('--app=');
+    });
+
+    it('goes straight to a tab when asked for one', () => {
+        const tried = browserLaunch(url, { tab: true });
+
+        expect(tried).toHaveLength(1);
+        expect(tried[0].args.join(' ')).not.toContain('--app=');
+    });
+
+    it('carries the url into every way it might be opened', () => {
+        for (const one of browserLaunch(url)) {
+            expect(one.args.join(' ')).toContain(url);
+        }
+    });
+
+    it('accepts --tab', async () => {
+        const result = await cli('design', '--tab', '--no-open', '--port', 'abc');
+
+        /** it got as far as the port check, so the flag itself was understood */
+        expect(result.stderr).toContain('--port');
+        expect(result.stderr).not.toContain('--tab');
     });
 });

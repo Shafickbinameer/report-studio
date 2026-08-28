@@ -144,7 +144,15 @@ export function designZones(layout) {
  * exactly as render.js does it, or every band would sit inside them.
  */
 function zone(z, margin) {
-    const drawn = (z.band.items || []).map(designItem);
+    /**
+     * Top to bottom, which is the order paginate.js places a band's items in
+     * and therefore the order they are painted in the report. Drawing them in
+     * file order instead put a box added last over the things it was drawn to
+     * frame - on the canvas only, so the design and the print disagreed.
+     */
+    const drawn = [...(z.band.items || [])]
+        .sort((a, b) => (a.y ?? 0) - (b.y ?? 0))
+        .map(designItem);
 
     return `
     <div class="band dz-zone" data-band-type="${esc(z.type)}"

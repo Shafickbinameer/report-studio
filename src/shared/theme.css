@@ -34,6 +34,10 @@
   /* border at 25% over surface - table headers and other quiet fills */
   --surface-muted: #f1f3f5;
 
+  /* the one destructive action in the designer, and the tint behind it */
+  --danger: #b3261e;
+  --danger-soft: #fdecec;
+
   /* ink. #ff9c4b is light, so text on the accent is dark, never white: 7.25:1 */
   --ink: #22272c;
   --ink-soft: #667080;

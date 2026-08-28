@@ -66,6 +66,10 @@ function measureItem(item, grouped, json) {
             return measureTextItem(item);
         case 'table':
             return measureTableItem(item, grouped, json);
+        case 'line':
+            return measureLineItem(item);
+        case 'box':
+            return item.h ?? 0;
         default:
             console.warn(`Unknown item type "${item.type}" on item "${item.id}"; treating as zero height.`);
             return 0;
@@ -84,6 +88,27 @@ function measureTextItem(item) {
     const declared = item.h ?? 0;
     const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0, item.style);
     return Math.max(declared, wrapped);
+}
+
+
+/**
+ * The box a line occupies, which is its declared `h` - the rule is drawn inside
+ * that box rather than being it, so that a hairline is still something the
+ * designer can get hold of.
+ *
+ * A rule thicker than its box grows the box, for the same reason wrapped text
+ * grows a text item: what is drawn is never quietly clipped.
+ *
+ * @param {object} item
+ * @returns {number}
+ */
+function measureLineItem(item) {
+    const declared = item.h ?? 0;
+
+    /** only a horizontal rule's thickness is a height; a vertical one's is a width */
+    if (item.orientation === 'vertical') return declared;
+
+    return Math.max(declared, item.style?.thickness ?? 0);
 }
 
 

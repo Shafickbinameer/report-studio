@@ -46,9 +46,50 @@ const ALIGNMENTS = [
     { label: 'Right', value: 'right' }
 ];
 
+const ORIENTATIONS = [
+    { label: 'Horizontal', value: 'horizontal' },
+    { label: 'Vertical', value: 'vertical' }
+];
+
+/**
+ * The four CSS border styles that read as a rule. `double` needs 3px before a
+ * browser can draw two lines and a gap, which the thickness field allows for.
+ */
+const LINE_STYLES = [
+    { label: 'Solid', value: 'solid' },
+    { label: 'Dashed', value: 'dashed' },
+    { label: 'Dotted', value: 'dotted' },
+    { label: 'Double', value: 'double' }
+];
+
+/**
+ * The same, plus off. A table's grid is often better away entirely - a column
+ * of figures usually reads more easily without one - which is not a thing a
+ * line can be, so the two lists are not shared.
+ */
+const RULE_STYLES = [...LINE_STYLES, { label: 'None', value: 'none' }];
+
 
 const num = (key, label, extra = {}) =>
     ({ key, label, type: 'number', ...extra });
+
+
+/**
+ * The widest rule a table can be drawn with and still measure what it declares.
+ * The same figure items.js clamps to - see maxRuleWidth there for why half the
+ * shallowest row is where it stops.
+ *
+ * @param {object} item a table
+ * @returns {number} pixels
+ */
+function maxRuleWidth(item) {
+    const rowHeight = item.rowHeight ?? 0;
+    const headerHeight = item.showHeader ? (item.headerHeight ?? rowHeight) : rowHeight;
+
+    const shallowest = Math.min(rowHeight || Infinity, headerHeight || Infinity);
+
+    return Number.isFinite(shallowest) ? Math.max(1, Math.floor(shallowest / 2)) : 1;
+}
 
 
 /**
@@ -87,6 +128,54 @@ export function fieldsFor(item) {
         ]
     };
 
+    if (item.type === 'box') {
+        return [
+            box,
+            {
+                title: 'Border',
+                fields: [
+                    {
+                        key: 'style.borderStyle', label: 'Style', type: 'choice',
+                        options: RULE_STYLES
+                    },
+                    num('style.borderWidth', 'Width', { min: 1 }),
+                    { key: 'style.borderColor', label: 'Colour', type: 'color' },
+                    num('style.radius', 'Corner', { min: 0 })
+                ]
+            },
+            {
+                title: 'Fill',
+                fields: [
+                    {
+                        key: 'style.background', label: 'Background', type: 'color',
+                        hint: 'Leave a box unfilled to frame what is behind it'
+                    }
+                ]
+            }
+        ];
+    }
+
+    if (item.type === 'line') {
+        return [
+            box,
+            {
+                title: 'Line',
+                fields: [
+                    {
+                        key: 'orientation', label: 'Runs', type: 'choice',
+                        options: ORIENTATIONS
+                    },
+                    num('style.thickness', 'Thickness', { min: 1 }),
+                    {
+                        key: 'style.lineStyle', label: 'Style', type: 'choice',
+                        options: LINE_STYLES
+                    },
+                    { key: 'style.color', label: 'Colour', type: 'color' }
+                ]
+            }
+        ];
+    }
+
     if (item.type === 'table') {
         return [
             box,
@@ -103,7 +192,21 @@ export function fieldsFor(item) {
                 fields: [
                     num('style.fontSize', 'Font size', { min: 1 }),
                     { key: 'style.color', label: 'Text', type: 'color' },
-                    { key: 'style.borderColor', label: 'Borders', type: 'color' }
+                    {
+                        key: 'style.borderStyle', label: 'Borders', type: 'choice',
+                        options: RULE_STYLES
+                    },
+                    num('style.borderWidth', 'Border width', {
+                        min: 1,
+                        /**
+                         * A rule taller than half a row makes the cell grow, and
+                         * a table that outgrows headerHeight + rows x rowHeight
+                         * is a table pagination has measured wrongly. The rail
+                         * will not offer the figure that does it.
+                         */
+                        max: maxRuleWidth(item)
+                    }),
+                    { key: 'style.borderColor', label: 'Border colour', type: 'color' }
                 ]
             }
         ];
@@ -271,7 +374,9 @@ function coerce(field, raw) {
         const value = Number(raw);
         if (!Number.isFinite(value)) return undefined;
 
-        return field.min != null ? Math.max(value, field.min) : value;
+        const floored = field.min != null ? Math.max(value, field.min) : value;
+
+        return field.max != null ? Math.min(floored, field.max) : floored;
     }
 
     if (raw === null || raw === undefined) return undefined;

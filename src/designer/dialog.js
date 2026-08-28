@@ -161,7 +161,8 @@ export function askName(root, suggested = '') {
  */
 function open(root, role, body, wire) {
     return new Promise(resolve => {
-        const host = document.createElement('div');
+        /** created in the document the designer is mounted in, not always this one */
+        const host = root.ownerDocument.createElement('div');
         host.className = 'modal';
         host.dataset.role = role;
         host.innerHTML = body;

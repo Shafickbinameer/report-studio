@@ -438,7 +438,72 @@
 
 /* ---------------- structure controls ---------------- */
 
+/**
+ * The right-click pill.
+ *
+ * Absolute inside .dz-main rather than fixed to the window, so it scrolls out
+ * of the way with the page area it belongs to and cannot be left hanging over
+ * the rail. Above the selection outline and its handles, below the bar.
+ */
+.dz-menu {
+  position: absolute;
+  z-index: 8;
+
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(34 39 44 / .18);
+}
+
+.dz-menu-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.dz-menu-item:hover:not(:disabled),
+.dz-menu-item:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  outline: none;
+}
+
+/* the one action that cannot be taken back by moving something else */
+.dz-menu-item.is-danger:hover:not(:disabled),
+.dz-menu-item.is-danger:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.dz-menu-item:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.dz-menu-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* the column editor's remove button; .dz-column-head lays it out on the right */
 .dz-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-left: auto;
   width: 20px;
   height: 20px;
@@ -562,25 +627,109 @@
   font-size: 10px;
 }
 
-/* ---------------- the problems banner ---------------- */
+/* ---------------- the corner ---------------- */
 
 /**
- * A banner above the page rather than instead of it. Most validation failures
- * are one keystroke from fixed - setting groupBy before adding a group band is
- * the common one - and taking the design away to say so is a punishment.
+ * Messages stack in the top right of the page area.
+ *
+ * Out of the flow rather than above the page: one placed there pushed the
+ * design down the canvas every time a half-finished layout failed to validate,
+ * which moved the very thing the author was pointing at.
+ *
+ * The corner of the page area, not of the window - the window's corner is the
+ * top of the properties rail, and that is where the band switches are, so a
+ * message pinned there would cover the fix for what it was complaining about.
+ *
+ * The column itself lets the pointer through, so it never takes a click meant
+ * for the page behind it; each toast takes its own back.
  */
-.dz-problems {
-  max-width: 640px;
-  margin: 0 auto 20px;
-  padding: 14px 18px;
+.dz-toasts {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(340px, calc(100vw - 32px));
+
+  pointer-events: none;
+}
+
+.dz-toast {
+  pointer-events: auto;
+
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
 
   background: var(--surface);
-  border: 1px solid var(--accent-strong);
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  box-shadow: 0 10px 28px rgb(34 39 44 / .16);
 
   font-family: "Instrument Sans", system-ui, sans-serif;
   font-size: 12px;
   color: var(--ink);
+
+  animation: dz-toast-in .18s ease-out;
+}
+
+/* it arrives from the edge it lives on */
+@keyframes dz-toast-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dz-toast { animation: none; }
+}
+
+.dz-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.dz-toast-title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* the findings themselves, which are field names as often as sentences */
+.dz-toast ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.dz-toast-close {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dz-toast-close:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 
 /* ---------------- the dialog ---------------- */

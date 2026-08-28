@@ -16,13 +16,12 @@
   "bands": [
     {
       "type": "pageHeader",
-      "height": 60,
       "items": [
         {
           "id": "text-1",
           "type": "text",
-          "x": 220,
-          "y": 20,
+          "x": 244,
+          "y": 8,
           "w": 200,
           "h": 20,
           "value": "Testing the report",
@@ -38,7 +37,90 @@
             "padding": 0
           }
         }
-      ]
+      ],
+      "height": 30
+    },
+    {
+      "type": "reportHeader",
+      "items": [
+        {
+          "id": "text-6",
+          "type": "text",
+          "x": 229,
+          "y": 27,
+          "w": 200,
+          "h": 20,
+          "value": "Good morning guys",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 19,
+            "fontWeight": "bold",
+            "fontStyle": "italic",
+            "color": "#000000",
+            "align": "center",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "line-1",
+          "type": "line",
+          "x": 200,
+          "y": 50,
+          "w": 257.2000732421875,
+          "h": 12,
+          "orientation": "horizontal",
+          "style": {
+            "thickness": 2,
+            "lineStyle": "dashed",
+            "color": "#000000"
+          }
+        },
+        {
+          "id": "line-2",
+          "type": "line",
+          "x": 440,
+          "y": 19,
+          "w": 36.40008544921875,
+          "h": 37.600006103515625,
+          "orientation": "vertical",
+          "style": {
+            "thickness": 2,
+            "lineStyle": "dashed",
+            "color": "#000000"
+          }
+        },
+        {
+          "id": "line-3",
+          "type": "line",
+          "x": 202,
+          "y": 14,
+          "w": 257.2000732421875,
+          "h": 12,
+          "orientation": "horizontal",
+          "style": {
+            "thickness": 2,
+            "lineStyle": "dashed",
+            "color": "#000000"
+          }
+        },
+        {
+          "id": "line-4",
+          "type": "line",
+          "x": 181,
+          "y": 19,
+          "w": 36.40008544921875,
+          "h": 37.600006103515625,
+          "orientation": "vertical",
+          "style": {
+            "thickness": 2,
+            "lineStyle": "dashed",
+            "color": "#000000"
+          }
+        }
+      ],
+      "height": 80
     },
     {
       "type": "detail",
@@ -87,7 +169,7 @@
           "id": "table-1",
           "type": "table",
           "x": 0,
-          "y": 123,
+          "y": 140,
           "w": 711.5999755859375,
           "dataset": null,
           "rowHeight": 24,
@@ -116,7 +198,44 @@
           "style": {
             "fontSize": 12,
             "color": "#000000",
-            "borderColor": "#a8a3a3"
+            "borderColor": "#000000",
+            "borderStyle": "dashed",
+            "borderWidth": 1
+          }
+        },
+        {
+          "id": "text-5",
+          "type": "text",
+          "x": 480,
+          "y": 30,
+          "w": 200,
+          "h": 20,
+          "value": "Place : {place}",
+          "style": {
+            "fontFamily": "Helvetica, Arial, sans-serif",
+            "fontSize": 12,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "color": "#000000",
+            "align": "left",
+            "background": null,
+            "border": null,
+            "padding": 0
+          }
+        },
+        {
+          "id": "box-1",
+          "type": "box",
+          "x": -1,
+          "y": 0,
+          "w": 714,
+          "h": 116,
+          "style": {
+            "borderStyle": "dashed",
+            "borderWidth": 2,
+            "borderColor": "#000000",
+            "background": null,
+            "radius": 0
           }
         }
       ]

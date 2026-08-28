@@ -26,6 +26,13 @@ import { esc } from '../render/items.js';
 
 
 /**
+ * The rail describes what a thing is; what you can do to it lives in the pill
+ * that opens on a right-click, beside the item rather than at the edge of the
+ * screen. See menu.js.
+ */
+
+
+/**
  * The rail for a selected item.
  * @param {object} item
  * @returns {string} markup
@@ -35,8 +42,6 @@ export function drawPanel(item) {
     <div class="dz-panel-head">
         <span class="dz-panel-type">${esc(item.type)}</span>
         <span class="dz-panel-id">${esc(item.id)}</span>
-        <button type="button" class="dz-icon" data-action="delete-item"
-                title="Delete this item (del)" aria-label="Delete item">&times;</button>
     </div>
     ${sections(item, fieldsFor(item))}
     ${item.type === 'table' ? columns(item) : ''}`;
@@ -59,9 +64,6 @@ export function drawManyPanel(items) {
     return `
     <div class="dz-panel-head">
         <span class="dz-panel-type">${items.length} items</span>
-        <button type="button" class="dz-icon" data-action="delete-item"
-                title="Delete these items (del)"
-                aria-label="Delete ${items.length} items">&times;</button>
     </div>
 
     <section class="dz-section">
@@ -180,7 +182,8 @@ function input(id, bind, field, value) {
         default:
             return `<input type="number" id="${id}" ${bind}
                 value="${esc(value ?? '')}"
-                ${field.min != null ? `min="${field.min}"` : ''} step="1">`;
+                ${field.min != null ? `min="${field.min}"` : ''}
+                ${field.max != null ? `max="${field.max}"` : ''} step="1">`;
     }
 }
 
@@ -383,7 +386,8 @@ export function syncPanel(panel, item, layout) {
     const fields = item ? allFields(item) : allReportFields(layout);
 
     for (const node of panel.querySelectorAll('[data-field]')) {
-        if (node === document.activeElement) continue;
+        /** the panel's own document: a designer in its own window has another */
+        if (node === node.ownerDocument.activeElement) continue;
 
         const isColumn = node.dataset.column != null;
         const source = isColumn

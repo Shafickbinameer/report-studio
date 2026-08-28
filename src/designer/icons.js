@@ -26,6 +26,12 @@ export const ICONS = {
     table: wrap(`<rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.25"/>
                  <path d="M2.25 6.5h11.5M6.5 6.5v6.25M10 6.5v6.25"/>`),
 
+    /** an empty rectangle: the frame, and nothing in it */
+    box: wrap(`<rect x="2.5" y="3.75" width="11" height="8.5" rx="1.25"/>`),
+
+    /** a rule across the middle, with the dashes that say it need not be solid */
+    line: wrap(`<path d="M2 8h3.5M7.25 8h1.5M10.5 8H14"/>`),
+
     /** an arrow curving back on itself, the mark undo has had for forty years */
     undo: wrap(`<path d="M6 4.5 2.75 7.75 6 11"/>
                 <path d="M2.75 7.75h6.75a3.75 3.75 0 0 1 0 7.5H7"/>`),
@@ -63,6 +69,34 @@ export const ICONS = {
     data: wrap(`<ellipse cx="8" cy="4" rx="5.25" ry="2"/>
                 <path d="M2.75 4v8c0 1.1 2.35 2 5.25 2s5.25-.9 5.25-2V4"/>
                 <path d="M2.75 8c0 1.1 2.35 2 5.25 2s5.25-.9 5.25-2"/>`),
+
+    /**
+     * Two plain squares, offset: one more of the same thing. Deliberately not
+     * the two-sheets mark below - duplicate and copy sit next to each other in
+     * the rail, and two glyphs that differ only in detail are two glyphs nobody
+     * can tell apart at 16px.
+     */
+    duplicate: wrap(`<rect x="2.5" y="2.5" width="8" height="8" rx="1.25"/>
+                     <rect x="5.5" y="5.5" width="8" height="8" rx="1.25"/>`),
+
+    /** a sheet over a sheet: the copy mark, notched corner and all */
+    copy: wrap(`<path d="M6 2.25h3.6L12.25 4.9v5.85a.75.75 0 0 1-.75.75H6
+                         a.75.75 0 0 1-.75-.75V3a.75.75 0 0 1 .75-.75z"/>
+                <path d="M9.35 2.4v2.65h2.75"/>
+                <path d="M3.9 5.5H3a.75.75 0 0 0-.75.75V13a.75.75 0 0 0 .75.75h5.4
+                         a.75.75 0 0 0 .75-.75v-.75"/>`),
+
+    /** a bin, for the one action in the menu worth drawing in red */
+    delete: wrap(`<path d="M2.75 4.5h10.5"/>
+                  <path d="M6.25 4.5V3.25a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75V4.5"/>
+                  <path d="M4.4 4.5l.55 8.15a.85.85 0 0 0 .85.8h4.4a.85.85 0 0 0 .85-.8L11.6 4.5"/>
+                  <path d="M6.85 7v3.75M9.15 7v3.75"/>`),
+
+    /** a clipboard, clip and all - where a copy comes back from */
+    paste: wrap(`<path d="M6.25 3.25H4.5a.75.75 0 0 0-.75.75v8.75
+                          a.75.75 0 0 0 .75.75h7a.75.75 0 0 0 .75-.75V4
+                          a.75.75 0 0 0-.75-.75H9.75"/>
+                 <rect x="6.25" y="1.75" width="3.5" height="2.75" rx=".85"/>`),
 
     /** a disk: the shutter above, the label below */
     save: wrap(`<path d="M2.75 3.25h8.5l2.5 2.5v7a.5.5 0 0 1-.5.5h-11

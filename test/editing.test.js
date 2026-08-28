@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDesigner } from '../src/designer/designer.js';
 import { validateLayout } from '../src/engine/validate.js';
+import { designZones } from '../src/designer/canvas.js';
 import { layout, text, table, band } from './helpers/layout.js';
 
 beforeEach(() => {
@@ -36,6 +37,18 @@ function mount(l = json()) {
     return designer;
 }
 
+/**
+ * The shared fixture already has a table, and a report binds one - so the table
+ * tool is only offered on a report that has not got one yet.
+ */
+const tableless = () => layout({
+    bands: [
+        band('pageHeader', [], { height: 40 }),
+        band('detail', [text('t1', { x: 0, y: 0, w: 200, h: 40 })])
+    ]
+});
+
+
 const root = () => document.getElementById('report-designer');
 const panel = () => root().querySelector('.dz-panel');
 const drawn = (id) => root().querySelector(`[data-item-id="${id}"]`);
@@ -57,6 +70,20 @@ function select(id) {
     });
     event.pointerId = 1;
     drawn(id).dispatchEvent(event);
+}
+
+/**
+ * Right-click something and press one of the pill's buttons. The actions that
+ * used to sit in the rail and the tool strip live there now.
+ */
+function menuOn(id = null) {
+    const target = id ? drawn(id) : root().querySelector('.dz-canvas');
+
+    target.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 2
+    }));
+
+    return root().querySelector('[data-role="menu"]');
 }
 
 /**
@@ -160,14 +187,14 @@ describe('adding items', () => {
     });
 
     it('adds a table once the dialog is answered', async () => {
-        const d = mount();
+        const d = mount(tableless());
         await addTable(4);
 
         expect(itemsOn(d, 'detail')).toContain('table-1');
     });
 
     it('leaves the report valid', async () => {
-        const d = mount();
+        const d = mount(tableless());
         press(foot(), 'add-text');
         await addTable(3);
 
@@ -181,15 +208,15 @@ describe('the table dialog', () => {
     const foot = () => root().querySelector('.dz-foot');
 
     it('asks before adding anything', () => {
-        const d = mount();
+        const d = mount(tableless());
         press(foot(), 'add-table');
 
         expect(dialog()).not.toBeNull();
-        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
+        expect(itemsOn(d, 'detail')).toEqual(['t1']);
     });
 
     it('makes the number of columns it was given', async () => {
-        const d = mount();
+        const d = mount(tableless());
         await addTable(5);
 
         const made = d.layout.bands[1].items.at(-1);
@@ -197,7 +224,7 @@ describe('the table dialog', () => {
     });
 
     it('starts every column at 50 wide', async () => {
-        const d = mount();
+        const d = mount(tableless());
         await addTable(4);
 
         expect(d.layout.bands[1].items.at(-1).columns.map(c => c.width))
@@ -205,13 +232,13 @@ describe('the table dialog', () => {
     });
 
     it('adds nothing when cancelled', async () => {
-        const d = mount();
+        const d = mount(tableless());
         press(foot(), 'add-table');
         click(dialog().querySelector('[data-role="cancel"]'));
 
         await new Promise(resolve => setTimeout(resolve, 0));
 
-        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
+        expect(itemsOn(d, 'detail')).toEqual(['t1']);
         expect(dialog()).toBeNull();
     });
 
@@ -220,7 +247,7 @@ describe('the table dialog', () => {
          * select.js listens for escape too - the dialog captures and stops it,
          * or cancelling would silently deselect whatever was being worked on.
          */
-        const d = mount();
+        const d = mount(tableless());
         select('t1');
         press(foot(), 'add-table');
 
@@ -254,10 +281,10 @@ describe('the table dialog', () => {
 
 
 describe('deleting items', () => {
-    it('removes the selected item from the rail button', () => {
+    it('removes the selected item from the right-click pill', () => {
         const d = mount();
         select('t1');
-        press(panel(), 'delete-item');
+        press(menuOn('t1'), 'delete-item');
 
         expect(itemsOn(d, 'detail')).toEqual(['tbl']);
     });
@@ -680,6 +707,804 @@ describe('the field tool', () => {
         choose('sum');
         pick('field', 'qty');
         await insert();
+
+        expect(validateLayout(d.layout)).toEqual([]);
+    });
+});
+
+describe('duplicating an item', () => {
+    /** shift-click, which is how the canvas extends a selection */
+    function addToSelection(id) {
+        const event = new MouseEvent('pointerdown', {
+            bubbles: true, cancelable: true, clientX: 0, clientY: 0,
+            button: 0, shiftKey: true
+        });
+        event.pointerId = 1;
+        drawn(id).dispatchEvent(event);
+    }
+
+    /** ctrl+d, on the root the designer binds its shortcuts to */
+    function chord(letter, node = root()) {
+        node.dispatchEvent(new KeyboardEvent('keydown', {
+            key: letter, ctrlKey: true, bubbles: true, cancelable: true
+        }));
+    }
+
+    it('offers duplicate in the pill, as a labelled glyph', () => {
+        mount();
+        select('t1');
+
+        const button = menuOn('t1').querySelector('[data-action="duplicate-item"]');
+
+        expect(button).not.toBeNull();
+        expect(button.querySelector('svg')).not.toBeNull();
+        expect(button.getAttribute('aria-label')).toBeTruthy();
+        expect(button.getAttribute('title')).toBeTruthy();
+    });
+
+    it('keeps the rail describing the item rather than acting on it', () => {
+        mount();
+        select('t1');
+
+        expect(panel().querySelector('[data-action="duplicate-item"]')).toBeNull();
+        expect(panel().querySelector('[data-action="delete-item"]')).toBeNull();
+    });
+
+    it('adds a second item to the band', () => {
+        const d = mount();
+        select('t1');
+        press(menuOn('t1'), 'duplicate-item');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(3);
+        expect(itemsOn(d, 'detail')[0]).toBe('t1');
+    });
+
+    it('leaves the copy selected, not the original', () => {
+        const d = mount();
+        select('t1');
+        press(menuOn('t1'), 'duplicate-item');
+
+        const made = itemsOn(d, 'detail').at(-1);
+
+        expect(panel().querySelector('.dz-panel-id').textContent).toBe(made);
+        expect(made).not.toBe('t1');
+    });
+
+    it('duplicates on ctrl+d as well', () => {
+        const d = mount();
+        select('t1');
+        chord('d');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(3);
+    });
+
+    it('does nothing when nothing is selected', () => {
+        const d = mount();
+        chord('d');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+    });
+
+    /**
+     * A report binds one table, so a copy of it would be one that printed its
+     * header and no rows. Offered greyed rather than hidden, so the pill says
+     * the action exists and why it cannot be taken.
+     */
+    it('will not copy the table, and says why in the pill', () => {
+        const d = mount();
+        select('tbl');
+
+        const button = menuOn('tbl').querySelector('[data-action="duplicate-item"]');
+
+        expect(button.disabled).toBe(true);
+        expect(button.getAttribute('aria-label')).toMatch(/one table/);
+        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
+    });
+
+    it('says why when the shortcut is used instead', () => {
+        const d = mount();
+        select('tbl');
+        chord('d');
+
+        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
+        expect(root().querySelector('[data-role="status"]').textContent)
+            .toMatch(/one table/);
+    });
+
+    it('copies every item of a multiple selection', () => {
+        const d = mount(layout({
+            bands: [band('detail', [
+                text('t1', { y: 0, h: 20 }),
+                text('t2', { y: 40, h: 20 })
+            ])]
+        }));
+        select('t1');
+        addToSelection('t2');
+
+        press(menuOn('t2'), 'duplicate-item');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(4);
+        expect(panel().querySelector('.dz-panel-type').textContent).toBe('2 items');
+    });
+
+    it('is one undo step, however many were copied', () => {
+        const d = mount(layout({
+            bands: [band('detail', [
+                text('t1', { y: 0, h: 20 }),
+                text('t2', { y: 40, h: 20 })
+            ])]
+        }));
+        select('t1');
+        addToSelection('t2');
+        press(menuOn('t2'), 'duplicate-item');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(4);
+
+        chord('z');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+    });
+
+    it('leaves a layout the engine still accepts', () => {
+        const d = mount();
+        select('tbl');
+        press(menuOn('tbl'), 'duplicate-item');
+
+        expect(() => validateLayout(d.layout)).not.toThrow();
+    });
+
+    it('marks the report unsaved, as any other edit does', () => {
+        const d = mount();
+        select('t1');
+        press(menuOn('t1'), 'duplicate-item');
+
+        expect(d.dirty).toBe(true);
+    });
+});
+
+describe('copy and paste', () => {
+    /** the shared fixture has an empty page header; these need something in it */
+    const withHeader = () => layout({
+        bands: [
+            band('pageHeader', [text('ph', { x: 0, y: 0, w: 200, h: 20 })], { height: 60 }),
+            band('detail', [text('t1', { x: 0, y: 0, w: 200, h: 40 }), table({ id: 'tbl' })])
+        ]
+    });
+    /** the pill's paste button, for whatever the right-click landed on */
+    const pasteButton = (id = null) =>
+        menuOn(id).querySelector('[data-action="paste-items"]');
+
+    function chord(letter, { on = root(), target = null } = {}) {
+        const event = new KeyboardEvent('keydown', {
+            key: letter, ctrlKey: true, bubbles: true, cancelable: true
+        });
+        (target ?? on).dispatchEvent(event);
+        return event;
+    }
+
+    it('offers copy on an item, and paste on bare page too', () => {
+        mount();
+        select('t1');
+
+        expect(menuOn('t1').querySelector('[data-action="copy-items"]')).not.toBeNull();
+
+        /** a right-click on nothing still opens, so paste is always reachable */
+        const bare = menuOn();
+
+        expect(bare.querySelector('[data-action="paste-items"]')).not.toBeNull();
+        expect(bare.querySelector('[data-action="copy-items"]')).toBeNull();
+    });
+
+    it('has nothing to paste until something is copied', () => {
+        mount();
+
+        expect(pasteButton().disabled).toBe(true);
+
+        select('t1');
+        press(menuOn('t1'), 'copy-items');
+
+        expect(pasteButton().disabled).toBe(false);
+    });
+
+    it('copying alone changes nothing', () => {
+        const d = mount();
+        select('t1');
+        press(menuOn('t1'), 'copy-items');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+        expect(d.dirty).toBe(false);
+    });
+
+    it('pastes a copy onto the band', () => {
+        const d = mount();
+        select('t1');
+        press(menuOn('t1'), 'copy-items');
+        click(pasteButton('t1'));
+
+        expect(itemsOn(d, 'detail')).toHaveLength(3);
+        expect(itemsOn(d, 'detail')[0]).toBe('t1');
+    });
+
+    it('works from the keyboard', () => {
+        const d = mount();
+        select('t1');
+        chord('c');
+        chord('v');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(3);
+    });
+
+    it('pastes again without stacking one copy on the last', () => {
+        const d = mount();
+        select('t1');
+        chord('c');
+        chord('v');
+        chord('v');
+
+        const items = d.layout.bands.find(b => b.type === 'detail').items;
+        const copies = items.filter(i => i.id !== 't1' && i.type === 'text');
+
+        expect(copies).toHaveLength(2);
+        expect(copies[0].y).not.toBe(copies[1].y);
+    });
+
+    it('pastes into the band being worked in', () => {
+        const d = mount(withHeader());
+        select('t1');
+        chord('c');
+
+        /** selecting the header band's own item makes it the paste target */
+        select('ph');
+        chord('v');
+
+        expect(itemsOn(d, 'pageHeader')).toHaveLength(2);
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+    });
+
+    it('brings an item pasted into a shorter band into view', () => {
+        const d = mount(withHeader());
+        select('t1');
+        chord('c');
+        select('ph');
+        chord('v');
+
+        const zone = designZones(d.layout).find(z => z.type === 'pageHeader');
+        const pasted = d.layout.bands
+            .find(b => b.type === 'pageHeader').items.at(-1);
+
+        expect(pasted.y).toBeLessThanOrEqual(zone.height);
+    });
+
+    it('leaves the clipboard alone when the original is edited afterwards', () => {
+        const d = mount();
+        select('t1');
+        chord('c');
+
+        d.layout.bands.find(b => b.type === 'detail')
+            .items.find(i => i.id === 't1').value = 'changed';
+
+        chord('v');
+
+        const pasted = d.layout.bands.find(b => b.type === 'detail').items.at(-1);
+
+        expect(pasted.value).not.toBe('changed');
+    });
+
+    /**
+     * The shortcut people reach for far more often is copying a value out of
+     * the rail, and a designer that swallows it is a designer they stop using.
+     */
+    it('leaves ctrl+C to the browser while a field has the caret', () => {
+        const d = mount();
+        select('t1');
+
+        const box = panel().querySelector('textarea, input');
+        const event = chord('c', { target: box });
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(pasteButton().disabled).toBe(true);
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+    });
+
+    it('pastes nothing when nothing was copied', () => {
+        const d = mount();
+        chord('v');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+    });
+
+    it('leaves a layout the engine still accepts', () => {
+        const d = mount();
+        select('tbl');
+        chord('c');
+        chord('v');
+
+        expect(() => validateLayout(d.layout)).not.toThrow();
+    });
+});
+
+describe('the right-click pill', () => {
+    const openMenu = () => root().querySelector('[data-role="menu"]');
+
+    function rightClick(id = null) {
+        const target = id ? drawn(id) : root().querySelector('.dz-canvas');
+
+        target.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 2
+        }));
+    }
+
+    it('opens on a right-click and suppresses the browser menu', () => {
+        mount();
+
+        const event = new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 2
+        });
+        drawn('t1').dispatchEvent(event);
+
+        expect(openMenu()).not.toBeNull();
+        expect(event.defaultPrevented).toBe(true);
+    });
+
+    /**
+     * Otherwise Delete would take whatever happened to be selected somewhere
+     * else on the page, which is how a layout gets lost to a stray click.
+     */
+    it('selects what was right-clicked, if it was not already', () => {
+        const d = mount();
+        select('t1');
+        rightClick('tbl');
+
+        press(openMenu(), 'delete-item');
+
+        expect(itemsOn(d, 'detail')).toEqual(['t1']);
+    });
+
+    it('keeps a group when one of its members is right-clicked', () => {
+        const d = mount();
+        select('t1');
+
+        const event = new MouseEvent('pointerdown', {
+            bubbles: true, cancelable: true, clientX: 0, clientY: 0,
+            button: 0, shiftKey: true
+        });
+        event.pointerId = 1;
+        drawn('tbl').dispatchEvent(event);
+
+        rightClick('tbl');
+        press(openMenu(), 'delete-item');
+
+        expect(itemsOn(d, 'detail')).toEqual([]);
+    });
+
+    it('drops the selection when the right-click was on bare page', () => {
+        mount();
+        select('t1');
+        rightClick();
+
+        expect(openMenu().querySelector('[data-action="delete-item"]')).toBeNull();
+        expect(openMenu().querySelector('[data-action="paste-items"]')).not.toBeNull();
+    });
+
+    it('is placed inside the page area', () => {
+        mount();
+        rightClick('t1');
+
+        const menu = openMenu();
+
+        expect(menu.parentElement.classList.contains('dz-main')).toBe(true);
+        expect(menu.style.left).toMatch(/px$/);
+        expect(menu.style.top).toMatch(/px$/);
+    });
+
+    it('closes once an action is taken', () => {
+        mount();
+        rightClick('t1');
+        press(openMenu(), 'duplicate-item');
+
+        expect(openMenu()).toBeNull();
+    });
+
+    it('closes on a press anywhere else', () => {
+        mount();
+        rightClick('t1');
+
+        const event = new MouseEvent('pointerdown', {
+            bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 0
+        });
+        event.pointerId = 1;
+        document.body.dispatchEvent(event);
+
+        expect(openMenu()).toBeNull();
+    });
+
+    it('closes on escape', () => {
+        mount();
+        rightClick('t1');
+
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape', bubbles: true, cancelable: true
+        }));
+
+        expect(openMenu()).toBeNull();
+    });
+
+    it('closes when the page is scrolled out from under it', () => {
+        mount();
+        rightClick('t1');
+
+        root().querySelector('.dz-canvas')
+            .dispatchEvent(new Event('scroll', { bubbles: false }));
+
+        expect(openMenu()).toBeNull();
+    });
+
+    it('opens again after being closed, without stacking pills', () => {
+        mount();
+        rightClick('t1');
+        rightClick('tbl');
+
+        expect(root().querySelectorAll('[data-role="menu"]')).toHaveLength(1);
+    });
+
+    it('does not open over a report that is being previewed', () => {
+        const d = mount();
+        d.togglePreview();
+
+        expect(d.mode).toBe('preview');
+
+        rightClick();
+
+        expect(openMenu()).toBeNull();
+    });
+
+    it('goes when the designer does', () => {
+        mount();
+        rightClick('t1');
+
+        expect(openMenu()).not.toBeNull();
+
+        designer.destroy();
+        designer = null;
+
+        expect(document.querySelector('[data-role="menu"]')).toBeNull();
+    });
+
+    it('says so in the bar when a copy is taken, since nothing else moves', () => {
+        mount();
+        select('t1');
+        press(menuOn('t1'), 'copy-items');
+
+        expect(root().querySelector('[data-role="status"]').textContent)
+            .toBe('Copied');
+    });
+});
+
+describe('problems are said in the corner', () => {
+    const toast = () => root().querySelector('.dz-toasts .dz-problems');
+
+    /** the layout the author is halfway through: grouped, but no group band yet */
+    const halfGrouped = (d) => {
+        d.layout.groupBy = 'region';
+        d.redraw();
+    };
+
+    it('puts the toast in the corner region, not in the canvas', () => {
+        const d = mount();
+        halfGrouped(d);
+
+        expect(toast()).not.toBeNull();
+        expect(root().querySelector('.dz-canvas .dz-problems')).toBeNull();
+    });
+
+    /**
+     * The window's top right corner is the top of the properties rail, and the
+     * rail is where the band switches are - so a message pinned there would
+     * cover the fix for the thing it is complaining about.
+     */
+    it('hangs over the page area, not over the properties rail', () => {
+        const d = mount();
+        halfGrouped(d);
+
+        const region = root().querySelector('.dz-toasts');
+
+        expect(region.closest('.dz-main')).not.toBeNull();
+        expect(region.closest('.dz-panel')).toBeNull();
+    });
+
+    /**
+     * The whole point of the move: a half-finished layout is the normal state
+     * of one being designed, and a message above the page shifted the design
+     * down the canvas every time.
+     */
+    it('leaves the page where it was', () => {
+        const d = mount();
+        const canvas = root().querySelector('.dz-canvas');
+
+        expect(canvas.firstElementChild.classList.contains('dz-sheet')).toBe(true);
+
+        halfGrouped(d);
+
+        expect(canvas.firstElementChild.classList.contains('dz-sheet')).toBe(true);
+        expect(root().querySelector('.dz-page')).not.toBeNull();
+    });
+
+    it('closes when told to, and stays closed for the same problem', () => {
+        const d = mount();
+        halfGrouped(d);
+
+        click(toast().querySelector('[data-action="dismiss-problems"]'));
+
+        expect(toast()).toBeNull();
+
+        d.redraw();
+
+        expect(toast()).toBeNull();
+    });
+
+    it('comes back when what is wrong changes', () => {
+        const d = mount();
+        halfGrouped(d);
+        click(toast().querySelector('[data-action="dismiss-problems"]'));
+
+        expect(toast()).toBeNull();
+
+        /** a second fault: the validator now has more to say */
+        d.layout.page = {};
+        d.redraw();
+
+        expect(toast()).not.toBeNull();
+    });
+
+    it('goes when the report validates, and is announced again if it breaks', () => {
+        const d = mount();
+        halfGrouped(d);
+
+        expect(toast()).not.toBeNull();
+
+        /** re-queried each time: switching a band on rebuilds the rail */
+        const setBand = (on) => {
+            const node = panel().querySelector('[data-band="groupHeader"]');
+            node.checked = on;
+            node.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        setBand(true);
+
+        expect(toast()).toBeNull();
+
+        setBand(false);
+
+        expect(toast()).not.toBeNull();
+    });
+
+    it('says nothing over a preview, which reports its own failure', () => {
+        const d = mount();
+        halfGrouped(d);
+
+        expect(toast()).not.toBeNull();
+
+        d.togglePreview();
+
+        expect(toast()).toBeNull();
+
+        d.togglePreview();
+
+        expect(toast()).not.toBeNull();
+    });
+
+    it('names the field the validator named', () => {
+        const d = mount();
+        d.layout.page = {};
+        d.redraw();
+
+        expect(toast().textContent).toMatch(/page\.width/);
+    });
+});
+
+describe('the line tool', () => {
+    const foot = () => root().querySelector('.dz-foot');
+
+    const lastOn = (d, type) =>
+        d.layout.bands.find(b => b.type === type).items.at(-1);
+
+    it('adds a line to the band being worked in', () => {
+        const d = mount();
+        press(foot(), 'add-line');
+
+        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl', 'line-1']);
+        expect(lastOn(d, 'detail').type).toBe('line');
+    });
+
+    it('draws the tool as a labelled glyph, like the rest of the strip', () => {
+        mount();
+        const button = foot().querySelector('[data-action="add-line"]');
+
+        expect(button.querySelector('svg')).not.toBeNull();
+        expect(button.getAttribute('aria-label')).toBeTruthy();
+        expect(button.getAttribute('title')).toBeTruthy();
+    });
+
+    it('selects what it added, so the rail is already on it', () => {
+        const d = mount();
+        press(foot(), 'add-line');
+
+        expect(d.selection).toMatchObject({ band: 'detail', id: 'line-1' });
+        expect(panel().querySelector('.dz-panel-type').textContent).toBe('line');
+    });
+
+    it('offers the pen in the rail', () => {
+        mount();
+        press(foot(), 'add-line');
+
+        const labels = [...panel().querySelectorAll('label')]
+            .map(l => l.textContent.trim());
+
+        expect(labels).toEqual(expect.arrayContaining(['Runs', 'Thickness', 'Style']));
+    });
+
+    it('draws it on the canvas as a line, not as a box', () => {
+        mount();
+        press(foot(), 'add-line');
+
+        const node = root().querySelector('[data-item-id="line-1"]');
+
+        expect(node.dataset.itemType).toBe('line');
+        expect(node.querySelector('.line-mark')).not.toBeNull();
+    });
+
+    it('adds it to the band the selection is on instead', () => {
+        const d = mount();
+        select('t1');
+        d.select({ band: 'pageHeader', id: null });
+        press(foot(), 'add-line');
+
+        expect(itemsOn(d, 'pageHeader')).toEqual(['line-1']);
+    });
+
+    it('leaves a layout the engine accepts', () => {
+        const d = mount();
+        press(foot(), 'add-line');
+
+        expect(validateLayout(d.layout)).toEqual([]);
+    });
+
+    it('is one undo step', () => {
+        const d = mount();
+        press(foot(), 'add-line');
+
+        expect(itemsOn(d, 'detail')).toHaveLength(3);
+
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+
+        expect(itemsOn(d, 'detail')).toHaveLength(2);
+    });
+});
+
+describe('the box tool', () => {
+    const foot = () => root().querySelector('.dz-foot');
+
+    it('adds a box to the band being worked in', () => {
+        const d = mount();
+        press(foot(), 'add-box');
+
+        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl', 'box-1']);
+    });
+
+    it('draws the tool as a labelled glyph, like the rest of the strip', () => {
+        mount();
+        const button = foot().querySelector('[data-action="add-box"]');
+
+        expect(button.querySelector('svg')).not.toBeNull();
+        expect(button.getAttribute('aria-label')).toBeTruthy();
+        expect(button.getAttribute('title')).toBeTruthy();
+    });
+
+    it('offers the outline in the rail', () => {
+        mount();
+        press(foot(), 'add-box');
+
+        const labels = [...panel().querySelectorAll('label')]
+            .map(l => l.textContent.trim());
+
+        expect(labels).toEqual(expect.arrayContaining(['Style', 'Width', 'Corner']));
+    });
+
+    it('draws it on the canvas as a box', () => {
+        mount();
+        press(foot(), 'add-box');
+
+        expect(root().querySelector('[data-item-id="box-1"]').dataset.itemType)
+            .toBe('box');
+    });
+
+    it('leaves a layout the engine accepts', () => {
+        const d = mount();
+        press(foot(), 'add-box');
+
+        expect(validateLayout(d.layout)).toEqual([]);
+    });
+
+    /**
+     * A box is usually drawn round something, and the canvas paints in the same
+     * order the print does - by y - so a frame placed above what it frames sits
+     * behind it rather than over it.
+     */
+    it('sits behind what it is drawn round, as it will when printed', () => {
+        const d = mount();
+        press(foot(), 'add-box');
+
+        const detail = d.layout.bands.find(b => b.type === 'detail');
+        const frame = detail.items.at(-1);
+
+        /** the frame starts above what it frames, which is what puts it behind */
+        frame.y = 0;
+        frame.h = 400;
+        detail.items.find(i => i.id === 't1').y = 20;
+        d.redraw();
+
+        const canvas = root().querySelector('.dz-canvas').innerHTML;
+
+        expect(canvas.indexOf('data-item-id="box-1"'))
+            .toBeLessThan(canvas.indexOf('data-item-id="t1"'));
+    });
+});
+
+describe('the table tool is offered once', () => {
+    const foot = () => root().querySelector('.dz-foot');
+    const tool = () => foot().querySelector('[data-role="add-table"]');
+
+    it('is available on a report with no table', () => {
+        mount(tableless());
+
+        expect(tool().disabled).toBe(false);
+        expect(tool().title).toBe('Add a table');
+    });
+
+    /** greyed rather than absent: it says the tool exists, and why it is not usable */
+    it('is greyed once the report has one, and says why', () => {
+        mount();
+
+        expect(tool().disabled).toBe(true);
+        expect(tool().title).toMatch(/one table/);
+    });
+
+    it('comes back when the table is deleted', () => {
+        mount();
+        select('tbl');
+        press(menuOn('tbl'), 'delete-item');
+
+        expect(tool().disabled).toBe(false);
+    });
+
+    it('goes again on undo, which puts the table back', () => {
+        mount();
+        select('tbl');
+        press(menuOn('tbl'), 'delete-item');
+
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+
+        expect(tool().disabled).toBe(true);
+    });
+
+    it('refuses the action too, not only the button', () => {
+        const d = mount();
+
+        press(foot(), 'add-table');
+
+        expect(root().querySelector('[data-role="column-dialog"]')).toBeNull();
+        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
+        expect(root().querySelector('[data-role="status"]').textContent)
+            .toMatch(/already has a table/);
+    });
+
+    it('leaves the report the engine accepts', () => {
+        const d = mount();
+        press(foot(), 'add-table');
 
         expect(validateLayout(d.layout)).toEqual([]);
     });

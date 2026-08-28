@@ -14,7 +14,7 @@
 
 import { GRID, snap, designHeight } from './geometry.js';
 import { FONT_STACKS } from './fields.js';
-import { absoluteTop } from './canvas.js';
+import { absoluteTop, designZones } from './canvas.js';
 
 
 /** every band type, in the order they appear down the page */
@@ -79,6 +79,27 @@ export const BAND_NOTES = {
  */
 function bandList(layout) {
     return Array.isArray(layout?.bands) ? layout.bands : [];
+}
+
+
+/**
+ * How many tables the report has. The engine binds one (see validateOneTable in
+ * validate.js), so this is what says whether another may be added.
+ *
+ * @param {object} layout
+ * @returns {number}
+ */
+export function tableCount(layout) {
+    return bandList(layout)
+        .flatMap(b => b.items || [])
+        .filter(i => i?.type === 'table')
+        .length;
+}
+
+
+/** whether this report can take a table - one, for now */
+export function canAddTable(layout) {
+    return tableCount(layout) < 1;
 }
 
 
@@ -201,6 +222,78 @@ export function createText(layout, band) {
 }
 
 
+/**
+ * How tall a horizontal line's box is, and how wide a vertical one's.
+ *
+ * Not the thickness: a hairline that was its own box would be a 1px target on
+ * the canvas. This is a box that can be grabbed, with the rule drawn down the
+ * middle of it - and it matches MIN_H, so the first thing a resize does is not
+ * to jump.
+ */
+export const LINE_BOX = 12;
+
+
+/**
+ * A new line, full printable width, below whatever is already on the band.
+ *
+ * A hairline rule, because that is what a line under a heading almost always
+ * is; thickness and dashes are one field away in the rail.
+ *
+ * @param {object} layout
+ * @param {object} band the band it is going onto, for its vertical place
+ * @param {string} [orientation] 'horizontal' or 'vertical'
+ * @returns {object} the item; it has not been added to anything yet
+ */
+export function createLine(layout, band, orientation = 'horizontal') {
+    const vertical = orientation === 'vertical';
+
+    return {
+        id: nextItemId(layout, 'line'),
+        type: 'line',
+        x: 0,
+        y: nextY(band),
+        w: vertical ? LINE_BOX : contentWidth(layout),
+        h: vertical ? 80 : LINE_BOX,
+        orientation: vertical ? 'vertical' : 'horizontal',
+        style: {
+            thickness: 1,
+            lineStyle: 'solid',
+            color: '#000000'
+        }
+    };
+}
+
+
+/**
+ * A new box, full printable width, below whatever is already on the band.
+ *
+ * A plain hairline rectangle with nothing inside it: a box is most often drawn
+ * round something else, and a fill it did not ask for would hide whatever it
+ * was put there to frame.
+ *
+ * @param {object} layout
+ * @param {object} band the band it is going onto, for its vertical place
+ * @returns {object} the item; it has not been added to anything yet
+ */
+export function createBox(layout, band) {
+    return {
+        id: nextItemId(layout, 'box'),
+        type: 'box',
+        x: 0,
+        y: nextY(band),
+        w: contentWidth(layout),
+        h: 80,
+        style: {
+            borderStyle: 'solid',
+            borderWidth: 1,
+            borderColor: '#000000',
+            background: null,
+            radius: 0
+        }
+    };
+}
+
+
 /** a column at its default width, numbered by where it sits */
 export function makeColumn(n) {
     return {
@@ -238,7 +331,13 @@ export function createTable(layout, band, columns = DEFAULT_COLUMNS) {
         headerHeight: 28,
         showHeader: true,
         columns: Array.from({ length: count }, (_, i) => makeColumn(i + 1)),
-        style: { fontSize: 12, color: '#000000', borderColor: '#cccccc' }
+        style: {
+            fontSize: 12,
+            color: '#000000',
+            borderStyle: 'solid',
+            borderWidth: 1,
+            borderColor: '#cccccc'
+        }
     };
 }
 
@@ -251,6 +350,147 @@ export function addItem(layout, bandType, item) {
     band.items.push(item);
 
     return item;
+}
+
+
+/**
+ * How far a copy sits from its original: one grid step down and across, so the
+ * copy is visibly a second item rather than hiding the first, and still lands
+ * on the grid everything else snaps to.
+ */
+const DUPLICATE_OFFSET = GRID;
+
+
+/**
+ * The id a copy should count from.
+ *
+ * "text-2" copies as "text-3", and a hand-named "rh_title" as "rh_title-1".
+ * Keeping the author's naming matters more than uniformity here: a layout file
+ * is read in diffs, and a copy of "rh_title" called "text-7" is a rename as
+ * much as a copy.
+ *
+ * @param {object} item
+ * @returns {string}
+ */
+function idPrefix(item) {
+    const base = String(item.id ?? '').replace(/-\d+$/, '');
+    return base || item.type || 'item';
+}
+
+
+/** keeps a copy on the page when its original already sits at the right edge */
+function clampX(layout, x, w) {
+    if (!Number.isFinite(layout?.page?.width)) return Math.max(0, x);
+
+    const limit = Math.max(0, contentWidth(layout) - (w ?? 0));
+    return Math.min(Math.max(0, x), limit);
+}
+
+
+/**
+ * Copies an item onto the band it is already on, offset so both can be seen.
+ *
+ * Deep-cloned rather than spread: a text item's `style` and a table's `columns`
+ * are objects, and a shallow copy would share them - so editing the copy's font
+ * would quietly change the original's too, which is the sort of thing that is
+ * only noticed once the report prints.
+ *
+ * @param {object} layout
+ * @param {string} bandType the band the original is on
+ * @param {string} id
+ * @returns {object|null} the copy, already added to the band, or null when
+ *   there is nothing by that id there
+ */
+export function duplicateItem(layout, bandType, id) {
+    const band = findBand(layout, bandType);
+    if (!band) return null;
+
+    const original = (band.items || []).find(i => i.id === id);
+    if (!original) return null;
+
+    /** a copy of the table would be the second one, which the engine cannot bind */
+    if (original.type === 'table' && !canAddTable(layout)) return null;
+
+    const copy = structuredClone(original);
+
+    copy.id = nextItemId(layout, idPrefix(original));
+    copy.x = clampX(layout, (original.x ?? 0) + DUPLICATE_OFFSET, copy.w);
+    copy.y = Math.max(0, (original.y ?? 0) + DUPLICATE_OFFSET);
+
+    band.items ??= [];
+    band.items.push(copy);
+
+    return copy;
+}
+
+
+/** the design-time height of a band's zone, or null when there is no page to measure against */
+function zoneHeight(layout, bandType) {
+    if (!Number.isFinite(layout?.page?.height)) return null;
+
+    return designZones(layout).find(z => z.type === bandType)?.height ?? null;
+}
+
+
+/**
+ * Brings a y into a band's zone.
+ *
+ * Only used when something arrives from a *different* band: a y of 400 means a
+ * position in a 900px detail zone and means nothing at all in a 40px page
+ * footer, and an item pasted below its band is an item the author cannot see to
+ * drag back.
+ */
+function clampY(layout, bandType, y, item) {
+    const height = zoneHeight(layout, bandType);
+    if (height == null) return Math.max(0, y);
+
+    const limit = Math.max(0, height - designHeight(item));
+    return Math.min(Math.max(0, y), limit);
+}
+
+
+/**
+ * Puts copies of items onto a band - what a paste does.
+ *
+ * Offset by the same step a duplicate uses, so a second paste of the same
+ * clipboard cascades rather than stacking one copy exactly on another.
+ *
+ * @param {object} layout
+ * @param {string} bandType the band to paste onto
+ * @param {{band: string, item: object}[]} entries what was copied, each with the
+ *   band it came from - a paste into a different band has to reposition, since
+ *   the y no longer means what it meant where it was cut
+ * @returns {object[]} the pasted items, already added to the band
+ */
+export function pasteItems(layout, bandType, entries) {
+    const band = findBand(layout, bandType);
+    if (!band) return [];
+
+    band.items ??= [];
+
+    const made = [];
+
+    for (const { band: from, item } of (entries || [])) {
+        if (!item) continue;
+
+        /**
+         * A pasted table is skipped rather than refusing the whole paste: a
+         * clipboard of five items should place the four it can.
+         */
+        if (item.type === 'table' && !canAddTable(layout)) continue;
+
+        const copy = structuredClone(item);
+        const y = Math.max(0, (item.y ?? 0) + DUPLICATE_OFFSET);
+
+        copy.id = nextItemId(layout, idPrefix(item));
+        copy.x = clampX(layout, (item.x ?? 0) + DUPLICATE_OFFSET, copy.w);
+        copy.y = from === bandType ? y : clampY(layout, bandType, y, copy);
+
+        band.items.push(copy);
+        made.push(copy);
+    }
+
+    return made;
 }
 
 

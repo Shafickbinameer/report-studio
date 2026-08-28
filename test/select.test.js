@@ -796,3 +796,115 @@ describe('moving several at once', () => {
         expect(bandOf('b')).toBe('pageFooter');
     });
 });
+
+describe('alt drags a copy', () => {
+    /** the same gesture as drag(), with alt held on the press */
+    function altDrag(target, dx, dy, from = { x: 0, y: 0 }) {
+        const event = new MouseEvent('pointerdown', {
+            bubbles: true, cancelable: true,
+            clientX: from.x, clientY: from.y, button: 0, altKey: true
+        });
+        event.pointerId = 1;
+        target.dispatchEvent(event);
+
+        pointer('pointermove', canvas(), { x: from.x + dx, y: from.y + dy });
+        pointer('pointerup', canvas(), { x: from.x + dx, y: from.y + dy });
+    }
+
+    const detailIds = (d) =>
+        d.layout.bands.find(b => b.type === 'detail').items.map(i => i.id);
+
+    it('leaves a copy behind and takes the copy with the pointer', () => {
+        const d = mount();
+        altDrag(drawn('t1'), 60, 40);
+
+        const ids = detailIds(d);
+
+        expect(ids).toHaveLength(3);
+        expect(ids).toContain('t1');
+    });
+
+    it('does not move the original', () => {
+        const d = mount();
+        altDrag(drawn('t1'), 60, 40);
+
+        expect(itemIn(d, 'detail', 't1')).toMatchObject({ x: 100, y: 100 });
+    });
+
+    it('moves the copy by the drag', () => {
+        const d = mount();
+        altDrag(drawn('t1'), 60, 40);
+
+        const copy = d.layout.bands
+            .find(b => b.type === 'detail').items
+            .find(i => i.id !== 't1' && i.type === 'text');
+
+        /** the copy starts one grid step off, then follows the pointer */
+        expect(copy.x).toBe(170);
+        expect(copy.y).toBe(150);
+    });
+
+    it('copies without a drag too - alt-click is a duplicate', () => {
+        const d = mount();
+        altDrag(drawn('t1'), 0, 0);
+
+        expect(detailIds(d)).toHaveLength(3);
+    });
+
+    it('copies a whole selection at once', () => {
+        /** two text items: a report binds one table, so a table cannot be copied */
+        const d = mount(layout({
+            bands: [band('detail', [
+                text('t1', { x: 100, y: 100, w: 200, h: 40 }),
+                text('t2', { x: 100, y: 200, w: 200, h: 40 })
+            ])]
+        }));
+
+        pointer('pointerdown', drawn('t1'));
+        pointer('pointerup', canvas());
+        pointer('pointerdown', drawn('t2'), { shiftKey: true });
+
+        altDrag(drawn('t1'), 30, 30);
+
+        expect(detailIds(d)).toHaveLength(4);
+    });
+
+    it('will not alt-drag a copy of the table off the one the report binds', () => {
+        const d = mount();
+        altDrag(drawn('tbl'), 60, 40);
+
+        expect(detailIds(d)).toEqual(['t1', 'tbl']);
+    });
+
+    it('leaves shift-alt extending the selection, not copying', () => {
+        const d = mount();
+        pointer('pointerdown', drawn('t1'));
+        pointer('pointerup', canvas());
+
+        const event = new MouseEvent('pointerdown', {
+            bubbles: true, cancelable: true, clientX: 0, clientY: 0,
+            button: 0, shiftKey: true, altKey: true
+        });
+        event.pointerId = 1;
+        drawn('tbl').dispatchEvent(event);
+
+        expect(detailIds(d)).toHaveLength(2);
+    });
+
+    it('is one undo step', () => {
+        const d = mount();
+        altDrag(drawn('t1'), 60, 40);
+
+        expect(detailIds(d)).toHaveLength(3);
+
+        /** the move that follows the copy is a step of its own, so undo twice */
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+
+        expect(detailIds(d)).toHaveLength(2);
+    });
+});

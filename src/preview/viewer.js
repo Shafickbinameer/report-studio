@@ -14,6 +14,7 @@
 
 import { search, searchPages } from '../engine/search.js';
 import { toCSV, reportFilename } from '../engine/csv.js';
+import { openWindow, closeWithOpener } from '../shared/window.js';
 import { createDropdown } from '../shared/dropdown.js';
 import { render } from '../render/render.js';
 import { chrome } from './chrome.js';
@@ -35,6 +36,55 @@ const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
  * @param {string} [options.title] what the brand corner reads
  * @returns {object} a handle: paging, zoom, search, print, export and destroy
  */
+/**
+ * Opens a report in a window of its own.
+ *
+ * The same viewer, mounted in a window this opens rather than in an element the
+ * host supplies - for an application that would rather the report were beside
+ * it than inside it. The host's stylesheets are carried across, so it looks the
+ * same either way.
+ *
+ * Call it from a click or a keystroke: a browser blocks a window opened from
+ * anything else, and a blocked one comes back as null rather than as a throw,
+ * so the caller can fall back to mounting in the page.
+ *
+ * @param {object} options what createViewer takes, less `mount`
+ * @param {object} options.paginated the buildPages result
+ * @param {string} [options.title] the window's title and the brand corner
+ * @param {number} [options.width]
+ * @param {number} [options.height]
+ * @param {string} [options.features] passed to window.open as given
+ * @returns {object|null} the viewer handle, with `window`; null if blocked
+ */
+export function openViewerWindow({
+    paginated, title, width, height, features, ...rest
+} = {}) {
+    const opened = openWindow({
+        title: title ?? 'Report', width, height, features
+    });
+
+    if (!opened) return null;
+
+    const viewer = createViewer({
+        ...rest, mount: opened.mount, paginated, title
+    });
+
+    /** the report was passed in memory, so the window outliving its opener shows nothing */
+    const unwatch = closeWithOpener(globalThis, opened.window, viewer.destroy);
+
+    return {
+        ...viewer,
+        window: opened.window,
+
+        destroy() {
+            unwatch();
+            viewer.destroy();
+            opened.close();
+        }
+    };
+}
+
+
 export function createViewer({ mount, paginated, title } = {}) {
     const root = typeof mount === 'string' ? document.querySelector(mount) : mount;
 
@@ -44,6 +94,14 @@ export function createViewer({ mount, paginated, title } = {}) {
             `Add <div id="report"></div> to the page first.`
         );
     }
+
+    /**
+     * The document the viewer is mounted in, which is not always this one: a
+     * report opened in its own window lives in that window's document, and a
+     * listener - or a print stylesheet - left on the opener's would never reach
+     * the report it belongs to.
+     */
+    const doc = root.ownerDocument;
 
     if (!paginated?.pages) {
         throw new Error(
@@ -245,11 +303,16 @@ export function createViewer({ mount, paginated, title } = {}) {
     function applyPrintPageSize() {
         const { width, height } = paginated.page;
 
-        let style = document.getElementById('report-page-size');
+        /**
+         * Into the viewer's own document: a report opened in its own window
+         * prints from that window, and an @page rule left in the opener would
+         * size the wrong sheet - or none.
+         */
+        let style = doc.getElementById('report-page-size');
         if (!style) {
-            style = document.createElement('style');
+            style = doc.createElement('style');
             style.id = 'report-page-size';
-            document.head.appendChild(style);
+            doc.head.appendChild(style);
         }
 
         style.textContent = `@page { size: ${width}px ${height}px; margin: 0; }`;
@@ -271,11 +334,11 @@ export function createViewer({ mount, paginated, title } = {}) {
 
     function download(blob, filename) {
         const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
+        const link = doc.createElement('a');
 
         link.href = url;
         link.download = filename;
-        document.body.appendChild(link);
+        doc.body.appendChild(link);
         link.click();
         link.remove();
 
@@ -314,7 +377,7 @@ export function createViewer({ mount, paginated, title } = {}) {
     function openExport() {
         if (!dialog) return;
 
-        returnFocusTo = document.activeElement;
+        returnFocusTo = doc.activeElement;
         dialog.root.hidden = false;
         refreshDialog();
 
@@ -353,10 +416,10 @@ export function createViewer({ mount, paginated, title } = {}) {
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
-        if (event.shiftKey && document.activeElement === first) {
+        if (event.shiftKey && doc.activeElement === first) {
             event.preventDefault();
             last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        } else if (!event.shiftKey && doc.activeElement === last) {
             event.preventDefault();
             first.focus();
         }
@@ -423,7 +486,7 @@ export function createViewer({ mount, paginated, title } = {}) {
     function clearMarks() {
         for (const mark of mountEl.querySelectorAll('mark.hit')) {
             const parent = mark.parentNode;
-            parent.replaceChild(document.createTextNode(mark.textContent), mark);
+            parent.replaceChild(doc.createTextNode(mark.textContent), mark);
             parent.normalize();
         }
     }
@@ -439,7 +502,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         if (!page) return;
 
         const needle = query.toLowerCase();
-        const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
+        const walker = doc.createTreeWalker(page, NodeFilter.SHOW_TEXT);
         const targets = [];
 
         while (walker.nextNode()) {
@@ -452,7 +515,7 @@ export function createViewer({ mount, paginated, title } = {}) {
 
     function markNode(node, needle) {
         const text = node.nodeValue;
-        const fragment = document.createDocumentFragment();
+        const fragment = doc.createDocumentFragment();
 
         let from = 0;
 
@@ -460,9 +523,9 @@ export function createViewer({ mount, paginated, title } = {}) {
             const at = text.toLowerCase().indexOf(needle, from);
             if (at === -1) break;
 
-            if (at > from) fragment.appendChild(document.createTextNode(text.slice(from, at)));
+            if (at > from) fragment.appendChild(doc.createTextNode(text.slice(from, at)));
 
-            const mark = document.createElement('mark');
+            const mark = doc.createElement('mark');
             mark.className = 'hit';
             mark.textContent = text.slice(at, at + needle.length);
             fragment.appendChild(mark);
@@ -470,7 +533,7 @@ export function createViewer({ mount, paginated, title } = {}) {
             from = at + needle.length;
         }
 
-        if (from < text.length) fragment.appendChild(document.createTextNode(text.slice(from)));
+        if (from < text.length) fragment.appendChild(doc.createTextNode(text.slice(from)));
 
         node.parentNode.replaceChild(fragment, node);
     }
@@ -604,7 +667,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         }
     };
 
-    document.addEventListener('keydown', onKeyDown);
+    doc.addEventListener('keydown', onKeyDown);
 
     if (afterPrintSupported) {
         window.addEventListener('afterprint', restoreAfterPrint);
@@ -617,7 +680,7 @@ export function createViewer({ mount, paginated, title } = {}) {
      */
     function destroy() {
         ui.zoom.destroy();
-        document.removeEventListener('keydown', onKeyDown);
+        doc.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('resize', onResize);
         window.removeEventListener('afterprint', restoreAfterPrint);
 

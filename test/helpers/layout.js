@@ -41,16 +41,49 @@ export function text(id, { x = 0, y = 0, w = 700, h = 20, value = id } = {}) {
     return { id, type: 'text', x, y, w, h, value, style: { ...STYLE } };
 }
 
+/**
+ * A line, with the box/rule split createLine uses: `h` is the box the designer
+ * can grab, `style.thickness` is the rule drawn down the middle of it.
+ */
+export function line(id, {
+    x = 0, y = 0, w = 300, h = 12,
+    orientation = 'horizontal',
+    thickness = 1, lineStyle = 'solid', color = '#000000'
+} = {}) {
+    return {
+        id, type: 'line', x, y, w, h, orientation,
+        style: { thickness, lineStyle, color }
+    };
+}
+
+
+/**
+ * A box: an outline, and optionally a fill. `w`/`h` are its outside, however
+ * thick the border - report.css makes it border-box for exactly that reason.
+ */
+export function box(id, {
+    x = 0, y = 0, w = 300, h = 60,
+    borderStyle = 'solid', borderWidth = 1, borderColor = '#000000',
+    background = null, radius = 0
+} = {}) {
+    return {
+        id, type: 'box', x, y, w, h,
+        style: { borderStyle, borderWidth, borderColor, background, radius }
+    };
+}
+
+
 export function table({
     id = 'tbl',
     rowHeight = 28,
     headerHeight = 32,
-    showHeader = true
+    showHeader = true,
+    y = 0
 } = {}) {
     return {
         id,
         type: 'table',
-        x: 0, y: 0, w: 714,
+        x: 0, y, w: 714,
         dataset: 'items',
         rowHeight,
         headerHeight,
@@ -109,6 +142,32 @@ export function itemIdsOn(page, type = 'detail') {
         .filter(b => b.type === type)
         .flatMap(b => b.items.map(i => i.id));
 }
+
+/**
+ * The lowest edge a band actually draws to, in band coordinates. Items are
+ * absolutely positioned, so this is max(y + height) - the figure that has to
+ * stay inside the band's zone if it is not to print over the page footer.
+ * @param {object} band a placed band
+ * @returns {number}
+ */
+export function drawnBottom(band) {
+    return Math.max(0, ...band.items.map(i => (i.y ?? 0) + (i.measuredHeight ?? 0)));
+}
+
+
+/**
+ * The lowest y a page's footer zones start at, so nothing above may reach it.
+ * @param {object} page
+ * @returns {number} Infinity when the page has no footer band
+ */
+export function footerTop(page) {
+    const tops = page.bands
+        .filter(b => b.type === 'pageFooter' || b.type === 'reportFooter')
+        .map(b => b.top);
+
+    return tops.length ? Math.min(...tops) : Infinity;
+}
+
 
 /** every row the engine actually placed, flat, in page order */
 export function placedRows(paginated) {

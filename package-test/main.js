@@ -9,6 +9,7 @@ const layout = await fetch('./reports/tetsing-package.json').then(r => r.json())
 const data = {
     name: "Shafick",
     address: "Akshya Nagar 1st Block 1st Cross, Rammurthy Nagar, Bangalore - 560016",
+    place : "Comppany mukk",
     friends: Array.from({ length: 5000 }, (_, i) => ({
         name: `Name ${i + 1}`,
         age: 20 + (i % 41),           // Ages: 20–60

@@ -33,4 +33,11 @@ export { render } from './render/render.js';
  * does. Link `report-studio/viewer.css` beside it - the report's own stylesheet
  * is included there, so that one file is enough.
  */
-export { createViewer } from './preview/viewer.js';
+export { createViewer, openViewerWindow } from './preview/viewer.js';
+
+/**
+ * Opens a blank window with the host's stylesheets in it, ready to be mounted
+ * into - for a host that wants a screen of its own without using one of the
+ * two helpers above.
+ */
+export { openWindow } from './shared/window.js';

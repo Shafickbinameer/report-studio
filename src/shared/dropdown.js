@@ -22,6 +22,13 @@ export function createDropdown(root) {
 
     const listeners = new Set();
 
+    /**
+     * The document the dropdown is in, read when it is needed rather than kept:
+     * a menu built before its host is attached has no owner yet, and one inside
+     * a designer opened in its own window has a different one from this module.
+     */
+    const doc = () => trigger.ownerDocument;
+
     let value = items.find(i => i.dataset.selected === 'true')?.dataset.value
         ?? items[0]?.dataset.value
         ?? '';
@@ -70,7 +77,7 @@ export function createDropdown(root) {
          * Registered on the next tick, or the click that opened the menu would
          * bubble up to this same handler and close it again straight away.
          */
-        setTimeout(() => document.addEventListener('pointerdown', onOutside), 0);
+        setTimeout(() => doc().addEventListener('pointerdown', onOutside), 0);
     }
 
     function close({ focusTrigger = true } = {}) {
@@ -78,7 +85,7 @@ export function createDropdown(root) {
 
         menu.hidden = true;
         trigger.setAttribute('aria-expanded', 'false');
-        document.removeEventListener('pointerdown', onOutside);
+        doc().removeEventListener('pointerdown', onOutside);
 
         if (focusTrigger) trigger.focus();
     }
@@ -152,7 +159,7 @@ export function createDropdown(root) {
         get isOpen() { return isOpen(); },
 
         destroy() {
-            document.removeEventListener('pointerdown', onOutside);
+            doc().removeEventListener('pointerdown', onOutside);
             listeners.clear();
         }
     };

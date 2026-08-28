@@ -38,6 +38,7 @@ alongside your code.
 | `--dir <path>` | where report files live | `./reports` |
 | `--port <n>` | port to listen on | `5177` |
 | `--host <addr>` | address to bind | `127.0.0.1` |
+| `--tab` | open in a browser tab rather than a window of its own | |
 | `--no-open` | do not open a browser | |
 
 It binds to loopback and serves a write endpoint. It is a design-time tool —

@@ -180,3 +180,173 @@ describe('writeField - the rest', () => {
         expect(item.value).toBe('Due {invoice.date}');
     });
 });
+
+
+describe('fieldsFor - a line', () => {
+    const rule = { id: 'l1', type: 'line', x: 0, y: 0, w: 300, h: 12, style: {} };
+
+    const keysOf = (item) =>
+        fieldsFor(item).flatMap(section => section.fields.map(f => f.key));
+
+    it('offers the pen: direction, thickness, dashes and colour', () => {
+        expect(keysOf(rule)).toEqual(expect.arrayContaining([
+            'orientation', 'style.thickness', 'style.lineStyle', 'style.color'
+        ]));
+    });
+
+    it('offers the box, height included - a line has one, unlike a table', () => {
+        expect(keysOf(rule)).toEqual(expect.arrayContaining(['x', 'y', 'w', 'h']));
+    });
+
+    /** there is no text on a line, so nothing that sets any should be offered */
+    it('offers nothing about type', () => {
+        const keys = keysOf(rule);
+
+        expect(keys).not.toContain('value');
+        expect(keys).not.toContain('style.fontSize');
+        expect(keys).not.toContain('style.align');
+    });
+
+    it('offers the four styles a border can actually be drawn in', () => {
+        const field = fieldsFor(rule)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.lineStyle');
+
+        expect(field.type).toBe('choice');
+        expect(field.options.map(o => o.value))
+            .toEqual(['solid', 'dashed', 'dotted', 'double']);
+    });
+
+    it('will not let the thickness be typed down to nothing', () => {
+        const field = fieldsFor(rule)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.thickness');
+
+        expect(field.min).toBe(1);
+    });
+});
+
+
+describe('fieldsFor - a table grid', () => {
+    const grid = (key) => fieldsFor(table())
+        .flatMap(section => section.fields)
+        .find(f => f.key === key);
+
+    it('offers the border style as a choice, beside its colour', () => {
+        expect(grid('style.borderStyle').type).toBe('choice');
+        expect(grid('style.borderColor').type).toBe('color');
+    });
+
+    it('offers the four rules a border can be drawn in, and off', () => {
+        expect(grid('style.borderStyle').options.map(o => o.value))
+            .toEqual(['solid', 'dashed', 'dotted', 'double', 'none']);
+    });
+
+    /** a line that draws nothing is not a line, so it is not offered the choice */
+    it('does not offer None to a line', () => {
+        const rule = { id: 'l1', type: 'line', x: 0, y: 0, w: 300, h: 12, style: {} };
+
+        const options = fieldsFor(rule)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.lineStyle')
+            .options.map(o => o.value);
+
+        expect(options).not.toContain('none');
+    });
+});
+
+
+describe('fieldsFor - a box', () => {
+    const frame = {
+        id: 'b1', type: 'box', x: 0, y: 0, w: 300, h: 60,
+        style: { borderStyle: 'solid', borderWidth: 1, borderColor: '#000000' }
+    };
+
+    const keysOf = (item) =>
+        fieldsFor(item).flatMap(section => section.fields.map(f => f.key));
+
+    it('offers the outline: style, width, colour and corner', () => {
+        expect(keysOf(frame)).toEqual(expect.arrayContaining([
+            'style.borderStyle', 'style.borderWidth',
+            'style.borderColor', 'style.radius'
+        ]));
+    });
+
+    it('offers a fill, and the box it fills', () => {
+        expect(keysOf(frame)).toEqual(expect.arrayContaining([
+            'style.background', 'x', 'y', 'w', 'h'
+        ]));
+    });
+
+    it('offers the same five border styles a table has', () => {
+        const field = fieldsFor(frame)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.borderStyle');
+
+        expect(field.options.map(o => o.value))
+            .toEqual(['solid', 'dashed', 'dotted', 'double', 'none']);
+    });
+
+    /** nothing on a box is text, so nothing that sets type belongs on it */
+    it('offers nothing about type', () => {
+        const keys = keysOf(frame);
+
+        expect(keys).not.toContain('value');
+        expect(keys).not.toContain('style.fontSize');
+    });
+
+    /** a square corner is a real answer; a negative one is not */
+    it('lets the corner go to nothing but no further', () => {
+        const field = fieldsFor(frame)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.radius');
+
+        expect(field.min).toBe(0);
+    });
+});
+
+
+describe('fieldsFor - a table rule width', () => {
+    const width = (item) => fieldsFor(item)
+        .flatMap(s => s.fields)
+        .find(f => f.key === 'style.borderWidth');
+
+    it('will not offer a rule wider than half the shallowest row', () => {
+        expect(width(table({ rowHeight: 24, headerHeight: 28 })).max).toBe(12);
+        expect(width(table({ rowHeight: 40, headerHeight: 10 })).max).toBe(5);
+    });
+
+    it('ignores the header height of a table that hides its header', () => {
+        expect(width(table({ rowHeight: 40, headerHeight: 10, showHeader: false })).max)
+            .toBe(20);
+    });
+
+    it('still offers a hairline for a row too shallow for anything else', () => {
+        expect(width(table({ rowHeight: 1, headerHeight: 1 })).max).toBe(1);
+    });
+});
+
+
+describe('writeField - a ceiling', () => {
+    it('holds a number down to the maximum the field allows', () => {
+        const item = table({ rowHeight: 24, headerHeight: 28 });
+        const field = fieldsFor(item)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.borderWidth');
+
+        writeField(item, field, '40');
+
+        expect(item.style.borderWidth).toBe(12);
+    });
+
+    it('leaves a number inside it alone', () => {
+        const item = table({ rowHeight: 24, headerHeight: 28 });
+        const field = fieldsFor(item)
+            .flatMap(s => s.fields)
+            .find(f => f.key === 'style.borderWidth');
+
+        writeField(item, field, '3');
+
+        expect(item.style.borderWidth).toBe(3);
+    });
+});

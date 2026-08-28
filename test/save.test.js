@@ -103,6 +103,20 @@ function select(id) {
     drawn(id).dispatchEvent(event);
 }
 
+/**
+ * Right-click something and press one of the pill's buttons. The actions that
+ * used to sit in the rail and the tool strip live there now.
+ */
+function menuOn(id = null) {
+    const target = id ? drawn(id) : root().querySelector('.dz-canvas');
+
+    target.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 2
+    }));
+
+    return root().querySelector('[data-role="menu"]');
+}
+
 function drag(id, dx, dy) {
     const canvas = root().querySelector('.dz-canvas');
     const down = new MouseEvent('pointerdown', {
@@ -468,7 +482,7 @@ describe('undo and redo', () => {
     it('takes back deleting one', () => {
         const d = mount();
         select('t1');
-        click(root().querySelector('[data-action="delete-item"]'));
+        click(menuOn('t1').querySelector('[data-action="delete-item"]'));
 
         expect(d.layout.bands[0].items).toHaveLength(0);
 
@@ -507,7 +521,7 @@ describe('undo and redo', () => {
     it('drops the selection, which may not exist in what was restored', () => {
         const d = mount();
         select('t1');
-        click(root().querySelector('[data-action="delete-item"]'));
+        click(menuOn('t1').querySelector('[data-action="delete-item"]'));
         press('undo');
 
         expect(d.selection).toBeNull();
@@ -771,66 +785,125 @@ describe('the data dialog', () => {
 });
 
 
-describe('the link to the preview screen', () => {
-    const link = () => bar().querySelector('[data-role="open-preview"]');
+describe('the button that opens the report in its own window', () => {
+    const button = () => bar().querySelector('[data-role="open-preview"]');
 
-    it('is inert until the report has been saved', () => {
-        /** the preview screen reads the report off disk; there is no file yet */
+    /**
+     * It used to be a link to the preview screen, which reads the report off
+     * the disk - so it did nothing at all until the report had been saved,
+     * which is the wrong answer to "show me this". The window is built from the
+     * design as it stands, so a report that has never been named opens too.
+     */
+    function fakeWindow() {
+        const doc = document.implementation.createHTMLDocument('');
+        const opened = {
+            document: doc,
+            closed: false,
+            close() { this.closed = true; },
+            addEventListener() { },
+            removeEventListener() { }
+        };
+
+        /** window.open must be called from a gesture; jsdom has no real one */
+        const original = window.open;
+        window.open = () => opened;
+
+        return { opened, restore: () => { window.open = original; } };
+    }
+
+    it('is a button, not a link that needs a file behind it', () => {
         mount();
 
-        expect(link().hasAttribute('href')).toBe(false);
-        expect(link().getAttribute('aria-disabled')).toBe('true');
-        expect(link().title).toMatch(/Save the report first/);
+        expect(button().tagName).toBe('BUTTON');
+        expect(button().dataset.action).toBe('open-window');
     });
 
-    it('points at the saved report once there is one', () => {
-        mount({ id: 'invoice' });
+    it('works on a report that has never been saved', () => {
+        const { opened, restore } = fakeWindow();
 
-        expect(link().getAttribute('href')).toBe('../preview/?report=invoice');
-        expect(link().hasAttribute('aria-disabled')).toBe(false);
+        try {
+            mount();
+            click(button());
+
+            expect(opened.document.querySelector('#report-studio')).not.toBeNull();
+        } finally {
+            restore();
+        }
     });
 
-    it('is relative, so it resolves wherever the pages are mounted', () => {
-        mount({ id: 'invoice' });
-        expect(link().getAttribute('href').startsWith('../')).toBe(true);
+    it('is never inert, whether the report is saved or not', () => {
+        mount();
+
+        expect(button().disabled).toBe(false);
+        expect(button().hasAttribute('aria-disabled')).toBe(false);
+        expect(button().title).toMatch(/own window/);
     });
 
-    it('opens beside the designer rather than replacing it', () => {
-        mount({ id: 'invoice' });
+    it('carries the stylesheets the designer is using', () => {
+        const sheet = document.createElement('style');
+        sheet.textContent = '.dz-bar { color: red }';
+        document.head.appendChild(sheet);
 
-        expect(link().target).toBe('_blank');
-        expect(link().rel).toBe('noopener');
+        const { opened, restore } = fakeWindow();
+
+        try {
+            mount();
+            click(button());
+
+            const styles = [...opened.document.querySelectorAll('style')]
+                .map(n => n.textContent).join('');
+
+            expect(styles).toContain('.dz-bar');
+        } finally {
+            restore();
+            sheet.remove();
+        }
     });
 
-    it('escapes an id on its way into the URL', () => {
-        mount({ id: 'a-b_9' });
-        expect(link().getAttribute('href')).toBe('../preview/?report=a-b_9');
+    it('titles the window after the report', () => {
+        const { opened, restore } = fakeWindow();
+
+        try {
+            mount();
+            designer.layout.name = 'Sales Summary';
+            click(button());
+
+            expect(opened.document.title).toBe('Sales Summary');
+        } finally {
+            restore();
+        }
     });
 
-    it('comes alive when the report is saved for the first time', async () => {
-        const store = fakeStore();
-        mount({ store });
+    /** a blocked pop-up says nothing itself, so the bar has to */
+    it('says so when the browser refuses the window', () => {
+        const original = window.open;
+        window.open = () => null;
 
-        press('save');
-        await settle();
+        try {
+            mount();
+            click(button());
 
-        const box = dialog('save-dialog');
-        box.querySelector('[data-role="report-name"]').value = 'Sales Summary';
-        box.querySelector('form').dispatchEvent(
-            new Event('submit', { bubbles: true, cancelable: true }));
-        await settle();
-
-        expect(link().getAttribute('href')).toBe('../preview/?report=sales-summary');
+            expect(status()).toMatch(/blocked/);
+        } finally {
+            window.open = original;
+        }
     });
 
-    it('follows the report that was opened', async () => {
-        const files = fakeStore({ invoice: json(), sales: json() });
-        mount({ store: files });
+    it('closes the windows it opened when the designer goes', () => {
+        const { opened, restore } = fakeWindow();
 
-        press('open');
-        await settle();
-        await chooseReport('sales');
+        try {
+            mount();
+            click(button());
 
-        expect(link().getAttribute('href')).toBe('../preview/?report=sales');
+            expect(opened.closed).toBe(false);
+
+            designer.destroy();
+            designer = null;
+
+            expect(opened.closed).toBe(true);
+        } finally {
+            restore();
+        }
     });
 });

@@ -17,7 +17,16 @@ const BAND_TYPES = [
     'pageFooter'
 ];
 
-const ITEM_TYPES = ['text', 'table'];
+const ITEM_TYPES = ['text', 'table', 'line', 'box'];
+
+/** spec 3.3: a line runs along one axis; which one is the item's to say */
+const LINE_ORIENTATIONS = ['horizontal', 'vertical'];
+
+/** the four CSS border styles that read as a rule rather than a box */
+const LINE_STYLES = ['solid', 'dashed', 'dotted', 'double'];
+
+/** a table's grid may also be turned off, which a line cannot be */
+const RULE_STYLES = [...LINE_STYLES, 'none'];
 
 
 /** Thrown for a layout the engine cannot work with. */
@@ -89,7 +98,46 @@ export function validateLayout(json) {
         issues.push('layout.groupBy is set but there is no groupHeader or groupFooter band to show it');
     }
 
+    validateOneTable(json.bands, issues);
+
     return issues;
+}
+
+
+/**
+ * One table per report, for now.
+ *
+ * group.js binds the dataset to the first table it finds and stops, so a second
+ * one renders its header and no rows - and nothing anywhere said so. The
+ * designer drew sample rows in both, the validator passed it, and the fault
+ * only showed up in the printed report.
+ *
+ * Refused rather than warned about, because the alternative is a report that
+ * quietly leaves data out. Binding a table each is a real feature and a bigger
+ * change than a guard: it needs a dataset per table through group.js, more than
+ * one splittable item per band in paginate.js, and an answer for what a CSV
+ * export of two tables means. Until then this is the honest boundary, and it is
+ * one function to delete when that lands.
+ *
+ * @param {object[]} bands
+ * @param {string[]} issues
+ */
+function validateOneTable(bands, issues) {
+    const tables = [];
+
+    for (const band of bands) {
+        if (!Array.isArray(band?.items)) continue;
+
+        for (const item of band.items) {
+            if (item?.type === 'table') tables.push(item.id ?? '(unnamed)');
+        }
+    }
+
+    if (tables.length > 1) {
+        issues.push(
+            `layout has ${tables.length} tables (${tables.map(id => `"${id}"`).join(', ')}); ` +
+            `a report binds one - the rest would print their header and no rows`);
+    }
 }
 
 
@@ -145,9 +193,31 @@ function validateItem(item, where, issues) {
         return;
     }
 
+    if (item.type === 'line') {
+        validateLine(item, where, issues);
+        return;
+    }
+
+    if (item.type === 'box') {
+        validateBox(item, where, issues);
+        return;
+    }
+
     /** table */
     if (!(typeof item.rowHeight === 'number' && item.rowHeight > 0)) {
         issues.push(`${where}.rowHeight must be a positive number`);
+    }
+
+    if (item.style?.borderStyle != null
+        && !RULE_STYLES.includes(item.style.borderStyle)) {
+        issues.push(
+            `${where}.style.borderStyle "${item.style.borderStyle}" is not one of: ` +
+            RULE_STYLES.join(', '));
+    }
+
+    if (item.style?.borderWidth != null
+        && !(typeof item.style.borderWidth === 'number' && item.style.borderWidth > 0)) {
+        issues.push(`${where}.style.borderWidth must be a positive number of pixels`);
     }
 
     if (!Array.isArray(item.columns) || item.columns.length === 0) {
@@ -160,6 +230,76 @@ function validateItem(item, where, issues) {
             issues.push(`${where}.columns[${k}].field must be a non-empty string`);
         }
     });
+}
+
+
+/**
+ * A box carries no content either - it is a rule bent round four sides - so what
+ * there is to check is the pen and the corner. Everything is optional: a bare
+ * `{type: "box"}` is a hairline rectangle, which is what a box usually is.
+ */
+function validateBox(item, where, issues) {
+    const style = item.style;
+    if (style == null) return;
+
+    if (typeof style !== 'object' || Array.isArray(style)) {
+        issues.push(`${where}.style must be an object`);
+        return;
+    }
+
+    if (style.borderStyle != null && !RULE_STYLES.includes(style.borderStyle)) {
+        issues.push(
+            `${where}.style.borderStyle "${style.borderStyle}" is not one of: ` +
+            RULE_STYLES.join(', '));
+    }
+
+    for (const key of ['borderWidth', 'radius']) {
+        const value = style[key];
+
+        /** a radius of nothing is a square corner, so zero is allowed there */
+        const floor = key === 'radius' ? 0 : 1;
+
+        if (value != null && !(typeof value === 'number' && value >= floor)) {
+            issues.push(
+                `${where}.style.${key} must be a number of pixels` +
+                (floor ? ' greater than zero' : ' of zero or more'));
+        }
+    }
+}
+
+
+/**
+ * A line carries no content, so what there is to get wrong is its direction and
+ * its pen. Both are optional in the file - a bare `{type: "line"}` draws a
+ * hairline rule, which is what a line usually is - and only a value that is
+ * present and wrong is reported.
+ */
+function validateLine(item, where, issues) {
+    if (item.orientation != null
+        && !LINE_ORIENTATIONS.includes(item.orientation)) {
+        issues.push(
+            `${where}.orientation "${item.orientation}" is not one of: ` +
+            LINE_ORIENTATIONS.join(', '));
+    }
+
+    const style = item.style;
+    if (style == null) return;
+
+    if (typeof style !== 'object' || Array.isArray(style)) {
+        issues.push(`${where}.style must be an object`);
+        return;
+    }
+
+    if (style.thickness != null
+        && !(typeof style.thickness === 'number' && style.thickness > 0)) {
+        issues.push(`${where}.style.thickness must be a positive number of pixels`);
+    }
+
+    if (style.lineStyle != null && !LINE_STYLES.includes(style.lineStyle)) {
+        issues.push(
+            `${where}.style.lineStyle "${style.lineStyle}" is not one of: ` +
+            LINE_STYLES.join(', '));
+    }
 }
 
 

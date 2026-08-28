@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     layout, text, table, band, rows, groupedRows,
-    run, runWithoutGroup, detailBands, itemIdsOn, placedRows
+    run, runWithoutGroup, detailBands, itemIdsOn, placedRows,
+    drawnBottom, footerTop
 } from './helpers/layout.js';
 
 beforeEach(() => {
@@ -264,5 +265,131 @@ describe('paginate - page numbers', () => {
             const footer = page.bands.find(b => b.type === 'pageFooter');
             expect(footer.items[0].text).toBe(`Page ${idx + 1} of ${total}`);
         });
+    });
+});
+
+describe('paginate - the detail band stays inside its zone', () => {
+    /**
+     * The bug this covers: items are drawn absolutely at their `y`, but
+     * pagination used to add their heights up as if they flowed. The gap above
+     * a table was then never charged to the page, so a long table ran that many
+     * pixels past its zone and printed over the page footer.
+     */
+    it('charges the gap above a table to the page it is on', () => {
+        const json = layout({
+            bands: [
+                band('pageHeader', [text('ph', { h: 20 })], { height: 60 }),
+                band('detail', [
+                    text('name', { y: 14, h: 20 }),
+                    table({ y: 123 })
+                ]),
+                band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+            ]
+        });
+        const out = run(json, { items: rows(40) });
+
+        for (const page of out.pages) {
+            for (const b of detailBands(page)) {
+                expect(b.top + drawnBottom(b)).toBeLessThanOrEqual(footerTop(page));
+            }
+        }
+    });
+
+    it('re-anchors a continued table to the top of the next zone', () => {
+        const json = layout({
+            bands: [
+                band('detail', [table({ y: 300 })]),
+                band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+            ]
+        });
+        const out = run(json, { items: rows(80) });
+
+        expect(out.pages.length).toBeGreaterThan(1);
+
+        const [first, ...rest] = out.pages
+            .flatMap(p => detailBands(p))
+            .flatMap(b => b.items.filter(i => i.type === 'table'));
+
+        expect(first.y).toBe(300);
+        for (const slice of rest) expect(slice.y).toBe(0);
+    });
+
+    it('places items by their y, not by their order in the layout', () => {
+        const json = layout({
+            bands: [
+                band('detail', [
+                    table({ y: 100 }),
+                    text('above', { y: 10, h: 20 })
+                ]),
+                band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+            ]
+        });
+        const out = run(json, { items: rows(80) });
+
+        expect(itemIdsOn(out.pages[0])).toEqual(['above', 'tbl']);
+    });
+
+    /**
+     * The group footer only prints on the fragment that ends a group, and its
+     * height used to be added to that fragment without ever being reserved.
+     */
+    it('reserves the group footer on the page that ends a group', () => {
+        const json = layout({
+            groupBy: 'name',
+            bands: [
+                band('groupHeader', [text('gh', { value: '{name}', h: 38 })], { height: 38 }),
+                band('detail', [table()]),
+                band('groupFooter', [text('gf', { value: '{sum(price)}', h: 42 })], { height: 42 }),
+                band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+            ]
+        });
+
+        for (const n of [4, 6, 8, 10, 12]) {
+            const out = run(structuredClone(json), { items: groupedRows(['A', 'B', 'C'], n) });
+
+            for (const page of out.pages) {
+                for (const b of detailBands(page)) {
+                    expect(b.top + drawnBottom(b)).toBeLessThanOrEqual(footerTop(page));
+                }
+            }
+        }
+    });
+
+    it('never lets a detail band reach the footer, for any row count', () => {
+        for (const n of [0, 1, 30, 31, 32, 33, 64, 65, 96, 200]) {
+            const json = layout({
+                bands: [
+                    band('reportHeader', [text('rh', { h: 60 })], { height: 100 }),
+                    band('detail', [text('lead', { y: 20, h: 40 }), table({ y: 90 })]),
+                    band('reportFooter', [text('rf', { h: 40 })], { height: 120 }),
+                    band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+                ]
+            });
+            const out = run(json, { items: rows(n) });
+
+            expect(placedRows(out)).toHaveLength(n);
+
+            for (const page of out.pages) {
+                for (const b of detailBands(page)) {
+                    expect(b.top + drawnBottom(b)).toBeLessThanOrEqual(footerTop(page));
+                }
+            }
+        }
+    });
+
+    it('reports a band height that matches what the band draws', () => {
+        const json = layout({
+            bands: [
+                band('detail', [text('lead', { y: 20, h: 40 }), table({ y: 200 })]),
+                band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+            ]
+        });
+        const out = run(json, { items: rows(90) });
+
+        for (const page of out.pages) {
+            for (const b of detailBands(page)) {
+                expect(b.measuredHeight).toBe(drawnBottom(b));
+            }
+        }
     });
 });

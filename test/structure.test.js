@@ -7,8 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import {
     BAND_TYPES, findBand, hasBand, addBand, removeBand,
-    nextItemId, createText, createTable, addItem, removeItem,
-    addColumn, removeColumn, targetBand
+    nextItemId, createText, createTable, addItem, removeItem, duplicateItem,
+    pasteItems, addColumn, removeColumn, targetBand, createLine, createBox, LINE_BOX
 } from '../src/designer/structure.js';
 import { validateLayout } from '../src/engine/validate.js';
 import { blankLayout } from '../src/designer/blank.js';
@@ -335,5 +335,333 @@ describe('a report built entirely through these', () => {
 
         expect(validateLayout(l)).toEqual([]);
         expect(BAND_TYPES).toContain(l.bands[0].type);
+    });
+});
+
+describe('duplicateItem', () => {
+    const detailOf = (l) => findBand(l, 'detail');
+
+    it('puts a copy on the same band', () => {
+        const l = layout({ bands: [band('detail', [text('t1')])] });
+        const copy = duplicateItem(l, 'detail', 't1');
+
+        expect(copy).not.toBeNull();
+        expect(detailOf(l).items.map(i => i.id)).toEqual(['t1', copy.id]);
+    });
+
+    it('gives the copy an id of its own', () => {
+        const l = layout({ bands: [band('detail', [text('text-1')])] });
+        const copy = duplicateItem(l, 'detail', 'text-1');
+
+        expect(copy.id).not.toBe('text-1');
+        expect(copy.id).toBe('text-2');
+    });
+
+    it('counts on from a hand-written name rather than renaming it', () => {
+        const l = layout({ bands: [band('detail', [text('rh_title')])] });
+        const copy = duplicateItem(l, 'detail', 'rh_title');
+
+        expect(copy.id).toBe('rh_title-1');
+    });
+
+    it('never collides with an id already in another band', () => {
+        const l = layout({
+            bands: [
+                band('pageHeader', [text('text-2')]),
+                band('detail', [text('text-1')])
+            ]
+        });
+        const copy = duplicateItem(l, 'detail', 'text-1');
+
+        expect(copy.id).toBe('text-3');
+    });
+
+    it('offsets the copy so it does not hide the original', () => {
+        const l = layout({ bands: [band('detail', [text('t1', { x: 40, y: 60, w: 200 })])] });
+        const copy = duplicateItem(l, 'detail', 't1');
+
+        expect(copy.x).toBe(50);
+        expect(copy.y).toBe(70);
+    });
+
+    it('keeps a copy of an item at the right edge on the page', () => {
+        /** the printable width is 714; an item flush to it cannot shift right */
+        const l = layout({ bands: [band('detail', [text('t1', { x: 514, y: 0, w: 200 })])] });
+        const copy = duplicateItem(l, 'detail', 't1');
+
+        expect(copy.x).toBe(514);
+        expect(copy.y).toBe(10);
+    });
+
+    /**
+     * The failure this rules out is quiet: a shared style object means setting
+     * the copy's font also sets the original's, and nothing says so until the
+     * report prints.
+     */
+    it('deep copies the style, so the two do not share one', () => {
+        const l = layout({ bands: [band('detail', [text('t1')])] });
+        const copy = duplicateItem(l, 'detail', 't1');
+
+        copy.style.fontSize = 40;
+
+        expect(detailOf(l).items[0].style.fontSize).not.toBe(40);
+    });
+
+    /**
+     * A report binds one table (validateOneTable in validate.js), so a copy of
+     * one would print its header and no rows. Refused rather than made.
+     */
+    it('will not copy a table, since a report binds one', () => {
+        const l = layout({ bands: [band('detail', [table({ id: 'tbl' })])] });
+
+        expect(duplicateItem(l, 'detail', 'tbl')).toBeNull();
+        expect(detailOf(l).items).toHaveLength(1);
+    });
+
+    it('returns null for an item that is not on that band', () => {
+        const l = layout({ bands: [band('detail', [text('t1')])] });
+
+        expect(duplicateItem(l, 'detail', 'nope')).toBeNull();
+        expect(duplicateItem(l, 'pageFooter', 't1')).toBeNull();
+        expect(detailOf(l).items).toHaveLength(1);
+    });
+
+    it('leaves a layout that still validates', () => {
+        const l = layout({ bands: [band('detail', [table({ id: 'tbl' })])] });
+        duplicateItem(l, 'detail', 'tbl');
+
+        expect(() => validateLayout(l)).not.toThrow();
+    });
+
+    it('can be run again on the copy, and steps down each time', () => {
+        const l = layout({ bands: [band('detail', [text('t1', { x: 0, y: 0, w: 200 })])] });
+
+        const first = duplicateItem(l, 'detail', 't1');
+        const second = duplicateItem(l, 'detail', first.id);
+
+        expect(second.y).toBe(20);
+        expect(new Set(detailOf(l).items.map(i => i.id)).size).toBe(3);
+    });
+});
+
+describe('pasteItems', () => {
+    const itemsOn = (l, type) => findBand(l, type).items;
+
+    it('puts a copy of each entry on the band', () => {
+        const l = layout({ bands: [band('detail', [])] });
+        const made = pasteItems(l, 'detail', [
+            { band: 'detail', item: text('a', { w: 100 }) },
+            { band: 'detail', item: text('b', { w: 100 }) }
+        ]);
+
+        expect(made).toHaveLength(2);
+        expect(itemsOn(l, 'detail')).toHaveLength(2);
+    });
+
+    it('gives every paste an id that is free', () => {
+        const l = layout({ bands: [band('detail', [text('text-1', { w: 100 })])] });
+        const [copy] = pasteItems(l, 'detail', [
+            { band: 'detail', item: findBand(l, 'detail').items[0] }
+        ]);
+
+        expect(copy.id).toBe('text-2');
+    });
+
+    it('offsets a paste so it does not land on what it came from', () => {
+        const source = text('t1', { x: 20, y: 30, w: 100 });
+        const l = layout({ bands: [band('detail', [source])] });
+        const [copy] = pasteItems(l, 'detail', [{ band: 'detail', item: source }]);
+
+        expect(copy).toMatchObject({ x: 30, y: 40 });
+    });
+
+    it('keeps the position when pasting back onto the same band', () => {
+        const source = text('t1', { x: 0, y: 600, w: 100 });
+        const l = layout({
+            bands: [band('pageFooter', [], { height: 40 }), band('detail', [source])]
+        });
+        const [copy] = pasteItems(l, 'detail', [{ band: 'detail', item: source }]);
+
+        expect(copy.y).toBe(610);
+    });
+
+    /**
+     * A y of 600 places an item in a 900px detail zone and places it nowhere in
+     * a 40px page footer - a paste the author cannot see is a paste that looks
+     * like it failed.
+     */
+    it('brings a paste from another band into the zone it lands in', () => {
+        const source = text('t1', { x: 0, y: 600, w: 100, h: 20 });
+        const l = layout({
+            bands: [band('pageFooter', [], { height: 40 }), band('detail', [source])]
+        });
+        const [copy] = pasteItems(l, 'pageFooter', [{ band: 'detail', item: source }]);
+
+        expect(copy.y).toBeLessThanOrEqual(40 - 20);
+        expect(copy.y).toBeGreaterThanOrEqual(0);
+    });
+
+    it('deep copies, so the paste and its source do not share a style', () => {
+        const source = text('t1', { w: 100 });
+        const l = layout({ bands: [band('detail', [source])] });
+        const [copy] = pasteItems(l, 'detail', [{ band: 'detail', item: source }]);
+
+        copy.style.fontSize = 40;
+
+        expect(source.style.fontSize).not.toBe(40);
+    });
+
+    it('skips a table when the report already has one', () => {
+        const source = table({ id: 'tbl' });
+        const l = layout({ bands: [band('detail', [source])] });
+
+        expect(pasteItems(l, 'detail', [{ band: 'detail', item: source }])).toEqual([]);
+        expect(findBand(l, 'detail').items).toHaveLength(1);
+    });
+
+    it('pastes a table into a report that has none, columns and all', () => {
+        const source = table({ id: 'tbl' });
+        const l = layout({ bands: [band('detail', [])] });
+        const [copy] = pasteItems(l, 'detail', [{ band: 'detail', item: source }]);
+
+        expect(copy.columns).toHaveLength(3);
+
+        copy.columns[0].label = 'Changed';
+
+        expect(source.columns[0].label).not.toBe('Changed');
+        expect(validateLayout(l)).toEqual([]);
+    });
+
+    /** one item of a clipboard being unplaceable does not refuse the rest */
+    it('places what it can when one of several cannot be pasted', () => {
+        const l = layout({ bands: [band('detail', [table({ id: 'tbl' })])] });
+
+        const made = pasteItems(l, 'detail', [
+            { band: 'detail', item: table({ id: 'tbl' }) },
+            { band: 'detail', item: text('t1', { w: 100 }) }
+        ]);
+
+        expect(made).toHaveLength(1);
+        expect(made[0].type).toBe('text');
+    });
+
+    it('does nothing for a band that is not switched on', () => {
+        const l = layout({ bands: [band('detail', [])] });
+
+        expect(pasteItems(l, 'pageFooter', [
+            { band: 'detail', item: text('a') }
+        ])).toEqual([]);
+    });
+
+    it('survives an empty clipboard', () => {
+        const l = layout({ bands: [band('detail', [])] });
+
+        expect(pasteItems(l, 'detail', [])).toEqual([]);
+        expect(pasteItems(l, 'detail', null)).toEqual([]);
+    });
+});
+
+
+describe('createLine', () => {
+    it('spans the printable width, on the grid below what is there', () => {
+        const l = layout({ bands: [band('detail', [text('t1', { y: 0, h: 40 })])] });
+        const made = createLine(l, findBand(l, 'detail'));
+
+        expect(made.type).toBe('line');
+        expect(made.w).toBe(714);
+        expect(made.y).toBe(40);
+    });
+
+    /**
+     * A hairline that was its own box would be a 1px target on the canvas, so
+     * the box is grabbable and the rule is drawn down the middle of it.
+     */
+    it('gives the rule a box big enough to grab', () => {
+        const l = layout({ bands: [band('detail', [])] });
+        const made = createLine(l, findBand(l, 'detail'));
+
+        expect(made.h).toBe(LINE_BOX);
+        expect(made.style.thickness).toBe(1);
+        expect(made.h).toBeGreaterThan(made.style.thickness);
+    });
+
+    it('starts as a plain hairline rule', () => {
+        const l = layout({ bands: [band('detail', [])] });
+        const made = createLine(l, findBand(l, 'detail'));
+
+        expect(made.orientation).toBe('horizontal');
+        expect(made.style).toMatchObject({ lineStyle: 'solid', color: '#000000' });
+    });
+
+    it('turns the box on its side when asked for a vertical one', () => {
+        const l = layout({ bands: [band('detail', [])] });
+        const made = createLine(l, findBand(l, 'detail'), 'vertical');
+
+        expect(made.orientation).toBe('vertical');
+        expect(made.w).toBe(LINE_BOX);
+        expect(made.h).toBeGreaterThan(made.w);
+    });
+
+    it('numbers itself apart from everything else on the report', () => {
+        const l = layout({ bands: [band('detail', [])] });
+
+        addItem(l, 'detail', createLine(l, findBand(l, 'detail')));
+        const second = createLine(l, findBand(l, 'detail'));
+
+        expect(second.id).toBe('line-2');
+    });
+
+    it('leaves a layout the engine accepts', () => {
+        const l = layout({ bands: [band('detail', [table()])] });
+        addItem(l, 'detail', createLine(l, findBand(l, 'detail')));
+
+        expect(validateLayout(l)).toEqual([]);
+    });
+
+    it('duplicates like anything else', () => {
+        const l = layout({ bands: [band('detail', [])] });
+        const made = addItem(l, 'detail', createLine(l, findBand(l, 'detail')));
+        const copy = duplicateItem(l, 'detail', made.id);
+
+        expect(copy.style).not.toBe(made.style);
+        expect(copy.style.lineStyle).toBe('solid');
+        expect(findBand(l, 'detail').items).toHaveLength(2);
+    });
+});
+
+
+describe('createBox', () => {
+    it('spans the printable width, on the grid below what is there', () => {
+        const l = layout({ bands: [band('detail', [text('t1', { y: 0, h: 40 })])] });
+        const made = createBox(l, findBand(l, 'detail'));
+
+        expect(made.type).toBe('box');
+        expect(made.w).toBe(714);
+        expect(made.y).toBe(40);
+    });
+
+    /** a fill it did not ask for would hide whatever it was put there to frame */
+    it('starts as an empty hairline frame', () => {
+        const l = layout({ bands: [band('detail', [])] });
+        const made = createBox(l, findBand(l, 'detail'));
+
+        expect(made.style).toMatchObject({
+            borderStyle: 'solid', borderWidth: 1, background: null, radius: 0
+        });
+    });
+
+    it('numbers itself apart from everything else on the report', () => {
+        const l = layout({ bands: [band('detail', [])] });
+
+        addItem(l, 'detail', createBox(l, findBand(l, 'detail')));
+
+        expect(createBox(l, findBand(l, 'detail')).id).toBe('box-2');
+    });
+
+    it('leaves a layout the engine accepts', () => {
+        const l = layout({ bands: [band('detail', [table()])] });
+        addItem(l, 'detail', createBox(l, findBand(l, 'detail')));
+
+        expect(validateLayout(l)).toEqual([]);
     });
 });

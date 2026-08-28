@@ -21,14 +21,20 @@ import {
     drawPanel, drawReportPanel, drawManyPanel, attachPanel, syncPanel
 } from './panel.js';
 import { icon } from './icons.js';
+import { menuActions, drawMenu, menuPosition } from './menu.js';
+import { openWindow, closeWithOpener } from '../shared/window.js';
+import { openViewerWindow } from '../preview/viewer.js';
+import { buildPages } from '../engine/index.js';
+import { drawProblems, sameIssues } from './toast.js';
 import { askColumns, askReport, askName, askData, askToken } from './dialog.js';
 import { sampleData } from './sample-data.js';
 import { drawPreview } from './preview.js';
 import { createHistory } from './history.js';
 import { createStore, StoreError, toId } from '../shared/store.js';
 import {
-    addBand, removeBand, findBand, addItem, removeItem, moveItemToBand,
-    createText, createTable, addColumn, removeColumn, targetBand
+    addBand, removeBand, findBand, addItem, removeItem, duplicateItem, pasteItems,
+    moveItemToBand, createText, createTable, createLine, createBox, addColumn,
+    removeColumn, targetBand, canAddTable
 } from './structure.js';
 
 
@@ -43,6 +49,51 @@ import {
  *   server's routes by default
  * @returns {object} a handle: the current layout, redraw, and destroy
  */
+/**
+ * Opens the designer in a window of its own.
+ *
+ * The same designer, mounted in a window this opens rather than in an element
+ * the host supplies - a report is a page-shaped thing, and a page suits a
+ * window better than a panel in somebody's application. The host's stylesheets
+ * are carried across, so it looks the same either way.
+ *
+ * Call it from a click or a keystroke, or the browser blocks it; a blocked
+ * window is null rather than a throw, so a host can fall back to the page.
+ *
+ * @param {object} options what createDesigner takes, less `mount`
+ * @param {number} [options.width]
+ * @param {number} [options.height]
+ * @param {string} [options.features] passed to window.open as given
+ * @returns {object|null} the designer handle, with `window`; null if blocked
+ */
+export function openDesignerWindow({
+    width, height, features, ...rest
+} = {}) {
+    const opened = openWindow({
+        title: rest.layout?.name ? `${rest.layout.name} - Designer` : 'Report designer',
+        width, height, features
+    });
+
+    if (!opened) return null;
+
+    const designer = createDesigner({ ...rest, mount: opened.mount });
+
+    /** what is being edited is held in memory, so it goes when the opener does */
+    const unwatch = closeWithOpener(globalThis, opened.window, designer.destroy);
+
+    return {
+        ...designer,
+        window: opened.window,
+
+        destroy() {
+            unwatch();
+            designer.destroy();
+            opened.close();
+        }
+    };
+}
+
+
 export function createDesigner({ mount, layout, id = null, store } = {}) {
     const root = typeof mount === 'string'
         ? document.querySelector(mount)
@@ -54,6 +105,13 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             `Add <div id="report-designer"></div> to the page first.`
         );
     }
+
+/**
+ * The document the screen is mounted in, which is not always this one: a
+ * designer or a viewer opened in its own window lives in that window's
+ * document, and a listener put on the opener's would never hear it.
+ */
+    const doc = root.ownerDocument;
 
     const files = store ?? createStore();
 
@@ -74,8 +132,25 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         id,
         /** whether there are changes the disk has not seen */
         dirty: false,
+        /**
+         * What ctrl+C took, as `{ band, item }` - the item deep-copied, so a
+         * later edit to the original does not reach back into the clipboard,
+         * and the band it came from, which a paste elsewhere needs to know to
+         * reposition it.
+         *
+         * The designer's own, not the system's: reading the platform clipboard
+         * needs a permission prompt, and nothing outside this screen can use a
+         * layout item anyway.
+         */
+        clipboard: [],
         /** 'design' arranges the bands; 'preview' runs the report */
-        mode: 'design'
+        mode: 'design',
+        /**
+         * The problems the author has already been shown and closed, so the
+         * toast does not reopen on every keystroke. It comes back the moment
+         * what is wrong changes - see sameIssues in toast.js.
+         */
+        dismissed: null
     };
 
     const history = createHistory(state.layout);
@@ -87,6 +162,9 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     const panel = root.querySelector('[data-role="panel"]');
     const bar = root.querySelector('[data-role="bar"]');
     const foot = root.querySelector('[data-role="foot"]');
+    /** the pill is drawn into the page area, which is the box it must stay inside */
+    const main = root.querySelector('.dz-main');
+    const toasts = root.querySelector('[data-role="toasts"]');
     const pages = root.querySelector('[data-role="pages"]');
 
 
@@ -123,10 +201,11 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
          * broken one is named field by field rather than drawn as a blank page
          * and left to look like the library is broken.
          *
-         * The issues are a banner rather than a replacement, because most of
-         * them are survivable - setting groupBy before adding a group band is
-         * one keystroke, and blanking the canvas for it would be a punishment.
-         * Only a layout that cannot be drawn at all leaves nothing behind it.
+         * The issues are said in the corner rather than drawn over the
+         * design, because most of them are survivable - setting groupBy before
+         * adding a group band is one keystroke, and pushing the page down the
+         * canvas to say so is a punishment. Only a layout that cannot be drawn
+         * at all leaves nothing behind it.
          */
         const issues = validateLayout(state.layout);
 
@@ -138,6 +217,8 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
                 ? ''
                 : `${run.pageCount} page${run.pageCount === 1 ? '' : 's'}`;
 
+            /** the preview says what stopped it in the page itself */
+            showProblems(issues);
             return issues;
         }
 
@@ -151,8 +232,30 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             sheet = '';
         }
 
-        canvas.innerHTML = (issues.length ? problems(issues) : '') + sheet;
+        canvas.innerHTML = sheet;
+        showProblems(issues);
+
         return issues;
+    }
+
+
+    /**
+     * Puts the validator's findings in the corner, or takes them away again.
+     *
+     * Never while the report is being previewed: the run says what stopped it in
+     * the page itself, and two accounts of one fault is one too many.
+     *
+     * @param {string[]} issues
+     */
+    function showProblems(issues) {
+        const hidden = state.mode !== 'design'
+            || issues.length === 0
+            || sameIssues(issues, state.dismissed);
+
+        toasts.innerHTML = hidden ? '' : drawProblems(issues);
+
+        /** a layout that validates forgets the dismissal, so the next fault is announced */
+        if (issues.length === 0) state.dismissed = null;
     }
 
 
@@ -277,20 +380,16 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
          * that has been saved. Rather than opening it to an error, the link is
          * inert until there is a file for it to open, and says why.
          */
-        const link = bar.querySelector('[data-role="open-preview"]');
-
-        if (state.id) {
-            link.href = `../preview/?report=${encodeURIComponent(state.id)}`;
-            link.removeAttribute('aria-disabled');
-            link.title = 'Open in the preview screen';
-        } else {
-            link.removeAttribute('href');
-            link.setAttribute('aria-disabled', 'true');
-            link.title = 'Save the report first - the preview screen reads it from disk';
-        }
-
         bar.querySelector('[data-role="undo"]').disabled = !history.canUndo;
         bar.querySelector('[data-role="redo"]').disabled = !history.canRedo;
+
+        /** greyed rather than absent: it says the tool exists and why it cannot be used */
+        const addTable = foot.querySelector('[data-role="add-table"]');
+
+        addTable.disabled = !canAddTable(state.layout);
+        addTable.title = addTable.disabled
+            ? 'A report binds one table'
+            : 'Add a table';
         bar.dataset.dirty = String(state.dirty);
 
         const saved = bar.querySelector('[data-role="status"]');
@@ -363,6 +462,113 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     }
 
 
+    /* ---------------- the right-click pill ---------------- */
+
+    /** the open menu, or null */
+    let menu = null;
+
+
+    function closeMenu() {
+        menu?.remove();
+        menu = null;
+    }
+
+
+    /**
+     * Opens the pill at a point on screen.
+     *
+     * Drawn first and measured second: what it offers decides how wide it is,
+     * and it cannot be kept inside the page area without knowing that.
+     *
+     * @param {number} clientX
+     * @param {number} clientY
+     */
+    function openMenu(clientX, clientY) {
+        closeMenu();
+
+        main.insertAdjacentHTML('beforeend', drawMenu(menuActions({
+            count: state.selection.length,
+            canPaste: state.clipboard.length > 0,
+            /** a copy of a table would be the second one this report cannot hold */
+            canDuplicate: !selectedItems().some(item => item.type === 'table')
+        })));
+
+        menu = main.querySelector('[data-role="menu"]');
+
+        /**
+         * Bound to the pill, not to the page area: a delegated listener out
+         * there answers for the tool strip as well, and every add would run
+         * twice.
+         */
+        menu.addEventListener('click', onMenuClick);
+
+        const bounds = main.getBoundingClientRect();
+        const box = menu.getBoundingClientRect();
+
+        const at = menuPosition(
+            { x: clientX - bounds.left, y: clientY - bounds.top },
+            { width: box.width, height: box.height },
+            { width: bounds.width, height: bounds.height }
+        );
+
+        menu.style.left = `${at.left}px`;
+        menu.style.top = `${at.top}px`;
+
+        /** so escape and the arrow keys have somewhere to be aimed */
+        menu.querySelector('button:not([disabled])')?.focus();
+    }
+
+
+    /**
+     * A right click acts on what is under it. An item that is not selected
+     * becomes the selection first - otherwise Delete would take whatever
+     * happened to be selected elsewhere, which is how a layout gets lost.
+     */
+    function onContextMenu(event) {
+        if (state.mode !== 'design') return;
+
+        event.preventDefault();
+
+        const node = event.target.closest?.('[data-item-id]');
+        const bandType = node?.closest('[data-band-type]')?.dataset.bandType ?? null;
+
+        if (node && bandType) {
+            const where = { band: bandType, id: node.dataset.itemId };
+            const already = state.selection
+                .some(one => one.band === where.band && one.id === where.id);
+
+            if (!already) setSelection(where);
+        } else {
+            setSelection(null);
+        }
+
+        openMenu(event.clientX, event.clientY);
+    }
+
+
+    function onMenuClick(event) {
+        const node = event.target.closest?.('[data-action]');
+        if (!node || node.disabled) return;
+
+        event.preventDefault();
+
+        /** closed first: what follows redraws, and a stale pill would outlive it */
+        closeMenu();
+        act(node.dataset.action, node.dataset);
+    }
+
+
+    /** anything that is not the pill closes it */
+    function onDocumentDown(event) {
+        if (menu && !menu.contains(event.target)) closeMenu();
+    }
+
+
+    function onMenuKey(event) {
+        if (menu && event.key === 'Escape') closeMenu();
+    }
+
+
     function act(action, data) {
         const item = selected();
 
@@ -372,6 +578,23 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
                 if (!type) return;
 
                 place(type, createText(state.layout, findBand(state.layout, type)));
+                return;
+            }
+
+            case 'add-box': {
+                const type = targetBand(state.layout, primary());
+                if (!type) return;
+
+                place(type, createBox(state.layout, findBand(state.layout, type)));
+                return;
+            }
+
+            case 'add-line': {
+                const type = targetBand(state.layout, primary());
+                if (!type) return;
+
+                place(type, createLine(
+                    state.layout, findBand(state.layout, type), data?.orientation));
                 return;
             }
 
@@ -404,6 +627,20 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
                 if (!type) return;
 
                 /**
+                 * The engine binds the dataset to one table (validate.js says
+                 * so). Refused here as well as there, so the answer arrives
+                 * when the tool is pressed rather than as a problem in the
+                 * corner after the table has been drawn.
+                 */
+                if (!canAddTable(state.layout)) {
+                    flashStatus(
+                        'This report already has a table - a report binds one',
+                        { ms: 3000 }
+                    );
+                    return;
+                }
+
+                /**
                  * A table is asked about first: how many columns it starts with
                  * is the one thing that cannot be dragged into place afterwards
                  * without a trip through the rail for each of them.
@@ -414,6 +651,103 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
                     place(type, createTable(
                         state.layout, findBand(state.layout, type), columns));
                 });
+                return;
+            }
+
+            case 'duplicate-item': {
+                if (!state.selection.length) return;
+
+                /**
+                 * Read the selection before adding anything: duplicateItem
+                 * appends to the same band, and a copy made from a copy would
+                 * cascade down the page for as long as the loop ran.
+                 */
+                const sources = [...state.selection];
+                const copies = [];
+
+                for (const one of sources) {
+                    const made = duplicateItem(state.layout, one.band, one.id);
+                    if (made) copies.push({ band: one.band, id: made.id });
+                }
+
+                if (!copies.length) {
+                    if (sources.some(one => itemAt(one)?.type === 'table')) {
+                        flashStatus(
+                            'A report binds one table, so it cannot be copied',
+                            { ms: 3000 }
+                        );
+                    }
+                    return;
+                }
+
+                /**
+                 * The copies are what is selected afterwards, not the originals:
+                 * the next thing anyone does to a duplicate is move it, and
+                 * leaving the original selected would move the wrong one.
+                 */
+                state.selection = copies;
+                restructured(`duplicate:${copies.map(c => c.id).join(',')}`);
+
+                flashBand([...new Set(copies.map(c => c.band))]);
+                return;
+            }
+
+            case 'dismiss-problems': {
+                state.dismissed = validateLayout(state.layout);
+                toasts.innerHTML = '';
+                return;
+            }
+
+            case 'copy-items': {
+                if (!state.selection.length) return;
+
+                const taken = state.selection
+                    .map(one => ({ band: one.band, item: itemAt(one) }))
+                    .filter(entry => entry.item)
+                    .map(entry => ({
+                        band: entry.band,
+                        item: structuredClone(entry.item)
+                    }));
+
+                if (!taken.length) return;
+
+                state.clipboard = taken;
+
+                /**
+                 * Nothing on screen changes when a copy is taken, so the bar
+                 * says it did - otherwise ctrl+C is a keystroke with no answer.
+                 */
+                flashStatus(
+                    taken.length > 1 ? `Copied ${taken.length} items` : 'Copied',
+                    { ms: 2000 }
+                );
+                return;
+            }
+
+            case 'paste-items': {
+                if (!state.clipboard.length) return;
+
+                /** onto the band being worked in, which is where a paste is expected */
+                const type = targetBand(state.layout, primary());
+                if (!type) return;
+
+                const made = pasteItems(state.layout, type, state.clipboard);
+                if (!made.length) return;
+
+                /**
+                 * The clipboard now holds where these landed, so pressing paste
+                 * again steps down from the last copy rather than putting a
+                 * second one exactly on top of it.
+                 */
+                state.clipboard = made.map(item => ({
+                    band: type,
+                    item: structuredClone(item)
+                }));
+
+                state.selection = made.map(item => ({ band: type, id: item.id }));
+                restructured(`paste:${made.map(i => i.id).join(',')}`);
+
+                flashBand(type);
                 return;
             }
 
@@ -459,6 +793,7 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             case 'open': return openReport();
             case 'save': return saveReport();
             case 'data': return editData();
+            case 'open-window': return openInWindow();
             case 'toggle-preview': return togglePreview();
         }
     }
@@ -607,6 +942,47 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
      * makes the preview work for a report nobody has supplied data for yet -
      * the case it is most needed in.
      */
+    /**
+     * Runs the report and opens it in a window of its own.
+     *
+     * This used to be a link to the preview screen, which reads the report off
+     * the disk - so it did nothing until the report had been saved, which is
+     * the wrong answer to "show me this". The window is built here from the
+     * design as it currently stands, so it works on the first keystroke of a
+     * report that has never been named.
+     */
+    function openInWindow() {
+        let paginated;
+
+        try {
+            paginated = buildPages(state.layout, state.data ?? sampleData(state.layout));
+        } catch (error) {
+            complain(error);
+            return;
+        }
+
+        const opened = openViewerWindow({
+            paginated,
+            title: state.layout?.name || 'Report'
+        });
+
+        /** a browser that refused the window says nothing itself, so this does */
+        if (!opened) {
+            flashStatus(
+                'The browser blocked the report window - allow pop-ups for this page',
+                { problem: true, ms: 6000 }
+            );
+            return;
+        }
+
+        windows.add(opened);
+    }
+
+
+    /** the report windows this designer opened, so they go when it does */
+    const windows = new Set();
+
+
     async function togglePreview() {
         if (state.mode === 'preview') {
             state.mode = 'design';
@@ -653,21 +1029,39 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
 
 
     /** the server's own words, where the user is looking */
-    function complain(error) {
-        const message = error instanceof StoreError
-            ? error.message
-            : `Something went wrong: ${error?.message ?? error}`;
-
+    /**
+     * Says something in the bar for a moment, then puts the saved state back.
+     *
+     * Shared with complain() so there is one place that owns the status line -
+     * two timers writing to it independently is how a message ends up cleared
+     * by an error that arrived before it.
+     *
+     * @param {string} message
+     * @param {object} [options]
+     * @param {boolean} [options.problem] draws it as a failure
+     * @param {number} [options.ms] how long it stands
+     */
+    function flashStatus(message, { problem = false, ms = 6000 } = {}) {
         const note = bar.querySelector('[data-role="status"]');
 
         note.textContent = message;
-        note.dataset.problem = 'true';
+        if (problem) note.dataset.problem = 'true';
+        else delete note.dataset.problem;
 
         clearTimeout(complain.timer);
         complain.timer = setTimeout(() => {
             delete note.dataset.problem;
             refreshBar();
-        }, 6000);
+        }, ms);
+    }
+
+
+    function complain(error) {
+        const message = error instanceof StoreError
+            ? error.message
+            : `Something went wrong: ${error?.message ?? error}`;
+
+        flashStatus(message, { problem: true });
     }
 
 
@@ -711,6 +1105,17 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         getSelection: () => state.selection,
         select: setSelection,
         remove: () => act('delete-item'),
+
+        /**
+         * Alt-drag. The copies become the selection, so the drag that follows
+         * carries them and leaves the originals where they were put.
+         */
+        duplicate: () => {
+            const before = state.selection.map(one => one.id).join(',');
+            act('duplicate-item');
+
+            return state.selection.map(one => one.id).join(',') !== before;
+        },
         /**
          * render.js emits the same data-item-id attributes items.js gives the
          * canvas - which is the point of one drawing path, and also means a
@@ -809,6 +1214,22 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
 
         const key = event.key.toLowerCase();
 
+        /**
+         * Copy and paste stay the browser's while a field has the caret, or
+         * while there is text selected. Taking them would break copying a value
+         * out of the rail, which people do far more often than they copy an
+         * item - and a shortcut that works everywhere except where you need it
+         * is worse than one that was never bound.
+         */
+        if (key === 'c' || key === 'v') {
+            if (event.target.closest?.('input, textarea, select')) return;
+            if (key === 'c' && String(globalThis.getSelection?.() ?? '')) return;
+
+            event.preventDefault();
+            act(key === 'c' ? 'copy-items' : 'paste-items');
+            return;
+        }
+
         if (key === 's') {
             event.preventDefault();
             act('save');
@@ -836,12 +1257,25 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         if (key === 'y') {
             event.preventDefault();
             act('redo');
+            return;
+        }
+
+        if (key === 'd') {
+            event.preventDefault();
+            act('duplicate-item');
         }
     }
 
     bar.addEventListener('click', onChromeClick);
     foot.addEventListener('click', onChromeClick);
+    toasts.addEventListener('click', onChromeClick);
     root.addEventListener('keydown', onShortcut);
+
+    canvas.addEventListener('contextmenu', onContextMenu);
+    /** the pill is pinned to the page area, so a scroll leaves it behind */
+    canvas.addEventListener('scroll', closeMenu);
+    doc.addEventListener('pointerdown', onDocumentDown);
+    doc.addEventListener('keydown', onMenuKey);
 
     return {
         /** the layout as it currently stands - the thing onSave will be given */
@@ -893,9 +1327,19 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             detachPanel();
             bar.removeEventListener('click', onChromeClick);
             foot.removeEventListener('click', onChromeClick);
+            toasts.removeEventListener('click', onChromeClick);
             root.removeEventListener('keydown', onShortcut);
+            canvas.removeEventListener('contextmenu', onContextMenu);
+            canvas.removeEventListener('scroll', closeMenu);
+            doc.removeEventListener('pointerdown', onDocumentDown);
+            doc.removeEventListener('keydown', onMenuKey);
+            closeMenu();
             clearTimeout(complain.timer);
             clearTimeout(flashBand.timer);
+            /** a report window shows what was passed to it; it cannot outlive this */
+            for (const opened of windows) opened.destroy();
+            windows.clear();
+
             root.innerHTML = '';
             root.classList.remove('report-designer');
         }
@@ -945,15 +1389,16 @@ function chrome(layout) {
                 >${icon('preview')}</button>
 
             <!--
-                A link, not a button: it goes to the other screen, and a link is
-                what a browser lets you middle-click, bookmark and open beside
-                this one. The href is relative, so it resolves wherever the two
-                pages happen to be mounted.
+                A button, not a link: the window is built from the design as it
+                stands rather than fetched from a URL, so it works on a report
+                that has never been saved - which a link to the preview screen
+                could not, because that screen reads the report off the disk.
             -->
-            <a class="dz-tool" data-role="open-preview" target="_blank"
-               rel="noopener" title="Open in the preview screen"
-               aria-label="Open in the preview screen"
-                >${icon('external')}</a>
+            <button type="button" class="dz-tool" data-role="open-preview"
+                    data-action="open-window"
+                    title="Open the report in its own window"
+                    aria-label="Open the report in its own window"
+                >${icon('external')}</button>
         </div>
 
         <span class="dz-pages" data-role="pages"></span>
@@ -975,14 +1420,29 @@ function chrome(layout) {
                 <button type="button" class="dz-tool" data-action="add-text"
                         title="Add a text box" aria-label="Add a text box"
                     >${icon('text')}</button>
-                <button type="button" class="dz-tool" data-action="add-table"
+                <button type="button" class="dz-tool" data-role="add-table"
+                        data-action="add-table"
                         title="Add a table" aria-label="Add a table"
                     >${icon('table')}</button>
+                <button type="button" class="dz-tool" data-action="add-line"
+                        title="Add a line" aria-label="Add a line"
+                    >${icon('line')}</button>
+                <button type="button" class="dz-tool" data-action="add-box"
+                        title="Add a box" aria-label="Add a box"
+                    >${icon('box')}</button>
                 <button type="button" class="dz-tool" data-action="add-field"
                         title="Insert a page number, date or total"
                         aria-label="Insert a field"
                     >${icon('field')}</button>
             </footer>
+
+            <!--
+                The corner messages, in the page area rather than the window.
+                Pinned to the window they would hang over the properties rail -
+                which is where the band switches are, and so where most of what
+                the validator complains about is actually fixed.
+            -->
+            <div class="dz-toasts" data-role="toasts"></div>
         </div>
 
         <aside class="dz-panel" data-role="panel" aria-label="Properties"></aside>
@@ -994,15 +1454,6 @@ function chrome(layout) {
  * The validator already writes in the user's terms - "bands[2].items[0].value
  * must be a string" - so this only has to show the list rather than translate it.
  */
-function problems(issues) {
-    return `
-    <div class="dz-problems" role="alert">
-        <h2>This report will not render yet</h2>
-        <ul>${issues.map(i => `<li>${escapeText(i)}</li>`).join('')}</ul>
-    </div>`;
-}
-
-
 /**
  * An item id comes from a hand-written layout file, so it can hold anything.
  * CSS.escape is absent in some test environments, hence the fallback.

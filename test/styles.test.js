@@ -207,3 +207,68 @@ describe('the stylesheet a consumer links', () => {
         expect(pkg.exports['./report.css']).toBe('./src/render/report.css');
     });
 });
+
+
+describe('report.css - a table row is exactly its declared height', () => {
+    /**
+     * The engine paginates a table as headerHeight + rows x rowHeight. A <tr>
+     * honours `height` only as a minimum, and under border-collapse a 1px cell
+     * rule costs another pixel per row on top of it - so cell padding and cell
+     * borders both grew the table past the space that was reserved for it. Two
+     * pixels a row is invisible until the thirtieth row prints over the page
+     * footer, so the height, the padding and the rules all belong to the .cell
+     * box, where they cannot add to the row.
+     */
+    const css = stripNoise(read('src/render/report.css'));
+
+    const rule = (selector) => {
+        const at = css.indexOf(selector);
+        if (at === -1) return null;
+        return css.slice(at, css.indexOf('}', at));
+    };
+
+    it('leaves the cell itself nothing that can add to a row', () => {
+        const cells = rule('.page th,\n.page td');
+
+        expect(cells).not.toBeNull();
+        expect(cells).toMatch(/border:\s*none/);
+        expect(cells).toMatch(/padding:\s*0/);
+    });
+
+    it('draws the rules inside the .cell box instead', () => {
+        const cell = rule('.page .cell');
+
+        expect(cell).not.toBeNull();
+        expect(cell).toMatch(/box-sizing:\s*border-box/);
+        expect(cell).toMatch(/border-top:\s*var\(--rs-rule-width, 1px\)/);
+        expect(cell).toMatch(/border-left:\s*var\(--rs-rule-width, 1px\)/);
+    });
+
+    it('closes the grid on the outer right and bottom edges', () => {
+        expect(css).toMatch(/\.page tr > :last-child \.cell\s*\{[^}]*border-right/);
+        expect(css).toMatch(/\.page tbody tr:last-child \.cell\s*\{[^}]*border-bottom/);
+    });
+});
+
+
+describe('report.css - the table chooses its own grid', () => {
+    const css = stripNoise(read('src/render/report.css'));
+
+    it('reads the width, style and colour the table set, each with a fallback', () => {
+        for (const side of ['border-top', 'border-left', 'border-right', 'border-bottom']) {
+            expect(css, side).toContain(
+                `${side}: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) ` +
+                `var(--rs-rule-color, var(--border, #cdd4db))`);
+        }
+    });
+
+    /**
+     * A table that says nothing is still drawn: the sheet is shipped for a host
+     * to link on its own, and a grid that only appeared once the designer had
+     * touched it would read as no grid at all.
+     */
+    it('draws a hairline for a table that sets nothing', () => {
+        expect(css).toContain('var(--rs-rule-width, 1px)');
+        expect(css).toContain('var(--rs-rule-style, solid)');
+    });
+});

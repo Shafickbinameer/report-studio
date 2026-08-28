@@ -32,6 +32,8 @@ import { bandUnder } from './canvas.js';
  *   options.select called when the selection changes; `add` is a shift-click,
  *   which adds to the selection rather than replacing it
  * @param {() => void} [options.remove] delete the selected item
+ * @param {() => boolean} [options.duplicate] copy the selection in place and
+ *   leave the copies selected; answers whether anything was copied
  * @param {() => void} options.commit called when an edit finishes
  * @param {() => number} [options.getZoom] page pixels per screen pixel
  * @param {() => boolean} [options.enabled] false while the canvas is showing
@@ -42,11 +44,18 @@ import { bandUnder } from './canvas.js';
  */
 export function attachEditing({
     canvas, getLayout, getSelection, select, commit,
-    remove = () => { }, getZoom = () => 1, enabled = () => true,
-    onTarget = () => { }
+    remove = () => { }, duplicate = () => false,
+    getZoom = () => 1, enabled = () => true, onTarget = () => { }
 }) {
     /** the drag in progress, or null */
     let drag = null;
+
+/**
+ * The document the screen is mounted in, which is not always this one: a
+ * designer or a viewer opened in its own window lives in that window's
+ * document, and a listener put on the opener's would never hear it.
+ */
+    const doc = canvas.ownerDocument;
 
     function bandOf(el) {
         return el?.closest('[data-band-type]')?.dataset.bandType ?? null;
@@ -124,6 +133,21 @@ export function attachEditing({
              */
             select(where, { add: true });
             return;
+        }
+
+        /**
+         * Alt drags a copy and leaves the original where it is - the gesture
+         * every design tool has. Checked after shift so that shift-alt still
+         * extends the selection, and before the drag begins so that what the
+         * pointer carries away is the copy.
+         */
+        if (event.altKey) {
+            if (!already) select(where);
+
+            if (duplicate()) {
+                begin(event, { mode: 'move', collapseTo: null });
+                return;
+            }
         }
 
         /**
@@ -286,13 +310,13 @@ export function attachEditing({
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
-    document.addEventListener('keydown', onKeyDown);
+    doc.addEventListener('keydown', onKeyDown);
 
     return function detach() {
         canvas.removeEventListener('pointerdown', onPointerDown);
         canvas.removeEventListener('pointermove', onPointerMove);
         canvas.removeEventListener('pointerup', onPointerUp);
         canvas.removeEventListener('pointercancel', onPointerUp);
-        document.removeEventListener('keydown', onKeyDown);
+        doc.removeEventListener('keydown', onKeyDown);
     };
 }
