@@ -1,6 +1,6 @@
 {
   "name": "report-studio",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Design and preview paginated reports in the browser. Zero runtime dependencies.",
   "repository": {
     "type": "git",
