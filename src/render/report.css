@@ -60,8 +60,15 @@
 .page td {
   border: none;
   padding: 0;
-  font-size: 12px;
   overflow: hidden;
+
+  /**
+   * The font the engine wrapped this cell against. items.js sets these from the
+   * table's own style; the fallbacks are what measure.js assumes when it says
+   * nothing, so what is measured is always what is drawn.
+   */
+  font-family: var(--rs-cell-family, Helvetica, Arial, sans-serif);
+  font-size: var(--rs-cell-size, 12px);
 }
 
 /**
@@ -71,12 +78,42 @@
  */
 .page .cell {
   box-sizing: border-box;
-  display: flex;
-  align-items: center;
   padding: 0 8px;
   overflow: hidden;
-  white-space: nowrap;
+
+  /**
+   * A column, so the text is vertically centred whether it came out one line or
+   * three - and so the anonymous box holding it fills the width, which is what
+   * lets `text-align` place each line rather than the block as a whole. A
+   * right-aligned column of wrapped text needs every line on the right, not the
+   * paragraph pushed over.
+   */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  /**
+   * Cells wrap. They used to be cut off with an ellipsis, which kept a row
+   * exactly its declared height by throwing away somebody's data - an address
+   * that runs long is not less true for it. measure.js now works out how tall
+   * each row wraps to and pagination slices by that, so the row grows instead.
+   *
+   * A table can ask for the old behaviour back with `wrap: false`, which is the
+   * right answer for a column of figures that must stay on one line.
+   */
+  white-space: var(--rs-cell-wrap, normal);
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
+
+  /**
+   * The ratio text-metrics.js counts a wrapped line at. Left to the browser's
+   * "normal" it is nearer 1.15, and a row measured at three lines of 1.3 would
+   * print three lines of 1.15 with a gap under them - close enough to look like
+   * nothing until the gaps add up to a row that no longer fits the page.
+   */
+  line-height: 1.3;
+
+  color: var(--rs-cell-color, inherit);
   border-top: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) var(--rs-rule-color, var(--border, #cdd4db));
   border-left: var(--rs-rule-width, 1px) var(--rs-rule-style, solid) var(--rs-rule-color, var(--border, #cdd4db));
 }
@@ -104,9 +141,16 @@
 }
 
 
+/**
+ * The header row. items.js sets --rs-head-bg and --rs-head-color on the table
+ * when it has an opinion; a table that says nothing keeps the quiet fill this
+ * sheet has always given it, so a report linked against report.css alone still
+ * looks like a report.
+ */
 .page th {
   font-weight: 600;
-  background: var(--surface-muted, #f1f3f5);
+  background: var(--rs-head-bg, var(--surface-muted, #f1f3f5));
+  color: var(--rs-head-color, inherit);
 }
 
 /**

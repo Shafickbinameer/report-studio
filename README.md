@@ -1,286 +1,237 @@
 # Report Studio
 
-Design paginated reports in the browser, then render them in your app.
+Design paginated reports in the browser, then render them inside your own app.
 
-Zero runtime dependencies. No framework. The engine is ~1.4 kB gzipped and
-imports nothing.
+You draw the report once in a visual designer — headers, footers, groups,
+tables, text — and it is saved as a plain JSON file. At runtime your app feeds
+that layout its own data and gets back a page-by-page report viewer, with
+navigation, zoom, search, print and CSV export.
 
-```bash
+No framework, no runtime dependencies. The renderer is plain DOM, so it works
+in any project: plain JS.
+
+## Installation
+
+```sh
 npm install report-studio
 ```
 
----
+Requires Node 18.3 or newer for the designer command. The viewer itself runs in
+the browser and needs nothing.
 
-## The two halves
+## Designer setup
 
-**Designing** happens at development time, in a browser, against a local server
-that reads and writes JSON files in a folder you choose.
+Start the designer from your project folder:
 
-**Rendering** happens in your application, from that JSON plus your data.
-
-The file in between is the whole interface. The designer writes it; your app
-reads it.
-
----
-
-## Design a report
-
-```bash
+```sh
 npx report-studio design --dir ./reports
 ```
 
-That starts a local server, opens the designer, and lists whatever is already in
-`./reports`. Save, and it writes `<name>.json` there — a real file you commit
-alongside your code.
+`--dir` is the folder your reports are read from and saved to. It is created
+for you if it does not exist. The command prints a URL and opens a browser
+window on it.
 
-| Option | | |
-|---|---|---|
-| `--dir <path>` | where report files live | `./reports` |
-| `--port <n>` | port to listen on | `5177` |
-| `--host <addr>` | address to bind | `127.0.0.1` |
-| `--tab` | open in a browser tab rather than a window of its own | |
-| `--no-open` | do not open a browser | |
+Other options:
 
-It binds to loopback and serves a write endpoint. It is a design-time tool —
-do not run it in production.
+| Option | Default | What it does |
+| --- | --- | --- |
+| `--dir <path>` | `./reports` | where report files live |
+| `--port <n>` | `5177` | port to listen on |
+| `--host <addr>` | `127.0.0.1` | address to bind |
+| `--tab` | — | open a normal browser tab instead of an app window |
+| `--no-open` | — | do not open a browser at all |
 
-### Already using Vite?
+Press `Ctrl+C` to stop it.
 
-A plugin mounts the same routes on your existing dev server, so you do not run a
-second process:
+Saving a report called *Sales Summary* writes two files into `--dir`:
 
-```js
-// vite.config.js
-import { reportStudio } from 'report-studio/vite';
+* `sales-summary.json` — the layout: page size, bands, fields, styles.
+* `sales-summary.data.json` — sample data, so the designer has something to
+  preview with.
 
-export default {
-  plugins: [reportStudio({ dir: 'reports' })]
-};
-```
+The sample file is written from the layout itself, so it covers everything the
+report asks for: a key for every text placeholder, a row array for every table,
+and the fields your totals are taken over. Read it as the answer to "what does
+my app have to supply?" — it is the shape, filled in with placeholder values.
 
-The plugin binds only in `vite` (dev) — never in `vite build` or `vite preview`.
+It is only written the first time a report is saved. Once you have put real
+figures in it, later saves leave it alone. Your app never reads this file; it
+passes its own data to `buildPages`.
 
----
+The designer is a design-time tool. It reads and writes files inside `--dir`
+and nowhere else — keep it on localhost and do not run it in production.
 
-## Render a report
+## Preview setup
 
-```js
-import { buildPages, render } from 'report-studio';
-import 'report-studio/report.css';          // ← the report needs this
+Two files: an HTML page with one empty element, and a module that fills it.
 
-const layout = await fetch('/reports/invoice.json').then(r => r.json());
-const data   = await fetch('/api/invoice/2041').then(r => r.json());
-
-document.getElementById('out').innerHTML = render(buildPages(layout, data));
-```
-
-**Link the stylesheet.** Two of its rules are not decoration: without
-`table-layout: fixed` your column widths are ignored, and without `p { margin: 0 }`
-the browser's default paragraph margin pushes every text item off its position.
-A report drawn without it is wrong, not merely plain. It carries its own colours,
-so it needs nothing else.
-
-With a bundler that is all of it.
-
-### Without a bundler
-
-A browser resolves imports by URL — there is no `node_modules` lookup — so a
-bare name has to be mapped to one. That is the whole of what a bundler was doing
-for you here; the package is plain ESM with nothing else to map.
+**index.html**
 
 ```html
-<link rel="stylesheet"
-      href="./node_modules/report-studio/src/render/report.css">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports</title>
 
-<script type="importmap">
-{
-  "imports": {
-    "report-studio": "./node_modules/report-studio/dist/index.js"
-  }
-}
-</script>
+    <!-- the viewer's stylesheet; the report's own styles are included in it -->
+    <link rel="stylesheet"
+          href="./node_modules/report-studio/src/preview/styles.css">
 
-<script type="module" src="./main.js"></script>
+    <!--
+        A browser resolves imports by URL and has no node_modules lookup, so the
+        bare name has to be mapped to a path. If you use a bundler (Vite,
+        webpack, …) it does this for you: drop the import map and the link
+        above, and import the stylesheet by name instead - see below.
+    -->
+    <script type="importmap">
+    {
+      "imports": {
+        "report-studio": "./node_modules/report-studio/dist/index.js"
+      }
+    }
+    </script>
+
+    <style>
+        html, body { height: 100%; margin: 0; }
+    </style>
+</head>
+<body>
+    <!-- one empty element; the viewer builds everything inside it -->
+    <div id="out" style="height: 100vh"></div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
 ```
 
-Two things that catch people out: the import map must come **before** the module
-that uses it, and ES modules do not load over `file://` — any static server will
-do (`npx serve`, `python -m http.server`).
-
-`buildPages(layout, data)` returns a page list: an array of pages holding
-positioned items with absolute page coordinates and every placeholder already
-resolved. `render` turns that into HTML, but nothing stops you consuming the
-page list yourself — search, CSV export and printing all read only that.
-
----
-
-## Or mount the whole viewer
-
-`render` gives you a report. `createViewer` gives you a report with page
-navigation, zoom, search, print and CSV export — the screen the designer links
-to, in your own page.
+**main.js**
 
 ```js
 import { buildPages, createViewer } from 'report-studio';
-import 'report-studio/viewer.css';          // includes report.css
+
+// the layout file the designer saved
+const layout = await fetch('./reports/sales-summary.json').then(r => r.json());
+
+// your data, keyed by dataset name. The designer shows you the shape it
+// expects; sales-summary.data.json is an example of it.
+const data = {
+    report: { period: 'June 2026', currency: 'USD' },
+    sales: [
+        { date: '2026-06-01', customer: 'Acme',  region: 'North', amount: 250 },
+        { date: '2026-06-02', customer: 'Globex', region: 'South', amount: 500 }
+    ]
+};
 
 createViewer({
-  mount: '#report',
-  paginated: buildPages(layout, data),
-  title: 'Invoices'
+    mount: '#out',
+    paginated: buildPages(layout, data),
+    title: layout.name
 });
 ```
 
-```html
-<div id="report" style="height: 80vh"></div>
-```
+That is the whole integration:
 
-One empty element is the whole of it — the viewer builds its toolbar, pager and
-export dialog inside. It fills whatever you give it, so it embeds in a panel
-beside your own chrome rather than taking over the window.
+* `buildPages(layout, data)` turns the layout plus your data into a page list.
+* `createViewer({ mount, paginated, title })` mounts the full report viewer
+  into the element you give it and returns a handle for paging, zoom, search,
+  print, export and `destroy()`.
 
-The handle it returns drives everything the toolbar does:
+To open the report in a window of its own instead of inside your page, use
+`openViewerWindow({ paginated, title })` — same viewer, called from a click or
+a keypress so the browser does not block the window.
 
-```js
-const viewer = createViewer({ mount: '#report', paginated });
+### With a bundler
 
-viewer.next();  viewer.prev();  viewer.show(3);
-viewer.setZoom(1.5);  viewer.fitWidth();
-viewer.find('Anand');
-viewer.print();  viewer.downloadCSV();
-viewer.destroy();          // gives the element back as it found it
-```
-
----
-
-## The layout file
-
-```json
-{
-  "version": 1,
-  "name": "Sales Summary",
-  "page": {
-    "width": 794,
-    "height": 1123,
-    "margin": { "top": 40, "right": 40, "bottom": 40, "left": 40 }
-  },
-  "dataset": "sales",
-  "groupBy": "region",
-  "bands": [ ... ]
-}
-```
-
-Pixels throughout. A4 is 794 × 1123, Letter is 816 × 1056 — the sizes browser
-print produces.
-
-### Bands
-
-A band is a horizontal strip. Bands do not flow: each owns a zone of the page,
-so a page whose rows ran short still prints its footer on the bottom edge. One
-band of each type, at most.
-
-| Type | Appears |
-|---|---|
-| `reportHeader` | First page only |
-| `pageHeader` | Every page |
-| `groupHeader` | Before each group |
-| `detail` | The rows |
-| `groupFooter` | After each group |
-| `reportFooter` | Last page only |
-| `pageFooter` | Every page, on the bottom edge |
-
-`height` is a number of pixels or a percentage of the printable height
-(`"10%"`). The `detail` band takes whatever the others leave.
-
-### Items
-
-**Text** carries a `value` with placeholders in braces. **Table** carries
-`columns`; its height is the header plus its rows, so it declares none.
-
-`x` and `y` are relative to the band, not the page. The engine converts.
-
-### Placeholders
-
-| Form | Resolves to | Where |
-|---|---|---|
-| `{field}` | a key on the data object | any band |
-| `{field}` | a field on the group's rows | `groupHeader`, `groupFooter` |
-| `{customer.name}` | a nested path from the root | any band |
-| `{page}` `{totalPages}` | the page number and the count | any band |
-| `{today}` | the date the report was run | any band |
-| `{sum(f)}` `{avg(f)}` `{min(f)}` `{max(f)}` `{count()}` | over the group's rows | `groupFooter`, `reportFooter` |
-
-Two rules that are easy to get the wrong way round:
-
-**A bare `{name}` is a key on the data object**, in every band except the group
-bands — including the detail band. If you want a row's field printed as text,
-that only happens inside a `groupHeader` or `groupFooter`, which are the bands
-with a group to be inside of. Elsewhere, a row's fields reach the page through a
-table's columns.
-
-**Aggregates only resolve in a footer.** Nowhere else has a group to work over.
-
-The designer knows both, and the field tool puts things in a band where they
-will actually print.
-
----
-
-## Data
-
-Your data is a plain object. Arrays are datasets; everything else is reachable
-by path.
-
-```json
-{
-  "report":  { "period": "June 2026" },
-  "sales": [
-    { "date": "2026-06-01", "customer": "Orbit Systems", "amount": 5600 }
-  ]
-}
-```
-
-The designer works out what a report is asking for — every placeholder, every
-column, the dataset and the grouping field — and writes a `<name>.data.json`
-beside it the first time you save. Fill in real values over the samples; it is
-never overwritten once it exists.
-
-The package never fetches your data. You supply it.
-
----
-
-## What is in the box
+Vite, webpack and the rest resolve bare names themselves, so there is no import
+map and no path into `node_modules`. Import the stylesheet by name too:
 
 ```js
-import {
-  buildPages, render, createViewer, search, toCSV, validateLayout
-} from 'report-studio';
+import { buildPages, createViewer } from 'report-studio';
+import 'report-studio/viewer.css';
+```
 
+| Import | What it is |
+| --- | --- |
+| `report-studio` | the engine and the viewer |
+| `report-studio/designer` | the designer, which most apps do not ship |
+| `report-studio/viewer.css` | the viewer's styles, the report's included |
+| `report-studio/designer.css` | the designer's styles, likewise |
+| `report-studio/report.css` | the report alone, for drawing pages with no chrome |
+
+## Designing inside your own app
+
+The command above is the usual way in, and it is a whole application. If you
+would rather put the designer in a page of your own — an admin screen where
+your users build their own reports — mount it the same way you mount the
+viewer: one empty element, and it builds the rest inside it.
+
+```js
 import { createDesigner } from 'report-studio/designer';
-import { reportStudio }  from 'report-studio/vite';
+import 'report-studio/designer.css';
 
-import 'report-studio/report.css';   // if you use render()
-import 'report-studio/viewer.css';   // if you use createViewer() - includes the above
+const designer = createDesigner({
+    mount: '#design',
+    layout,                 // a saved layout, or omit for a blank report
+    id: 'sales-summary',    // its filename stem, if it has one
+    store                   // where Open and Save read and write; see below
+});
 ```
 
-`validateLayout(layout)` returns a list of what is wrong with a layout, naming
-the band and the field — worth calling on anything hand-written.
+`store` is how the designer reaches your reports. Leave it out and it talks to
+the dev server the CLI runs, which is what the bundled designer page does.
+Supply your own to save through your API instead:
 
----
+```js
+const api = '/api/reports';
+const json = { 'content-type': 'application/json' };
 
-## Limits
+const store = {
+    // required: Open, and Save
+    list: async () => fetch(api).then(r => r.json()),
+    load: async (id) => fetch(`${api}/${id}`).then(r => r.json()),
+    save: async (id, layout) => fetch(`${api}/${id}`,
+        { method: 'PUT', headers: json, body: JSON.stringify(layout) }),
 
-- **Browser only.** The engine may use browser APIs; text is measured with
-  canvas `measureText`, which is what removes font-metric libraries entirely.
-- **Web-safe fonts.** A font the browser does not have is measured as a
-  fallback, and then paginates to a different page count than it prints.
-- **One level of grouping.**
-- **Text and tables.** Images, lines, rectangles and charts are not in this
-  version.
-- **~20,000 rows.** Everything runs in the browser.
-- **PDF is browser print.** Which matches the preview exactly, because it is the
-  preview.
+    // optional: the sample data the designer previews with. Without these two
+    // the preview falls back to data derived from the layout, which is a
+    // working designer - just one that never remembers your figures.
+    loadData: async (id) => fetch(`${api}/${id}/data`)
+        .then(r => (r.ok ? r.json() : null)),
+    saveData: async (id, data) => fetch(`${api}/${id}/data`,
+        { method: 'PUT', headers: json, body: JSON.stringify(data) }),
 
----
+    // optional: Delete, in the report picker
+    remove: async (id) => fetch(`${api}/${id}`, { method: 'DELETE' })
+};
+```
+
+`list` returns `{ id, name }` objects — the picker shows the name and opens the
+id. `loadData` must resolve to `null`, not throw, when a report has no data
+file yet: that is an ordinary state, not a failure.
+
+`createDesigner` returns a handle with the current `layout`, `redraw()` and
+`destroy()`. `openDesignerWindow(options)` opens the same designer in a window
+of its own, for the same reason `openViewerWindow` does.
+
+## Reports in a project that already runs Vite
+
+The CLI is the primary way in because it works for any project. If yours is
+already a Vite one, the same read-and-write routes can be mounted in the dev
+server you have:
+
+```js
+import { defineConfig } from 'vite';
+import { reportStudio } from 'report-studio/vite';
+
+export default defineConfig({
+    plugins: [reportStudio({ dir: 'reports' })]
+});
+```
+
+Dev only, deliberately: it writes files, and mounting that in front of a
+production build would be a hole rather than a feature.
 
 ## Licence
 

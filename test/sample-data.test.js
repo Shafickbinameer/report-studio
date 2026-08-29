@@ -7,7 +7,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { requiredKeys, datasets, sampleData } from '../src/designer/sample-data.js';
+import {
+    requiredKeys, datasets, sampleData, summedFields
+} from '../src/designer/sample-data.js';
 import { buildPages } from '../src/engine/index.js';
 import { render } from '../src/render/render.js';
 import { blankLayout } from '../src/designer/blank.js';
@@ -290,5 +292,73 @@ describe('the whole point', () => {
 
         expect(html).toContain('Region: North');
         expect(html).toContain('Region: South');
+    });
+});
+
+
+describe('a field the report takes a sum of is a number', () => {
+    /**
+     * `amt` is not a name the heuristic recognises, so it used to get the word
+     * "Amt 1" - and {sum(amt)} over six words is not a number, so the total the
+     * whole report was designed around previewed blank. The layout has already
+     * said what the field is: you do not sum a word.
+     */
+    const withTotal = (value) => layout({
+        bands: [
+            band('detail', [
+                {
+                    id: 'tbl', type: 'table', x: 0, y: 0, w: 714,
+                    dataset: 'items', rowHeight: 24, headerHeight: 28,
+                    showHeader: true,
+                    columns: [{ field: 'charge', label: 'Charge', width: 200, align: 'right' }],
+                    style: { fontSize: 12, color: '#000000', borderColor: '#ccc' }
+                },
+                text('total', { y: 200, value })
+            ])
+        ]
+    });
+
+    it('finds the fields an aggregate is taken over', () => {
+        expect([...summedFields(withTotal('Total: {sum(charge)} of {max(charge)}'))])
+            .toEqual(['charge']);
+    });
+
+    it('ignores count(), which names no field', () => {
+        expect([...summedFields(withTotal('{count()} rows'))]).toEqual([]);
+    });
+
+    it('has nothing to find in a layout with no bands', () => {
+        expect([...summedFields({})]).toEqual([]);
+        expect([...summedFields(null)]).toEqual([]);
+    });
+
+    it('gives that field numbers, whatever it is called', () => {
+        const json = withTotal('Total: {sum(charge)}');
+
+        for (const row of sampleData(json).items) {
+            expect(typeof row.charge).toBe('number');
+        }
+    });
+
+    it('prints a total rather than a blank', () => {
+        const json = withTotal('Total: {sum(charge)}');
+        const html = render(buildPages(json, sampleData(json)));
+
+        expect(html).toMatch(/Total: \d+/);
+    });
+
+    it('leaves a field nobody sums as its own name', () => {
+        const json = withTotal('{count()} rows');
+
+        expect(typeof sampleData(json).items[0].charge).toBe('string');
+    });
+
+    it('still reads a number off a name that plainly is one', () => {
+        /** the heuristic is not replaced by the aggregate rule, only added to */
+        const json = layout({
+            bands: [band('detail', [text('t', { value: '{amt} {price}' })])]
+        });
+
+        expect(typeof sampleData(json).amt).toBe('number');
     });
 });

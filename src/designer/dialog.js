@@ -17,7 +17,7 @@ import { toId } from '../shared/store.js';
 import { esc } from '../render/items.js';
 import { createDropdown } from '../shared/dropdown.js';
 import {
-    TOKENS, findToken, needsField, resolvesIn, tokenItem,
+    TOKENS, findToken, needsField, resolvesIn, tokenItem, aggregateScope,
     availableFields, bandChoices, defaultBand
 } from './tokens.js';
 
@@ -497,9 +497,11 @@ export function askToken(root, layout, current = null) {
 
                 const band = bandPicker.value;
                 const ok = resolvesIn(token, band);
+                const note = ok ? scopeNote(token, band) : aggregateNote(token, band);
 
-                warning.textContent = ok ? '' : aggregateNote(token, band);
-                warning.hidden = ok;
+                warning.textContent = note;
+                warning.hidden = !note;
+                warning.classList.toggle('is-note', ok);
 
                 /**
                  * Not disabled. It is the author's report, and an item placed
@@ -538,8 +540,33 @@ export function askToken(root, layout, current = null) {
 
 
 function aggregateNote(token, band) {
-    return `${token.label} is worked out over a group's rows, so it prints ` +
-        `nothing in a ${band}. Put it in a group footer or the report footer.`;
+    return `${token.label} prints nothing in a ${band}.`;
+}
+
+
+/**
+ * What the chosen band means for an aggregate.
+ *
+ * An aggregate resolves wherever it is put, so there is nothing left to warn
+ * about - but `{sum(price)}` is a different number in a group footer and in a
+ * report footer, and both of them are right. Which one is being asked for is
+ * the thing worth saying, and the dialog is the last moment anyone will be
+ * looking at the question.
+ */
+function scopeNote(token, band) {
+    const scope = aggregateScope(token, band);
+
+    if (scope === 'group') {
+        return `In a ${band}, ${token.label.toLowerCase()} is worked out over ` +
+            `each group's own rows, once per group.`;
+    }
+
+    if (scope === 'report') {
+        return `In a ${band}, ${token.label.toLowerCase()} is worked out over ` +
+            `every row in the report.`;
+    }
+
+    return '';
 }
 
 

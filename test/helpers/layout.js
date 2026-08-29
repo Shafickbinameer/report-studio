@@ -183,3 +183,24 @@ export function placedRows(paginated) {
     }
     return out;
 }
+
+
+/**
+ * The first placed copy of an item, wherever it landed.
+ *
+ * A table reaches the pages as one slice per page it touched, so this is the
+ * first of them; everything else is placed once.
+ *
+ * @param {object} paginated a buildPages result
+ * @param {string} id
+ * @returns {object|undefined}
+ */
+export function placedItem(paginated, id) {
+    for (const page of paginated.pages) {
+        for (const b of page.bands) {
+            const found = (b.items || []).find(i => i.id === id);
+            if (found) return found;
+        }
+    }
+    return undefined;
+}

@@ -37,6 +37,18 @@ describe('fieldsFor', () => {
         expect(keys(text('t'))).toContain('h');
     });
 
+    it('offers the header its own height and colours', () => {
+        /**
+         * The height was buried among the rows', and it is the one figure that
+         * is not a row's - the engine paginates a table as headerHeight + rows
+         * x rowHeight. The colours were not offered at all.
+         */
+        expect(keys(table())).toEqual(expect.arrayContaining([
+            'headerHeight', 'showHeader',
+            'style.headerBackground', 'style.headerColor'
+        ]));
+    });
+
     it('offers a table its row heights instead', () => {
         expect(keys(table())).toEqual(expect.arrayContaining([
             'rowHeight', 'headerHeight', 'showHeader'
@@ -44,8 +56,18 @@ describe('fieldsFor', () => {
     });
 
     it('does not offer a table the text-only type controls', () => {
-        expect(keys(table())).not.toContain('style.fontFamily');
+        /**
+         * The font is not one of them any more. A table's cells wrap, and the
+         * engine wraps them against a font - so which font it is has to be the
+         * table's to say, or measured and drawn part company.
+         */
         expect(keys(table())).not.toContain('value');
+        expect(keys(table())).not.toContain('style.fontWeight');
+        expect(keys(table())).not.toContain('style.align');
+    });
+
+    it('lets a table choose the font its cells are measured in', () => {
+        expect(keys(table())).toContain('style.fontFamily');
     });
 
     it('groups the fields into sections with titles', () => {

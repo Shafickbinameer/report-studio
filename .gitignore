@@ -141,3 +141,23 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# ---------------------------------------------------------------------------
+# Not part of the published package, and not part of the repository either.
+#
+# All four are shipped-around-not-shipped: `files` in package.json already
+# keeps them out of the tarball, and test/package.test.js pins that. These
+# lines keep them out of the history as well.
+# ---------------------------------------------------------------------------
+
+# the original build spec - a design document, not the README
+docs/
+
+# development data for `npm run dev`; the CLI never serves it
+fixtures/
+
+# a throwaway consumer for installing the packed tarball into
+package-test/
+
+# whatever reports happen to be saved while working on the designer
+reports/

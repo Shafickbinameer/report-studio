@@ -1,9 +1,15 @@
 /**
- * report-studio - the framework-free entry point.
+ * report-studio - the package's main entry point.
  *
- * Spec 7.4: consumers import the engine from here and the screens from
- * report-studio/react, so an application using only the engine never downloads
- * the React code. Nothing in this module touches the document on import.
+ * The engine and the viewer, and nothing that touches the document on import -
+ * so an application that only builds pages, or only renders them on a server,
+ * pays for nothing it does not use.
+ *
+ * The designer is a separate entry (`report-studio/designer`) because it is the
+ * larger half and most applications ship the reports rather than the tool that
+ * drew them. Each screen has a stylesheet of its own to link beside it:
+ * `report-studio/viewer.css` and `report-studio/designer.css`, or
+ * `report-studio/report.css` alone to draw a report with no chrome at all.
  */
 
 export {

@@ -642,7 +642,12 @@ describe('the field tool', () => {
         expect(box().querySelector('[data-role="field-row"]').hidden).toBe(true);
     });
 
-    it('narrows the band list to where an aggregate resolves', async () => {
+    it('offers an aggregate every band the report has', async () => {
+        /**
+         * It used to offer the footers alone, because they were the only bands
+         * group.js filled in. A total under the rows is where a total most
+         * often goes, and the tool would not put one there.
+         */
         await openTool();
         choose('sum');
 
@@ -650,27 +655,41 @@ describe('the field tool', () => {
             .querySelectorAll('[data-role="band-dropdown"] .dropdown-item')]
             .map(n => n.dataset.value);
 
-        expect(bands).toEqual(['groupFooter']);
+        expect(bands).toEqual(['pageHeader', 'detail', 'groupFooter', 'pageFooter']);
     });
 
-    it('warns rather than refuses when it will not resolve there', async () => {
-        /**
-         * It is the author's report. An item placed where it prints nothing
-         * today may be somewhere it prints tomorrow.
-         */
+    it('says which rows the aggregate will cover where it is going', async () => {
+        await openTool();
+        choose('sum');
+        pick('band', 'detail');
+
+        const note = box().querySelector('[data-role="token-warning"]');
+
+        expect(note.hidden).toBe(false);
+        expect(note.textContent).toMatch(/every row in the report/);
+
+        /** information, not a caution - so the button stays a plain Insert */
+        expect(box().querySelector('[data-role="confirm"]').textContent)
+            .toBe('Insert');
+    });
+
+    it('says a group band means that group instead', async () => {
+        await openTool();
+        choose('sum');
+        pick('band', 'groupFooter');
+
+        expect(box().querySelector('[data-role="token-warning"]').textContent)
+            .toMatch(/each group's own rows/);
+    });
+
+    it('inserts an aggregate into the detail band', async () => {
         const d = await openTool(layout({
             bands: [band('detail', [table({ id: 'tbl' })])]
         }));
 
         choose('sum');
-
-        const warning = box().querySelector('[data-role="token-warning"]');
-        expect(warning.hidden).toBe(false);
-        expect(warning.textContent).toMatch(/group footer/);
-        expect(box().querySelector('[data-role="confirm"]').textContent)
-            .toContain('anyway');
-
         await insert();
+
         expect(itemsOnBand(d, 'detail')).toHaveLength(2);
     });
 
@@ -1218,14 +1237,19 @@ describe('problems are said in the corner', () => {
      * down the canvas every time.
      */
     it('leaves the page where it was', () => {
+        /**
+         * The sheet is two boxes down from the canvas now - the zoom scales one
+         * and sizes the other - so what this is about is that it is still drawn
+         * at all, not what it is nested in.
+         */
         const d = mount();
-        const canvas = root().querySelector('.dz-canvas');
+        const surface = root().querySelector('[data-role="zoom-layer"]');
 
-        expect(canvas.firstElementChild.classList.contains('dz-sheet')).toBe(true);
+        expect(surface.firstElementChild.classList.contains('dz-sheet')).toBe(true);
 
         halfGrouped(d);
 
-        expect(canvas.firstElementChild.classList.contains('dz-sheet')).toBe(true);
+        expect(surface.firstElementChild.classList.contains('dz-sheet')).toBe(true);
         expect(root().querySelector('.dz-page')).not.toBeNull();
     });
 

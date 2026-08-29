@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDesigner } from '../src/designer/designer.js';
+import { syncPanel } from '../src/designer/panel.js';
 import { layout, text, table, band } from './helpers/layout.js';
 
 beforeEach(() => {
@@ -70,7 +71,8 @@ describe('the rail', () => {
         mount();
 
         expect(panel().querySelector('.dz-panel-type').textContent).toBe('report');
-        expect(control('page.width')).not.toBeNull();
+        expect(control('name')).not.toBeNull();
+        expect(control('paper')).not.toBeNull();
     });
 
     it('swaps to the item when one is selected', () => {
@@ -237,17 +239,190 @@ describe('the rail after a drag', () => {
     it('leaves a focused control alone, caret and all', () => {
         /**
          * Writing to an input while it has the caret moves the caret to the end,
-         * so a drag that ran while a field was focused would reorder its digits.
+         * so a sync that ran while a field was focused would reorder its digits.
+         *
+         * Driven straight at syncPanel rather than through a drag, because a
+         * pointer landing on the canvas takes the focus out of the rail now -
+         * which is the right answer to "I clicked away", and leaves this claim
+         * with no gesture that reaches it.
          */
+        const d = mount();
+        select('t1');
+
+        const x = control('x');
+        const y = control('y');
+
+        x.focus();
+        x.value = '99';
+
+        const item = d.layout.bands[0].items.find(i => i.id === 't1');
+
+        item.x = 400;
+        item.y = 400;
+
+        syncPanel(panel(), item, d.layout);
+
+        expect(x.value, 'the focused control was written over').toBe('99');
+        expect(y.value, 'the others were not refreshed').toBe('400');
+    });
+
+    it('takes the caret out of the rail when the canvas is clicked', () => {
+        /** clicking away from a field is a way of leaving it */
         mount();
         select('t1');
 
         const x = control('x');
         x.focus();
-        x.value = '99';
 
         drag(50, 0);
 
-        expect(x.value).toBe('99');
+        expect(document.activeElement).not.toBe(x);
+    });
+});
+
+
+describe('the paper size', () => {
+    /**
+     * The page used to be two number boxes, which meant knowing that A4 is
+     * 794 x 1123 - a fact nobody carries around, and one the layout is unusable
+     * without. The sizes are named now, and the boxes are what Custom means.
+     */
+    const chooseIn = (key, value) => {
+        const node = control(key);
+        node.value = value;
+        node.dispatchEvent(new Event('change', { bubbles: true }));
+        return node;
+    };
+
+    const page = (d) => `${d.layout.page.width}x${d.layout.page.height}`;
+
+    it('reads the size back as a name', () => {
+        const d = mount();
+
+        expect(page(d)).toBe('794x1123');
+        expect(control('paper').value).toBe('A4');
+    });
+
+    it('hides the two boxes while the sheet has a name', () => {
+        mount();
+
+        expect(control('page.width')).toBeNull();
+        expect(control('page.height')).toBeNull();
+    });
+
+    it('puts the size in the option, so nothing is hidden that had to be read', () => {
+        mount();
+        const a4 = [...control('paper').options].find(o => o.value === 'A4');
+
+        expect(a4.textContent).toContain('794');
+        expect(a4.textContent).toContain('1123');
+    });
+
+    it('resizes the page when another sheet is picked', () => {
+        const d = mount();
+        chooseIn('paper', 'A3');
+
+        expect(page(d)).toBe('1123x1587');
+    });
+
+    it('offers the sizes somebody asked for', () => {
+        mount();
+        const offered = [...control('paper').options].map(o => o.value);
+
+        for (const sheet of ['A2', 'A3', 'A4', 'A5']) {
+            expect(offered, sheet).toContain(sheet);
+        }
+        expect(offered).toContain('custom');
+    });
+
+    it('shows the two boxes when Custom is chosen, and changes nothing else', () => {
+        const d = mount();
+        chooseIn('paper', 'custom');
+
+        expect(control('page.width')).not.toBeNull();
+        expect(control('page.height')).not.toBeNull();
+
+        /** Custom is not a size - it is the absence of one, so it takes nothing away */
+        expect(page(d)).toBe('794x1123');
+    });
+
+    it('keeps the boxes while a typed size passes through a named one', () => {
+        /**
+         * Custom sticks. Without that, typing a width that happened to make an
+         * A5 would take the boxes away mid-keystroke and leave the height half
+         * entered - and getting them back would mean choosing Custom again.
+         */
+        const d = mount();
+        chooseIn('paper', 'custom');
+
+        type('page.width', '559');
+        type('page.height', '794');
+
+        expect(page(d)).toBe('559x794');
+        expect(control('paper').value).toBe('custom');
+        expect(control('page.height')).not.toBeNull();
+    });
+
+    it('reads a size loaded from a file as its name, with nothing written down', () => {
+        /**
+         * The point of deriving it: a layout that has never been near this
+         * dropdown - hand written, or saved before it existed - still reads as
+         * the sheet it is. Nothing is stored but the absence of a name, so
+         * nothing in the file can drift away from the size beside it.
+         */
+        const a5 = layout({ bands: [band('detail', [text('t1')])] });
+
+        a5.page.width = 559;
+        a5.page.height = 794;
+
+        const d = mount(a5);
+
+        expect(d.layout.page.paper).toBeUndefined();
+        expect(control('paper').value).toBe('A5');
+        expect(control('page.width')).toBeNull();
+    });
+
+    it('turns the page over without changing the sheet', () => {
+        const d = mount();
+        chooseIn('orientation', 'landscape');
+
+        expect(page(d)).toBe('1123x794');
+
+        /** a landscape A4 is still an A4, and the dropdown has to agree */
+        expect(control('paper').value).toBe('A4');
+    });
+
+    it('keeps the way up when a different sheet is picked', () => {
+        const d = mount();
+        chooseIn('orientation', 'landscape');
+        chooseIn('paper', 'A5');
+
+        expect(page(d)).toBe('794x559');
+    });
+
+    it('has no orientation to offer for a custom size', () => {
+        /** the two boxes say which way up it is, and say it more exactly */
+        mount();
+        chooseIn('paper', 'custom');
+
+        expect(control('orientation')).toBeNull();
+    });
+
+    it('redraws the page at the new size', () => {
+        mount();
+        chooseIn('paper', 'A5');
+
+        expect(root().querySelector('.dz-page').style.width).toBe('559px');
+    });
+
+    it('is one undo step', () => {
+        const d = mount();
+        chooseIn('paper', 'A3');
+
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+
+        expect(page(d)).toBe('794x1123');
     });
 });

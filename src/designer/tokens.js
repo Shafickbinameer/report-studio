@@ -10,10 +10,11 @@
  * which is a poor way to find out.
  *
  * The rules about *where* each one resolves come from the engine's own
- * behaviour: resolve.js defers aggregates to group.js, which only runs over a
- * group's rows - so an aggregate in a page header has no scope to be computed
- * in and prints nothing. That is worth saying before it is inserted rather
- * than after it has printed blank.
+ * behaviour. An aggregate now resolves in every band (group.js); what changes
+ * with the band is the rows it is worked out over - one group's in a group
+ * band, the whole report's anywhere else. That is worth saying before it is
+ * inserted rather than being discovered from a number that is not the one that
+ * was expected.
  */
 
 import { datasets } from './sample-data.js';
@@ -64,26 +65,26 @@ export const TOKENS = [
         prefer: ['groupFooter', 'reportFooter'],
         label: 'Row count',
         value: '{count()}',
-        note: 'How many rows are in this group',
-        bands: ['groupFooter', 'reportFooter']
+        note: 'How many rows are in scope',
+        aggregate: true
     },
     {
         id: 'sum',
         prefer: ['groupFooter', 'reportFooter'],
         label: 'Sum',
         value: `{sum(${FIELD})}`,
-        note: 'Added up over this group',
+        note: 'Added up over the rows in scope',
         field: true,
-        bands: ['groupFooter', 'reportFooter']
+        aggregate: true
     },
     {
         id: 'avg',
         prefer: ['groupFooter', 'reportFooter'],
         label: 'Average',
         value: `{avg(${FIELD})}`,
-        note: 'The mean over this group',
+        note: 'The mean of the rows in scope',
         field: true,
-        bands: ['groupFooter', 'reportFooter']
+        aggregate: true
     },
     {
         id: 'min',
@@ -91,7 +92,7 @@ export const TOKENS = [
         label: 'Smallest',
         value: `{min(${FIELD})}`,
         field: true,
-        bands: ['groupFooter', 'reportFooter']
+        aggregate: true
     },
     {
         id: 'max',
@@ -99,7 +100,7 @@ export const TOKENS = [
         label: 'Largest',
         value: `{max(${FIELD})}`,
         field: true,
-        bands: ['groupFooter', 'reportFooter']
+        aggregate: true
     }
 ];
 
@@ -112,6 +113,29 @@ export function findToken(id) {
 /** whether a token has to be told which field to work over */
 export function needsField(token) {
     return Boolean(token?.field);
+}
+
+
+/** the two group bands, whose aggregates are one group's rather than the report's */
+const GROUP_SCOPED = ['groupHeader', 'groupFooter'];
+
+
+/**
+ * The rows an aggregate would be worked out over if it went in this band.
+ *
+ * The reason the dialog says anything at all: `{sum(price)}` is a different
+ * number in a group footer and in a report footer, and both are correct. Which
+ * one someone is asking for is not something they can be left to find out from
+ * the printed report.
+ *
+ * @param {object} token
+ * @param {string} bandType
+ * @returns {'group'|'report'|null} null for a token that is not an aggregate
+ */
+export function aggregateScope(token, bandType) {
+    if (!token?.aggregate) return null;
+
+    return GROUP_SCOPED.includes(bandType) ? 'group' : 'report';
 }
 
 

@@ -947,3 +947,105 @@ describe('viewer - search', () => {
         expect(document.querySelectorAll('mark.hit').length).toBeGreaterThan(0);
     });
 });
+
+
+describe('a viewer mounted in a window of its own', () => {
+    /**
+     * `window` inside viewer.js is whichever page loaded the script - the host's
+     * tab. A report opened in a window of its own is mounted *from* that tab, so
+     * every bare `window` reached back into it: Print printed the application
+     * behind the report, the dialog opened over the wrong window, and afterprint
+     * fired somewhere the highlights were not.
+     *
+     * An iframe stands in for the pop-up. It is the only thing jsdom has with a
+     * document and a window that are genuinely not this one, and it is the same
+     * distinction: root.ownerDocument.defaultView is not `window`.
+     */
+    let frame = null;
+    let viewer = null;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+
+        /** an earlier mount in this document left its @page rule in the head */
+        document.getElementById('report-page-size')?.remove();
+
+        frame = document.createElement('iframe');
+        document.body.appendChild(frame);
+
+        const inner = frame.contentDocument;
+        inner.body.innerHTML = '<div id="report"></div>';
+    });
+
+    afterEach(() => {
+        viewer?.destroy();
+        viewer = null;
+        frame?.remove();
+        frame = null;
+    });
+
+    const mountThere = () => {
+        const paginated = run(layout({ bands: [band('detail', [table()])] }), {
+            items: rows(3)
+        });
+
+        viewer = createViewer({
+            mount: frame.contentDocument.getElementById('report'), paginated
+        });
+
+        return viewer;
+    };
+
+    it('prints the window it is in, not the one it was mounted from', () => {
+        const there = vi.fn();
+        const here = vi.fn();
+
+        frame.contentWindow.print = there;
+        window.print = here;
+
+        mountThere().print();
+
+        expect(there).toHaveBeenCalledOnce();
+        expect(here, 'the host tab was printed instead').not.toHaveBeenCalled();
+    });
+
+    it('prints that window from its own Print button too', () => {
+        const there = vi.fn();
+        frame.contentWindow.print = there;
+        window.print = vi.fn();
+
+        mountThere();
+        frame.contentDocument
+            .querySelector('[data-role="print"]').click();
+
+        expect(there).toHaveBeenCalledOnce();
+        expect(window.print).not.toHaveBeenCalled();
+    });
+
+    it("puts the page size into its own document, not the host's", () => {
+        mountThere();
+
+        expect(frame.contentDocument.getElementById('report-page-size'))
+            .not.toBeNull();
+        expect(document.getElementById('report-page-size')).toBeNull();
+    });
+
+    it('builds its chrome inside that document', () => {
+        mountThere();
+
+        expect(frame.contentDocument.querySelector('.report-viewer')).not.toBeNull();
+        expect(document.querySelector('.report-viewer')).toBeNull();
+    });
+
+    it('takes its listeners off that window when it is destroyed', () => {
+        const off = vi.spyOn(frame.contentWindow, 'removeEventListener');
+
+        mountThere().destroy();
+        viewer = null;
+
+        const kinds = off.mock.calls.map(([type]) => type);
+
+        expect(kinds).toContain('resize');
+        expect(kinds).toContain('afterprint');
+    });
+});

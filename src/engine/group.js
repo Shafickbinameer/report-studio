@@ -1,11 +1,21 @@
 /**
  * group.js partitions the dataset and resolves aggregate placeholders.
  *
- * Spec 3.4 scopes aggregates to two bands:
- *   groupFooter  - against that group's rows   (attached per group, filled in by paginate)
- *   reportFooter - against every row           (filled in here)
- * Any other band is left alone; an aggregate elsewhere is a layout mistake, not
- * a licence to overwrite the item.
+ * An aggregate has to be worked out over some set of rows, and there are only
+ * two sets a band can mean:
+ *
+ *   groupHeader / groupFooter - that group's rows, and only that group's.
+ *     They are templates rather than bands: one copy is drawn per group, so
+ *     each copy has a different answer. Filled in per fragment by paginate.js,
+ *     where which group is being drawn is known.
+ *
+ *   every other band - the whole dataset. Filled in here, once.
+ *
+ * It used to be reportFooter and nothing else, which made a total under the
+ * rows - the place a total is most often wanted, and the one a designer reaches
+ * for first - print the raw `{sum(amount)}` back at you. There is no scope a
+ * detail or a page footer could mean *other* than the whole report, so there
+ * was never a reason to refuse them one.
  */
 
 import { ReportError } from './validate.js';
@@ -107,14 +117,23 @@ function findTableBand(bands) {
 
 
 /**
- * Report-wide aggregates. Only reportFooter is in scope - group footers are
- * resolved per group fragment during pagination, where the scope is known.
+ * The bands whose aggregates belong to one group rather than to the report.
+ *
+ * They are left alone here on purpose. Filling them in with the report's totals
+ * would not merely be the wrong number - it would consume the placeholder, and
+ * paginate.js would find nothing left to put the group's own answer into.
+ */
+const GROUP_SCOPED = ['groupHeader', 'groupFooter'];
+
+
+/**
+ * Report-wide aggregates: every band except the two that mean a group.
  * @param {object[]} bands
  * @param {object[]} dataset
  */
 function aggregate(bands, dataset) {
     for (const band of bands) {
-        if (band.type !== "reportFooter") continue;
+        if (GROUP_SCOPED.includes(band.type)) continue;
 
         for (const item of band.items) {
             if (item.type != "text") continue;
@@ -165,6 +184,11 @@ function parseAggregate(expr) {
  * Per-group aggregates, keyed on both dimensions that matter: the group key and
  * the field the expression targets. Dropping either makes groups overwrite each
  * other, or {sum(price)} collide with {sum(qty)}.
+ *
+ * Both group bands are read, not just the footer. "Region A - 12 orders" is a
+ * heading, and a count that worked in the footer and printed blank in the
+ * header is the same fault this file exists to have stopped having.
+ *
  * Shape: aggregates[groupKey][field] = { count, sum, avg, min, max }
  * @param {object[]} bands
  * @param {object} dataset grouped rows, keyed by group key
@@ -179,7 +203,7 @@ function groupedAggregate(bands, dataset) {
     }
 
     for (const band of bands) {
-        if (band.type !== "groupFooter") continue;
+        if (!GROUP_SCOPED.includes(band.type)) continue;
 
         for (const item of band.items) {
             if (item.type != "text") continue;

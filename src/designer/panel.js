@@ -262,8 +262,10 @@ function bands(layout) {
  * @param {() => {target: object, fields: object[]}|null} options.getTarget what the
  *   plain fields are bound to - the selected item, or the layout
  * @param {() => object|null} options.getItem the selected item, for column edits
- * @param {(key: string) => void} options.changed called when an edit lands, with
- *   a key naming the control - consecutive edits from the same one are one step
+ * @param {(key: string, options?: {rebuild?: boolean}) => void} options.changed
+ *   called when an edit lands, with a key naming the control - consecutive edits
+ *   from the same one are one step. `rebuild` says the rail's controls have to
+ *   be built again, because which ones there are has changed
  * @param {(action: string, data: DOMStringMap) => void} options.act a button was pressed
  * @param {(type: string, on: boolean) => void} options.toggleBand
  * @param {(type: string, height: string) => void} options.setBandHeight
@@ -318,7 +320,14 @@ export function attachPanel({
 
         const raw = field.type === 'toggle' ? node.checked : node.value;
 
-        if (writeField(bound.target, field, raw)) changed(`field:${field.key}`);
+        if (writeField(bound.target, field, raw)) {
+            /**
+             * Some fields change which fields there are - choosing a named
+             * sheet takes the width and height boxes away, and Custom brings
+             * them back. The caller is told, because it owns the rail.
+             */
+            changed(`field:${field.key}`, { rebuild: Boolean(field.rebuilds) });
+        }
     }
 
     function onClick(event) {

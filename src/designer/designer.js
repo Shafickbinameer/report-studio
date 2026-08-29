@@ -15,15 +15,21 @@
 import { validateLayout } from '../engine/validate.js';
 import { allFields, allReportFields, fieldsFor, reportFields } from './fields.js';
 import { blankLayout, isEmptyLayout } from './blank.js';
-import { drawSheet, selectionBox, selectionBoxes, bandUnder } from './canvas.js';
+import {
+    drawSheet, selectionBox, selectionBoxes, bandUnder, bandBox, drawGuides,
+    guideLines, guideNubs
+} from './canvas.js';
 import { attachEditing } from './select.js';
 import {
     drawPanel, drawReportPanel, drawManyPanel, attachPanel, syncPanel
 } from './panel.js';
 import { icon } from './icons.js';
+import { createDropdown } from '../shared/dropdown.js';
 import { menuActions, drawMenu, menuPosition } from './menu.js';
 import { openWindow, closeWithOpener } from '../shared/window.js';
-import { openViewerWindow } from '../preview/viewer.js';
+import {
+    openViewerWindow, ZOOM_STEPS, MIN_ZOOM, MAX_ZOOM
+} from '../preview/viewer.js';
 import { buildPages } from '../engine/index.js';
 import { drawProblems, sameIssues } from './toast.js';
 import { askColumns, askReport, askName, askData, askToken } from './dialog.js';
@@ -116,6 +122,19 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     const files = store ?? createStore();
 
     const state = {
+        /** page pixels per screen pixel; 1 until somebody says otherwise */
+        zoom: 1,
+
+        /** whether the zoom is being recomputed from the viewport on resize */
+        fitWidth: false,
+
+        /**
+         * Whether the rulers are showing. A view preference, not part of the
+         * report - the guides dragged off them are saved with the file, but
+         * whether somebody has the rulers up while they work is theirs.
+         */
+        rulers: false,
+
         layout: isEmptyLayout(layout) ? blankLayout() : layout,
         /**
          * The selected items, oldest first, as `{ band, id }` - the band type
@@ -156,9 +175,23 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     const history = createHistory(state.layout);
 
     root.classList.add('report-designer');
+
+    /**
+     * The designer has to be able to hold the focus.
+     *
+     * Its shortcuts are bound per designer rather than to the document, so a
+     * second one on the page does not answer for this one - which only works if
+     * the focus can get in here, and a div cannot take it without being told.
+     * -1 rather than 0: it is reachable by clicking, not by tabbing to it, so
+     * it never becomes a stop on the way to the controls inside it.
+     */
+    root.tabIndex = -1;
     root.innerHTML = chrome(state.layout);
 
     const canvas = root.querySelector('[data-role="canvas"]');
+    const stage = root.querySelector('[data-role="stage"]');
+    /** everything drawn lives in here, so the scale has one thing to act on */
+    const surface = root.querySelector('[data-role="zoom-layer"]');
     const panel = root.querySelector('[data-role="panel"]');
     const bar = root.querySelector('[data-role="bar"]');
     const foot = root.querySelector('[data-role="foot"]');
@@ -212,13 +245,14 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         if (state.mode === 'preview') {
             const run = drawPreview(state.layout, state.data);
 
-            canvas.innerHTML = run.markup;
+            surface.innerHTML = run.markup;
             pages.textContent = run.error
                 ? ''
                 : `${run.pageCount} page${run.pageCount === 1 ? '' : 's'}`;
 
             /** the preview says what stopped it in the page itself */
             showProblems(issues);
+            applyZoom();
             return issues;
         }
 
@@ -227,13 +261,17 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         let sheet = '';
 
         try {
-            sheet = drawSheet(state.layout, state.selection);
+            sheet = drawSheet(state.layout, state.selection,
+                { rulers: state.rulers });
         } catch {
             sheet = '';
         }
 
-        canvas.innerHTML = sheet;
+        surface.innerHTML = sheet;
         showProblems(issues);
+
+        /** what was drawn may be a different size; the stage has to match it */
+        applyZoom();
 
         return issues;
     }
@@ -266,6 +304,8 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
      * touched; the full redraw happens once, when it is let go.
      */
     function patch() {
+        patchRules();
+
         const boxes = selectionBoxes(state.layout, state.selection);
 
         for (const [index, { item, box }] of boxes.entries()) {
@@ -292,6 +332,23 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             });
             /** a table's height is its rows', so it is never written here */
             if (item.type !== 'table') drawn.style.height = `${item.h}px`;
+        }
+    }
+
+
+    /**
+     * The ruler guides, redrawn without rebuilding the sheet.
+     *
+     * Two small containers rather than the whole page: the ticks never move and
+     * there are two hundred of them, and a guide being dragged is the same sixty
+     * frames a second an item drag is.
+     */
+    function patchRules() {
+        const rules = canvas.querySelector('[data-role="rules"]');
+        if (rules) rules.innerHTML = state.rulers ? guideLines(state.layout) : '';
+
+        for (const host of canvas.querySelectorAll('[data-role="ruler-guides"]')) {
+            host.innerHTML = guideNubs(state.layout, host.dataset.axis);
         }
     }
 
@@ -383,6 +440,19 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         bar.querySelector('[data-role="undo"]').disabled = !history.canUndo;
         bar.querySelector('[data-role="redo"]').disabled = !history.canRedo;
 
+        /** a toggle, so it says which way it is set rather than what it does */
+        const size = bar.querySelector('[data-role="size"]');
+
+        if (size && state.layout.page) {
+            size.innerHTML =
+                `${state.layout.page.width} &times; ${state.layout.page.height}`;
+        }
+
+        const rulers = bar.querySelector('[data-role="rulers"]');
+
+        rulers.setAttribute('aria-pressed', String(state.rulers));
+        rulers.classList.toggle('is-on', state.rulers);
+
         /** greyed rather than absent: it says the tool exists and why it cannot be used */
         const addTable = foot.querySelector('[data-role="add-table"]');
 
@@ -451,6 +521,112 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         for (const tag of canvas.querySelectorAll('[data-band-tag]')) {
             tag.classList.toggle('is-target', lit.has(tag.dataset.bandTag));
         }
+    }
+
+
+    /**
+     * Draws the alignment guides, or takes them away.
+     *
+     * Into a layer of its own rather than into the outlines, for the reason the
+     * outlines are a layer of their own: a guide belongs to the gesture, not to
+     * an item, and an item that is redrawn mid-drag would take its guides with
+     * it. The layer survives patch() because patch() only touches boxes.
+     *
+     * @param {{band: string, lines: object[], gaps: object[]}|null} found
+     */
+    function drawAlignment(found) {
+        const layer = canvas.querySelector('[data-role="guides"]');
+        if (!layer) return;
+
+        layer.innerHTML = found
+            ? drawGuides(bandBox(state.layout, found.band), found.lines, found.gaps)
+            : '';
+    }
+
+
+    /* ---------------- zoom ---------------- */
+
+    /**
+     * Scales the drawing rather than the numbers in it.
+     *
+     * The same choice the viewer makes, and for the same reason: re-computing
+     * type at 150% would re-wrap the text and stop matching what the engine
+     * paginated, so what is on screen would no longer be what would print.
+     *
+     * A transform does not affect layout, so the stage is given the scaled
+     * footprint explicitly - measured off the drawing rather than worked out
+     * from the page, because the gutter and the rulers are part of what has to
+     * fit and only the browser knows how wide they came out.
+     */
+    function applyZoom() {
+        surface.style.transformOrigin = 'top left';
+        surface.style.transform = `scale(${state.zoom})`;
+
+        const width = surface.offsetWidth;
+        const height = surface.offsetHeight;
+
+        /** jsdom lays nothing out, and neither does a canvas nobody has drawn yet */
+        if (width && height) {
+            stage.style.width = `${width * state.zoom}px`;
+            stage.style.height = `${height * state.zoom}px`;
+        }
+
+        refreshZoom();
+    }
+
+
+    function refreshZoom() {
+        /**
+         * Fit width has no step to light, and setFitWidth has already said so -
+         * writing a percentage over it here would take the label away from the
+         * mode that is actually on.
+         */
+        if (zoomPicker && !state.fitWidth) {
+            const exact = ZOOM_STEPS.find(
+                step => Math.abs(step - state.zoom) < 1e-9);
+
+            zoomPicker.value = exact !== undefined ? String(exact) : 'fit';
+        }
+
+        bar.querySelector('[data-role="zoom-out"]').disabled =
+            !state.fitWidth && state.zoom <= MIN_ZOOM;
+        bar.querySelector('[data-role="zoom-in"]').disabled =
+            !state.fitWidth && state.zoom >= MAX_ZOOM;
+    }
+
+
+    function setZoom(next) {
+        state.fitWidth = false;
+        state.zoom = Math.min(Math.max(next, MIN_ZOOM), MAX_ZOOM);
+        applyZoom();
+    }
+
+
+    /** the widest scale that still fits the canvas, less its own padding */
+    function setFitWidth() {
+        state.fitWidth = true;
+        if (zoomPicker) zoomPicker.value = 'fit';
+
+        const available = canvas.clientWidth - 48;
+        const natural = surface.offsetWidth;
+
+        if (available > 0 && natural > 0) {
+            state.zoom = Math.min(Math.max(available / natural, MIN_ZOOM), MAX_ZOOM);
+        }
+
+        applyZoom();
+    }
+
+
+    /** to the neighbouring preset rather than a blind multiply */
+    function stepZoom(direction) {
+        const from = state.zoom;
+
+        const next = direction > 0
+            ? ZOOM_STEPS.find(step => step > from + 1e-9)
+            : [...ZOOM_STEPS].reverse().find(step => step < from - 1e-9);
+
+        setZoom(next ?? from);
     }
 
 
@@ -794,6 +970,16 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             case 'save': return saveReport();
             case 'data': return editData();
             case 'open-window': return openInWindow();
+
+            case 'zoom-in': return stepZoom(1);
+            case 'zoom-out': return stepZoom(-1);
+
+            case 'toggle-rulers': {
+                state.rulers = !state.rulers;
+                draw();
+                refreshBar();
+                return;
+            }
             case 'toggle-preview': return togglePreview();
         }
     }
@@ -982,6 +1168,9 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     /** the report windows this designer opened, so they go when it does */
     const windows = new Set();
 
+    /** the zoom menu, built once the bar exists */
+    let zoomPicker = null;
+
 
     async function togglePreview() {
         if (state.mode === 'preview') {
@@ -1095,6 +1284,20 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
 
 
     root.dataset.mode = state.mode;
+
+    zoomPicker = createDropdown(bar.querySelector('[data-role="zoom-dropdown"]'));
+
+    zoomPicker.addEventListener('change', () => {
+        if (zoomPicker.value === 'fit') setFitWidth();
+        else setZoom(Number(zoomPicker.value));
+    });
+
+    /** fit width is a reading of the viewport, so it is taken again when it changes */
+    const onViewportResize = () => { if (state.fitWidth) setFitWidth(); };
+    const view = doc.defaultView ?? globalThis;
+
+    view.addEventListener('resize', onViewportResize);
+
     draw();
     drawRail();
     refreshBar();
@@ -1123,6 +1326,15 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
          * behind it.
          */
         enabled: () => state.mode === 'design',
+
+        /**
+         * Screen pixels are page pixels divided by this. Without it a drag at
+         * 200% moves an item twice as far as the pointer went.
+         */
+        getZoom: () => state.zoom,
+
+        /** no rulers, no guides to drag off them and nothing to snap to */
+        rulers: () => state.rulers,
         /**
          * A drag moves x and y, which the rail is showing - so the controls are
          * refreshed rather than rebuilt. Rebuilding them under a cursor takes
@@ -1130,7 +1342,14 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
          */
         onTarget: markTarget,
 
-        commit: ({ live, band }) => {
+        /**
+         * What the drag has lined up with. Drawn straight rather than through
+         * draw(), because it changes sixty times a second and rebuilding the
+         * sheet that often is what patch() exists to avoid.
+         */
+        onGuides: drawAlignment,
+
+        commit: ({ live, band, key = null }) => {
             /**
              * A drag that ended over another band moves the item into it. Until
              * now the item followed the pointer across the boundary and stayed
@@ -1169,7 +1388,9 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
              * second, and each of those as an undo step would bury the edit
              * before it.
              */
-            if (!live) record(`move:${state.selection.map(o => o.id).join(',')}`);
+            if (!live) {
+                record(key ?? `move:${state.selection.map(o => o.id).join(',')}`);
+            }
         }
     });
 
@@ -1185,9 +1406,15 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
         /**
          * A typed edit redraws the page but never the rail: the control being
          * typed into is in it.
+         *
+         * Unless the edit changed which controls there are - picking a named
+         * paper size puts the width and height boxes away - in which case the
+         * rail is rebuilt. Safe here because the control that asked for it is a
+         * dropdown, not something anyone is mid-word in.
          */
-        changed: (key) => {
+        changed: (key, { rebuild = false } = {}) => {
             draw();
+            if (rebuild) drawRail();
             record(key);
         },
         act,
@@ -1205,14 +1432,78 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     }
 
     /**
-     * The shortcuts everyone tries first. Bound on the root rather than on
-     * document, so a second designer on the same page does not answer for this
-     * one, and so they go when it does.
+     * Whether a keystroke belongs to this designer.
+     *
+     * Anything aimed inside it, plainly. And anything aimed at nothing at all -
+     * the page has just loaded, or a click landed on the canvas, and the body
+     * has the focus by default. Without that second case the shortcuts were
+     * dead until somebody happened to click a button, because a click on the
+     * design itself focuses nothing and the keystroke never reached this
+     * element to begin with.
+     *
+     * @param {KeyboardEvent} event
+     * @returns {boolean}
+     */
+    function ours(event) {
+        if (root.contains(event.target)) return true;
+
+        return event.target === doc.body || event.target === doc.documentElement;
+    }
+
+
+    /**
+     * Takes the focus when a click lands on something that cannot hold it.
+     *
+     * The canvas is a div, so clicking the design leaves the caret wherever it
+     * was - which, after a trip to the properties rail, is a text box. Then `z`
+     * types a z instead of zooming, which is correct of the shortcut and
+     * surprising to everyone.
+     *
+     * @param {PointerEvent} event
+     */
+    function takeFocus(event) {
+        const holder = event.target.closest?.(
+            'input, textarea, select, button, a, label, [tabindex]');
+
+        /**
+         * Root itself carries a tabindex now, so it matches that selector - and
+         * it is the thing being focused, not a reason not to. A browser does
+         * this walk on its own for a container that can hold focus; this is
+         * here so the behaviour is the designer's rather than the browser's.
+         */
+        if (holder && holder !== root) return;
+
+        root.focus({ preventScroll: true });
+    }
+
+
+    /**
+     * The shortcuts everyone tries first. Bound on the document so they are
+     * heard wherever the focus is, and answered only for this designer - see
+     * `ours` - so a second one on the same page keeps its own.
      */
     function onShortcut(event) {
-        if (!(event.ctrlKey || event.metaKey)) return;
+        if (!ours(event)) return;
 
         const key = event.key.toLowerCase();
+
+        /**
+         * Zoom is one key: z in, alt+z out.
+         *
+         * Before the ctrl guard because it is not a ctrl shortcut - and it must
+         * stay out of ctrl's way, or it would take undo. Held back while a
+         * field has the caret, for the same reason copy is: the rail is full of
+         * boxes people type the letter z into.
+         */
+        if (key === 'z' && !event.ctrlKey && !event.metaKey) {
+            if (event.target.closest?.('input, textarea, select')) return;
+
+            event.preventDefault();
+            stepZoom(event.altKey ? -1 : 1);
+            return;
+        }
+
+        if (!(event.ctrlKey || event.metaKey)) return;
 
         /**
          * Copy and paste stay the browser's while a field has the caret, or
@@ -1248,6 +1539,19 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             return;
         }
 
+        /**
+         * ctrl+0 is the way back to 100% from wherever the z key has got to.
+         * The stepping itself is z's; ctrl +/- is left to the browser here,
+         * which is not something the viewer next door does - a report being
+         * arranged is scrolled and dragged far more than one being read, and a
+         * modifier on every zoom is one modifier too many for that.
+         */
+        if (key === '0') {
+            event.preventDefault();
+            setZoom(1);
+            return;
+        }
+
         if (key === 'z') {
             event.preventDefault();
             act(event.shiftKey ? 'redo' : 'undo');
@@ -1269,7 +1573,8 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
     bar.addEventListener('click', onChromeClick);
     foot.addEventListener('click', onChromeClick);
     toasts.addEventListener('click', onChromeClick);
-    root.addEventListener('keydown', onShortcut);
+    root.addEventListener('pointerdown', takeFocus);
+    doc.addEventListener('keydown', onShortcut);
 
     canvas.addEventListener('contextmenu', onContextMenu);
     /** the pill is pinned to the page area, so a scroll leaves it behind */
@@ -1328,11 +1633,15 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             bar.removeEventListener('click', onChromeClick);
             foot.removeEventListener('click', onChromeClick);
             toasts.removeEventListener('click', onChromeClick);
-            root.removeEventListener('keydown', onShortcut);
+            root.removeEventListener('pointerdown', takeFocus);
+            doc.removeEventListener('keydown', onShortcut);
             canvas.removeEventListener('contextmenu', onContextMenu);
             canvas.removeEventListener('scroll', closeMenu);
             doc.removeEventListener('pointerdown', onDocumentDown);
             doc.removeEventListener('keydown', onMenuKey);
+            (doc.defaultView ?? globalThis)
+                .removeEventListener('resize', onViewportResize);
+            zoomPicker?.destroy();
             closeMenu();
             clearTimeout(complain.timer);
             clearTimeout(flashBand.timer);
@@ -1383,6 +1692,11 @@ function chrome(layout) {
         </div>
 
         <div class="dz-bar-group">
+            <button type="button" class="dz-tool" data-role="rulers"
+                    data-action="toggle-rulers"
+                    title="Rulers and guides - drag off a ruler to place one"
+                    aria-label="Rulers and guides" aria-pressed="false"
+                >${icon('ruler')}</button>
             <button type="button" class="dz-tool" data-action="toggle-preview"
                     title="Run the report (ctrl+E)" aria-label="Run the report"
                     aria-pressed="false"
@@ -1402,12 +1716,56 @@ function chrome(layout) {
         </div>
 
         <span class="dz-pages" data-role="pages"></span>
-        <span class="dz-size">${size}</span>
+        <span class="dz-size" data-role="size">${size}</span>
+
+        <!--
+            The same three controls the viewer has, in the same order and with
+            the same shortcuts. A designer and a preview of the same report
+            should not zoom differently.
+        -->
+        <div class="dz-bar-group dz-zoom-group">
+            <button type="button" class="dz-tool" data-role="zoom-out"
+                    data-action="zoom-out"
+                    title="Zoom out (alt+Z)" aria-label="Zoom out">&#8722;</button>
+
+            <div class="dropdown" data-role="zoom-dropdown">
+                <button type="button" class="dropdown-trigger" data-role="zoom"
+                        aria-haspopup="listbox" aria-expanded="false"
+                        aria-label="Zoom level">
+                    <span class="dropdown-value">100%</span>
+                    <span class="dropdown-caret" aria-hidden="true"></span>
+                </button>
+
+                <ul class="dropdown-menu" data-role="zoom-menu" role="listbox"
+                    aria-label="Zoom level" hidden>
+                    <li class="dropdown-item" role="option" tabindex="-1"
+                        data-value="fit">Fit width</li>
+                    ${ZOOM_STEPS.map(step => `
+                    <li class="dropdown-item" role="option" tabindex="-1"
+                        data-value="${step}"${step === 1 ? ' data-selected="true"' : ''}
+                        >${Math.round(step * 100)}%</li>`).join('')}
+                </ul>
+            </div>
+
+            <button type="button" class="dz-tool" data-role="zoom-in"
+                    data-action="zoom-in"
+                    title="Zoom in (Z)" aria-label="Zoom in">&#43;</button>
+        </div>
     </header>
 
     <div class="dz-body">
         <div class="dz-main">
-            <div class="dz-canvas" data-role="canvas"></div>
+            <div class="dz-canvas" data-role="canvas">
+                <!--
+                    Two boxes for one job. The inner one is scaled, and a
+                    transform changes nothing about layout - so at 200% there
+                    would be nothing to scroll. The outer one is given the
+                    scaled size in px, and is what the canvas scrolls.
+                -->
+                <div class="dz-stage" data-role="stage">
+                    <div class="dz-zoom-layer" data-role="zoom-layer"></div>
+                </div>
+            </div>
 
             <!--
                 The tools sit under the page rather than in the bar: the bar is

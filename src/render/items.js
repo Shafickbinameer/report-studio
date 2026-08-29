@@ -202,6 +202,34 @@ function tableRule(item) {
     if (style.borderColor) out.push(`--rs-rule-color:${style.borderColor}`);
 
     /**
+     * The header's own colours, set here for the same reason the grid is: they
+     * belong to every `th` in the table, and a table that says nothing about
+     * them keeps taking the stylesheet's.
+     */
+    if (style.headerBackground) {
+        out.push(`--rs-head-bg:${style.headerBackground}`);
+    }
+
+    if (style.headerColor) out.push(`--rs-head-color:${style.headerColor}`);
+
+    /**
+     * The cell font, which used to go nowhere at all: the rail offered a size
+     * and a colour, report.css hard-coded 12px, and the two never met. It
+     * matters more than it looks - the engine wraps a cell against this font,
+     * so a table drawn in one and measured in another paginates to a row count
+     * it does not print.
+     */
+    if (style.fontFamily) out.push(`--rs-cell-family:${style.fontFamily}`);
+
+    const size = Number(style.fontSize);
+    if (Number.isFinite(size) && size > 0) out.push(`--rs-cell-size:${size}px`);
+
+    if (style.color) out.push(`--rs-cell-color:${style.color}`);
+
+    /** one line and an ellipsis, for a column of figures that must not wrap */
+    if (item.wrap === false) out.push('--rs-cell-wrap:nowrap');
+
+    /**
      * Clamped rather than trusted: the rail will not offer a width past this,
      * but a hand-written layout can, and a rule that outgrows its row would
      * quietly undo the arithmetic pagination was done with.
@@ -241,18 +269,15 @@ function table(i) {
  * @returns {string} markup
  */
 function cell(height, align, value) {
-    return `<div class="cell" style="height:${height}px;justify-content:${JUSTIFY[align] ?? 'flex-start'}">` +
+    return `<div class="cell" style="height:${height}px;text-align:${align ?? 'left'}">` +
         `${esc(value)}</div>`;
 }
 
 
-/** a column's `align` as the flex box that draws it */
-const JUSTIFY = { left: 'flex-start', center: 'center', right: 'flex-end' };
-
-
 /** the column header row, shared by both table shapes */
 function columnHeader(i) {
-    const height = i.headerHeight ?? i.rowHeight;
+    /** what measure.js budgeted, which is taller than declared if a label wrapped */
+    const height = i.headerMeasured ?? i.headerHeight ?? i.rowHeight;
 
     return `<thead>
         <tr style="height:${height}px">
@@ -262,12 +287,21 @@ function columnHeader(i) {
 }
 
 
-function dataRows(i, rows) {
-    return (rows || []).map(r =>
-        `<tr style="height:${i.rowHeight}px">
-        ${i.columns.map(c => `<td style="width:${c.width}px;">${cell(i.rowHeight, c.align, r[c.field])}</td>`).join("")}
-        </tr>`
-    ).join("");
+/**
+ * @param {object} i the table
+ * @param {object[]} rows
+ * @param {number[]} [heights] one per row, from measure.js; absent on the
+ *   designer canvas, where nothing has been measured and every row is its
+ *   declared height
+ */
+function dataRows(i, rows, heights) {
+    return (rows || []).map((r, n) => {
+        const height = heights?.[n] ?? i.rowHeight;
+
+        return `<tr style="height:${height}px">
+        ${i.columns.map(c => `<td style="width:${c.width}px;">${cell(height, c.align, r[c.field])}</td>`).join("")}
+        </tr>`;
+    }).join("");
 }
 
 
@@ -290,7 +324,7 @@ function flatBody(i) {
     return `
         ${i.showHeader ? columnHeader(i) : ""}
         <tbody>
-            ${dataRows(i, i.row)}
+            ${dataRows(i, i.row, i.rowHeights)}
         </tbody>
     `;
 }
@@ -307,7 +341,7 @@ function groupedBody(i) {
         ${g.showHeader && i.showHeader ? columnHeader(i) : ""}
         <tbody>
             ${groupBandRow(g.headerBand, colSpan, "group-header")}
-            ${dataRows(i, g.rows)}
+            ${dataRows(i, g.rows, g.rowHeights)}
             ${g.showFooter ? groupBandRow(g.footerBand, colSpan, "group-footer") : ""}
         </tbody>
     `).join("");

@@ -9,6 +9,9 @@
  */
 
 
+import { DESIGN_ROWS, designHeight } from '../engine/measure.js';
+
+
 /** spec 5.2: positions snap to a 10px grid */
 export const GRID = 10;
 
@@ -24,8 +27,13 @@ export const MIN_H = 12;
 /**
  * Enough rows to show that a table is a table, few enough that it does not
  * swallow the detail zone. The real row count is a print-time fact.
+ *
+ * Owned by the engine rather than declared here, because it is not only what
+ * the canvas draws: paginate.js measures a table's growth from the same figure
+ * when it floats what sits below the table down the page. Two copies of it
+ * would put the design and the print an invisible three rows apart.
  */
-export const SAMPLE_ROWS = 3;
+export const SAMPLE_ROWS = DESIGN_ROWS;
 
 /** the eight, clockwise from the top-left */
 const ALL_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -43,17 +51,12 @@ export function snap(value) {
  * equivalent, and it is the same figure the canvas draws with, so the selection
  * outline lands exactly on the table rather than near it.
  *
- * @param {object} item
- * @returns {number} pixels
+ * Re-exported from the engine rather than written twice: it is also the height
+ * paginate.js treats as the table's designed size, and the canvas and the
+ * printed page have to agree about that or nothing below a table lands where it
+ * was put.
  */
-export function designHeight(item) {
-    if (item.type !== 'table') return item.h ?? 0;
-
-    const rowHeight = item.rowHeight ?? 0;
-    const header = item.showHeader ? (item.headerHeight ?? rowHeight) : 0;
-
-    return header + SAMPLE_ROWS * rowHeight;
-}
+export { designHeight };
 
 
 /** an item's box in band-relative coordinates */

@@ -20,11 +20,17 @@ import { render } from '../render/render.js';
 import { chrome } from './chrome.js';
 
 
-/** the zoom levels the -/+ buttons step through, matching the select */
-const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+/**
+ * The zoom levels the -/+ buttons step through, matching the menu beside them.
+ *
+ * Exported because the designer steps through the same ones. A report zoomed to
+ * 125% while it is being arranged and to 130% while it is being read would be
+ * two tools rather than two views of one.
+ */
+export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
-const MIN_ZOOM = ZOOM_STEPS[0];
-const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+export const MIN_ZOOM = ZOOM_STEPS[0];
+export const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
 
 /**
@@ -103,6 +109,21 @@ export function createViewer({ mount, paginated, title } = {}) {
      */
     const doc = root.ownerDocument;
 
+    /**
+     * And the window it belongs to, which is the same point one step out.
+     *
+     * `window` in this module is whichever page loaded the script - the host's
+     * tab. A report opened in a window of its own is mounted from that tab, so
+     * every bare `window` here reached back into it: print() printed the
+     * application behind the report instead of the report, the print dialog
+     * appeared over the wrong window, and afterprint fired somewhere the
+     * highlights were not.
+     *
+     * A viewer mounted in the page resolves this to the same `window` it always
+     * was, so nothing changes there.
+     */
+    const view = doc.defaultView ?? globalThis;
+
     if (!paginated?.pages) {
         throw new Error(
             'createViewer: paginated must be a buildPages(layout, data) result.'
@@ -167,7 +188,7 @@ export function createViewer({ mount, paginated, title } = {}) {
     let fitWidth = false;   // recompute zoom from the viewport on resize
     let returnFocusTo = null;   // what had focus before the dialog opened
 
-    const afterPrintSupported = typeof window.onafterprint !== 'undefined';
+    const afterPrintSupported = typeof view.onafterprint !== 'undefined';
 
     ui.total.textContent = String(total);
     ui.current.max = String(total);
@@ -277,7 +298,9 @@ export function createViewer({ mount, paginated, title } = {}) {
      */
     function printReport() {
         clearMarks();
-        window.print();
+
+        /** the window the report is in, which is not always the one this ran from */
+        view.print();
 
         /**
          * Firefox and Safari return from print() before the dialog has taken
@@ -591,7 +614,7 @@ export function createViewer({ mount, paginated, title } = {}) {
     });
 
     const onResize = () => { if (fitWidth) setFitWidth(); };
-    window.addEventListener('resize', onResize);
+    view.addEventListener('resize', onResize);
 
     ui.hitPrev.addEventListener('click', () => goToHit(hitIndex - 1));
     ui.hitNext.addEventListener('click', () => goToHit(hitIndex + 1));
@@ -670,19 +693,20 @@ export function createViewer({ mount, paginated, title } = {}) {
     doc.addEventListener('keydown', onKeyDown);
 
     if (afterPrintSupported) {
-        window.addEventListener('afterprint', restoreAfterPrint);
+        view.addEventListener('afterprint', restoreAfterPrint);
     }
 
     /**
-     * The listeners above are on document and window, which outlive this mount.
-     * Without a way to take them off, a second viewer on the same page - or a
-     * React <Preview /> remounting - leaves the first one still handling keys.
+     * The listeners above are on the viewer's own document and window, which
+     * outlive this mount. Without a way to take them off, a second viewer on
+     * the same page - or a React <Preview /> remounting - leaves the first one
+     * still handling keys.
      */
     function destroy() {
         ui.zoom.destroy();
         doc.removeEventListener('keydown', onKeyDown);
-        window.removeEventListener('resize', onResize);
-        window.removeEventListener('afterprint', restoreAfterPrint);
+        view.removeEventListener('resize', onResize);
+        view.removeEventListener('afterprint', restoreAfterPrint);
 
         /** the viewer built everything in here, so it takes it all away again */
         root.innerHTML = '';

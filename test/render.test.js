@@ -218,11 +218,16 @@ describe('render - a row is exactly the height the engine budgeted', () => {
     });
 
     it('draws column alignment on the cell box', () => {
+        /**
+         * text-align rather than justify-content, since cells wrap: a
+         * right-aligned column needs every line on the right, not the wrapped
+         * paragraph pushed over as a block.
+         */
         const html = flat({ items: rows(1) }, [band('detail', [table()])]);
 
         /* the fixture aligns Item left, Qty and Price right */
-        expect(html).toContain('justify-content:flex-start');
-        expect(html).toContain('justify-content:flex-end');
+        expect(html).toContain('text-align:left');
+        expect(html).toContain('text-align:right');
     });
 
     it('gives grouped rows the same fixed-height cells', () => {
@@ -339,5 +344,119 @@ describe('render - a box among other items', () => {
 
         expect(html).toContain('data-item-type="box"');
         expect(html).toContain('data-item-type="table"');
+    });
+});
+
+
+describe('render - the table header', () => {
+    const withStyle = (style) => flat({ items: rows(2) },
+        [band('detail', [{ ...table(), style }])]);
+
+    it('carries the fill and the text colour the table asked for', () => {
+        const html = withStyle({ headerBackground: '#ff9c4b', headerColor: '#22272c' });
+
+        expect(html).toContain('--rs-head-bg:#ff9c4b');
+        expect(html).toContain('--rs-head-color:#22272c');
+    });
+
+    it('says nothing when the table says nothing', () => {
+        /** so a table with no opinion keeps the quiet fill report.css gives it */
+        const html = withStyle({ fontSize: 12 });
+
+        expect(html).not.toContain('--rs-head-bg');
+        expect(html).not.toContain('--rs-head-color');
+    });
+
+    it('sets them once, on the table, not once per cell', () => {
+        /**
+         * The reason they are custom properties: a five hundred row table has
+         * fifteen hundred cells, and the same colour repeated that many times is
+         * markup nobody needs to send.
+         */
+        const html = withStyle({ headerBackground: '#eeeeee' });
+
+        expect(html.match(/--rs-head-bg/g)).toHaveLength(1);
+        expect(html).toMatch(/<table[^>]*--rs-head-bg:#eeeeee/);
+    });
+
+    it('draws the header at the height the table declared', () => {
+        const html = flat({ items: rows(2) },
+            [band('detail', [{ ...table(), headerHeight: 44 }])]);
+
+        expect(html).toContain('<tr style="height:44px">');
+        expect(html).toContain('class="cell" style="height:44px');
+    });
+
+    it('leaves the rows their own height while the header has another', () => {
+        const html = flat({ items: rows(2) },
+            [band('detail', [{ ...table(), headerHeight: 44, rowHeight: 20 }])]);
+
+        expect(html).toContain('<tr style="height:44px">');
+        expect(html).toContain('<tr style="height:20px">');
+    });
+});
+
+
+describe('render - a wrapped row is drawn at the height it was measured at', () => {
+    const LONG = 'a note long enough that it cannot possibly fit on one line '
+        + 'inside a hundred and eighty pixels of column';
+
+    const tbl = (extra = {}) => ({
+        id: 'tbl', type: 'table', x: 0, y: 0, w: 300,
+        rowHeight: 24, headerHeight: 24, showHeader: true,
+        columns: [
+            { field: 'name', label: 'Name', width: 120, align: 'left' },
+            { field: 'note', label: 'Note', width: 180, align: 'left' }
+        ],
+        style: { fontSize: 12, fontFamily: 'Helvetica, Arial, sans-serif' },
+        ...extra
+    });
+
+    const data = { items: [{ name: 'a', note: 'short' }, { name: 'b', note: LONG }] };
+
+    const html = (item = tbl()) =>
+        render(run(layout({ bands: [band('detail', [item])] }), data));
+
+    it("draws each row at its own height, not the table's", () => {
+        const heights = [...html().matchAll(/<tr style="height:([\d.]+)px"/g)]
+            .map(m => Number(m[1]));
+
+        /** the header, a short row, and a tall one */
+        expect(heights).toHaveLength(3);
+        expect(heights[1]).toBe(24);
+        expect(heights[2]).toBeGreaterThan(24);
+    });
+
+    it('gives the cell the same height as the row it is in', () => {
+        const tall = [...html().matchAll(/<tr style="height:([\d.]+)px">([\s\S]*?)<\/tr>/g)]
+            .map(m => ({ height: m[1], body: m[2] }))
+            .find(row => Number(row.height) > 24);
+
+        expect(tall.body).toContain(`class="cell" style="height:${tall.height}px`);
+    });
+
+    it('carries the font it was measured in onto the table', () => {
+        expect(html()).toContain('--rs-cell-family:Helvetica, Arial, sans-serif');
+        expect(html()).toContain('--rs-cell-size:12px');
+    });
+
+    it('says nothing about the font when the table has no opinion', () => {
+        const bare = tbl({ style: { borderColor: '#cccccc' } });
+
+        expect(html(bare)).not.toContain('--rs-cell-family');
+        expect(html(bare)).not.toContain('--rs-cell-size');
+    });
+
+    it('asks for one line when the table has turned wrapping off', () => {
+        const flat = html(tbl({ wrap: false }));
+        const heights = [...flat.matchAll(/<tr style="height:([\d.]+)px"/g)]
+            .map(m => Number(m[1]));
+
+        expect(flat).toContain('--rs-cell-wrap:nowrap');
+        expect(new Set(heights)).toEqual(new Set([24]));
+    });
+
+    it('says nothing about wrapping when it is on, which is the default', () => {
+        expect(html()).not.toContain('--rs-cell-wrap');
     });
 });

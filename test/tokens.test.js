@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     TOKENS, findToken, needsField, resolvesIn, tokenValue, tokenItem,
-    availableFields, bandChoices, defaultBand
+    availableFields, bandChoices, defaultBand, aggregateScope
 } from '../src/designer/tokens.js';
 import { buildPages } from '../src/engine/index.js';
 import { render } from '../src/render/render.js';
@@ -79,18 +79,36 @@ describe('where each one resolves', () => {
         }
     });
 
-    it('keeps an aggregate to the footers that have a scope for it', () => {
+    it('resolves an aggregate in every band', () => {
         /**
-         * resolve.js defers aggregates to group.js, which only runs over a
-         * group's rows - so one in a page header has nothing to be computed
-         * over and prints blank.
+         * It used to be the two footers, because group.js only filled in a
+         * reportFooter. A total under the rows is the one a designer reaches
+         * for first, and it printed the raw `{sum(amount)}` back at them.
          */
         for (const id of ['sum', 'avg', 'count']) {
-            expect(resolvesIn(findToken(id), 'groupFooter'), id).toBe(true);
-            expect(resolvesIn(findToken(id), 'reportFooter'), id).toBe(true);
-            expect(resolvesIn(findToken(id), 'pageHeader'), id).toBe(false);
-            expect(resolvesIn(findToken(id), 'detail'), id).toBe(false);
+            for (const type of ['groupHeader', 'groupFooter', 'reportFooter',
+                'pageHeader', 'pageFooter', 'detail']) {
+                expect(resolvesIn(findToken(id), type), `${id} in ${type}`)
+                    .toBe(true);
+            }
         }
+    });
+
+    it('says which rows an aggregate would cover in the band it is going to', () => {
+        /**
+         * The thing left worth saying, now that nowhere refuses one:
+         * {sum(price)} is a different number in a group footer and in a report
+         * footer, and both of them are right.
+         */
+        expect(aggregateScope(findToken('sum'), 'groupFooter')).toBe('group');
+        expect(aggregateScope(findToken('sum'), 'groupHeader')).toBe('group');
+        expect(aggregateScope(findToken('sum'), 'detail')).toBe('report');
+        expect(aggregateScope(findToken('sum'), 'reportFooter')).toBe('report');
+    });
+
+    it('has no scope to report for a token that is not an aggregate', () => {
+        expect(aggregateScope(findToken('page'), 'pageFooter')).toBeNull();
+        expect(aggregateScope(null, 'detail')).toBeNull();
     });
 });
 
@@ -134,9 +152,12 @@ describe('which band it offers', () => {
         expect(bandChoices(l, findToken('page'))).toEqual(['detail']);
     });
 
-    it('narrows an aggregate to the footers', () => {
+    it('offers an aggregate every band the report has', () => {
         expect(bandChoices(full(), findToken('sum')))
-            .toEqual(['groupFooter', 'reportFooter']);
+            .toEqual([
+                'pageHeader', 'groupHeader', 'detail',
+                'groupFooter', 'reportFooter', 'pageFooter'
+            ]);
     });
 
     it('falls back to every band when none of them will do', () => {

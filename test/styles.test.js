@@ -24,6 +24,7 @@ const SHEETS = [
     'src/shared/modal.css',
     'src/render/report.css',
     'src/designer/styles.css',
+    'src/preview/chrome.css',
     'src/preview/styles.css'
 ];
 
@@ -72,6 +73,9 @@ describe.each(SHEETS)('%s', (file) => {
     });
 
     it('closes every block it opens by the end of the file', () => {
+        /** a sheet that is nothing but imports has no block to close */
+        if (!bare.includes('{')) return;
+
         expect(bare.trim().endsWith('}')).toBe(true);
     });
 });
@@ -108,7 +112,7 @@ describe('what each sheet is responsible for', () => {
         expect(read('src/shared/modal.css')).toContain('.modal-card');
         /** the export format cards are the preview's business alone */
         expect(read('src/shared/modal.css')).not.toContain('.format-note');
-        expect(read('src/preview/styles.css')).toContain('.format-note');
+        expect(read('src/preview/chrome.css')).toContain('.format-note');
     });
 
     it('has both screens import every layer they draw with', () => {
@@ -118,6 +122,83 @@ describe('what each sheet is responsible for', () => {
             expect(css).toContain('shared/theme.css');
             expect(css).toContain('render/report.css');
             expect(css).toContain('shared/modal.css');
+        }
+    });
+
+    it('gives the designer the viewer chrome it opens a report with', () => {
+        /**
+         * "Open the report in its own tab" calls openViewerWindow, which builds
+         * a window out of the designer page's stylesheets and mounts a viewer
+         * into it. The viewer's toolbar and pager are drawn by chrome.js and
+         * styled by chrome.css - which the designer never draws itself, so it
+         * was never imported, so the report opened in that window came up as
+         * unstyled markup.
+         */
+        expect(read('src/designer/styles.css')).toContain('preview/chrome.css');
+    });
+
+    it('scopes every viewer rule to the mount, so importing it is safe', () => {
+        /**
+         * The designer imports this file for the sake of the window it opens a
+         * report into, and the designer's canvas draws `class="page dz-page"`.
+         * An unscoped `.page { display: none }` - which is how the viewer pages
+         * its report - therefore blanked the design sheet. Every rule is scoped
+         * to .report-viewer for that reason, and a host linking viewer.css
+         * beside its own stylesheet gets the same protection.
+         *
+         * The exceptions are the mount and the two classes a page puts around
+         * it, plus the print rule that stops the backdrop printing.
+         */
+        const allowed = /^(\.report-viewer|\.graph-paper|\.report-fills-window|body)(?![\w-])/;
+        const chrome = stripNoise(read('src/preview/chrome.css'));
+        const leaks = [];
+
+        for (const chunk of chrome.split('}')) {
+            const head = chunk.split('{')[0];
+            if (!chunk.includes('{')) continue;
+
+            for (const part of head.split(',')) {
+                const selector = part.trim().replace(/^@media[^{]*$/, '');
+                if (!selector || selector.startsWith('@')) continue;
+
+                if (!allowed.test(selector)) leaks.push(selector);
+            }
+        }
+
+        expect(leaks, 'a viewer rule that reaches outside its mount').toEqual([]);
+    });
+
+    it('keeps the designer canvas visible with the viewer chrome imported', () => {
+        /**
+         * The one that actually broke: the sheet vanished because a rule the
+         * designer had never seen before now hid it. Pinned as a selector check
+         * because the failure is invisible to every other spec in the suite.
+         */
+        const chrome = stripNoise(read('src/preview/chrome.css'));
+
+        expect(chrome).not.toMatch(/(^|[},])\s*\.page\s*\{/);
+        expect(chrome).toContain('.report-viewer .page');
+    });
+
+    it('keeps the viewer chrome free of the layers both screens already have', () => {
+        /**
+         * The designer imports chrome.css beside its own copies of the shared
+         * layers. Were the chrome to import them too they would be applied
+         * twice on that page, and the second copy would outrank anything the
+         * designer had overridden in between.
+         */
+        const chrome = read('src/preview/chrome.css');
+
+        expect(chrome).not.toContain('@import');
+    });
+
+    it('leaves the sheet a consumer links a complete one', () => {
+        /** report-studio/viewer.css is documented as the only file to link */
+        const css = read('src/preview/styles.css');
+
+        for (const layer of ['shared/theme.css', 'render/report.css',
+            'shared/modal.css', 'shared/dropdown.css', 'chrome.css']) {
+            expect(css, layer).toContain(layer);
         }
     });
 });
@@ -247,6 +328,24 @@ describe('report.css - a table row is exactly its declared height', () => {
     it('closes the grid on the outer right and bottom edges', () => {
         expect(css).toMatch(/\.page tr > :last-child \.cell\s*\{[^}]*border-right/);
         expect(css).toMatch(/\.page tbody tr:last-child \.cell\s*\{[^}]*border-bottom/);
+    });
+});
+
+
+describe('report.css - the table chooses its own header', () => {
+    const css = stripNoise(read('src/render/report.css'));
+
+    it('reads the fill and the text colour the table set, each with a fallback', () => {
+        expect(css).toContain('background: var(--rs-head-bg, var(--surface-muted, #f1f3f5))');
+        expect(css).toContain('color: var(--rs-head-color, inherit)');
+    });
+
+    /**
+     * A host that links this sheet and nothing else has no table that has said
+     * anything - so the header has to look like a header on the fallback alone.
+     */
+    it('still draws a header for a table that sets nothing', () => {
+        expect(css).toMatch(/\.page th\s*\{[^}]*font-weight:\s*600/s);
     });
 });
 

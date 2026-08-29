@@ -26,7 +26,10 @@ const ROWS = 6;
 const GROUPS = ['North', 'South'];
 
 /** field names that plainly want a number rather than a word */
-const NUMERIC = /(amount|price|qty|quantity|total|subtotal|cost|rate|balance|discount|tax)$/i;
+const NUMERIC = /(amount|amt|price|qty|quantity|total|subtotal|cost|rate|balance|discount|tax)$/i;
+
+/** an aggregate expression, for the fields the layout takes a sum of */
+const AGGREGATE = /\{\s*(\w+)\(([^)]*)\)\s*\}/g;
 
 /** and ones that want a date */
 const DATEISH = /(date|day|when)$/i;
@@ -129,14 +132,47 @@ export function datasets(layout) {
 export function sampleData(layout) {
     const data = {};
     const { root } = requiredKeys(layout);
+    const summed = summedFields(layout);
 
     for (const path of root) place(data, path);
 
     for (const [name, fields] of datasets(layout)) {
-        data[name] = rowsFor([...fields], layout?.groupBy);
+        data[name] = rowsFor([...fields], layout?.groupBy, summed);
     }
 
     return data;
+}
+
+
+/**
+ * The fields the layout takes an aggregate over.
+ *
+ * A field called `amt` is not one the name heuristic recognises, so it used to
+ * get the word "Amt 1" - and `{sum(amt)}` over six words is not a number, so
+ * the total the report was designed around previewed blank. The layout has
+ * already said what it is: you do not sum a word. That is a better answer than
+ * a longer list of names, because it is the report's own.
+ *
+ * `count()` is left out on purpose - it takes no field, and the empty string it
+ * would contribute is not one.
+ *
+ * @param {object} layout
+ * @returns {Set<string>}
+ */
+export function summedFields(layout) {
+    const found = new Set();
+
+    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+        for (const item of (band.items || [])) {
+            if (item.type !== 'text') continue;
+
+            for (const [, , field] of String(item.value ?? '').matchAll(AGGREGATE)) {
+                if (field.trim()) found.add(field.trim());
+            }
+        }
+    }
+
+    return found;
 }
 
 
@@ -157,7 +193,7 @@ function place(data, path) {
 }
 
 
-function rowsFor(fields, groupBy) {
+function rowsFor(fields, groupBy, summed = new Set()) {
     if (!fields.length) return [];
 
     return Array.from({ length: ROWS }, (_, index) => {
@@ -170,7 +206,7 @@ function rowsFor(fields, groupBy) {
              */
             row[field] = field === groupBy
                 ? GROUPS[index % GROUPS.length]
-                : valueFor(field, index);
+                : valueFor(field, index, summed.has(field));
         }
 
         return row;
@@ -178,8 +214,8 @@ function rowsFor(fields, groupBy) {
 }
 
 
-function valueFor(field, index) {
-    if (NUMERIC.test(field)) return (index + 1) * 250;
+function valueFor(field, index, summed = false) {
+    if (summed || NUMERIC.test(field)) return (index + 1) * 250;
 
     if (DATEISH.test(field)) {
         /** fixed, not today's: a sample file that changes every read diffs badly */

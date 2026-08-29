@@ -30,6 +30,7 @@ import { items, esc } from '../render/items.js';
 import {
     SAMPLE_ROWS, designHeight, itemBox, resizableAxes, handlesFor
 } from './geometry.js';
+import { ticksFor, guidesOf } from './rulers.js';
 
 
 /** zones that own a strip of the page, drawn top to bottom */
@@ -162,6 +163,92 @@ function zone(z, margin) {
 }
 
 
+/**
+ * The two rulers and the corner between them.
+ *
+ * They measure the printable area rather than the paper, so the number under an
+ * item is the `x` the properties rail shows for it. Anything else would be a
+ * second coordinate system for someone to convert between, and the margins are
+ * already drawn - the ruler starting where they end says how wide they are
+ * without a number for that too.
+ *
+ * @param {object} layout
+ * @param {{w: number, h: number}} paper the printable area
+ * @returns {string} markup
+ */
+function rulerFrame(layout, paper) {
+    const guides = guidesOf(layout);
+
+    const marks = (length, axis) => ticksFor(length).map(tick => `
+        <span class="dz-tick${tick.major ? ' is-major' : ''}"
+              style="${axis === 'x' ? 'left' : 'top'}:${tick.at}px"
+            >${tick.major ? `<i>${tick.at}</i>` : ''}</span>`).join('');
+
+    /**
+     * The guides get a container of their own inside each ruler, so a drag can
+     * replace them without touching the ticks - which never change, and there
+     * are two hundred of them.
+     */
+    const nubs = (axis) => `
+        <span class="dz-ruler-guides" data-role="ruler-guides"
+              data-axis="${axis}">${guideNubs(layout, axis)}</span>`;
+
+    return `
+    <div class="dz-ruler-corner" data-role="ruler-corner"></div>
+
+    <div class="dz-ruler dz-ruler-x" data-role="ruler" data-axis="x"
+         style="width:${paper.w}px" aria-hidden="true">
+        ${marks(paper.w, 'x')}${nubs('x')}
+    </div>
+
+    <div class="dz-ruler dz-ruler-y" data-role="ruler" data-axis="y"
+         style="height:${paper.h}px" aria-hidden="true">
+        ${marks(paper.h, 'y')}${nubs('y')}
+    </div>`;
+}
+
+
+/**
+ * Where each guide meets its ruler, so one dragged off the page is still
+ * findable - and so the ruler says what it is carrying.
+ *
+ * @param {object} layout
+ * @param {'x'|'y'} axis
+ * @returns {string} markup
+ */
+export function guideNubs(layout, axis) {
+    return guidesOf(layout)[axis].map(at => `
+        <span class="dz-ruler-guide"
+              style="${axis === 'x' ? 'left' : 'top'}:${at}px"></span>`).join('');
+}
+
+
+/**
+ * The guides themselves, drawn over the page.
+ *
+ * In the page's coordinates rather than the printable area's, because that is
+ * the box they are drawn in - the same conversion every other overlay on this
+ * sheet makes, and for the same reason.
+ *
+ * @param {object} layout
+ * @returns {string} markup, the contents of the .dz-rules layer
+ */
+export function guideLines(layout) {
+    const margin = layout.page.margin;
+    const guides = guidesOf(layout);
+
+    const across = guides.x.map(at => `
+        <span class="dz-rule dz-rule-v" data-role="guide" data-axis="x"
+              data-at="${at}" style="left:${at + margin.left}px"></span>`);
+
+    const down = guides.y.map(at => `
+        <span class="dz-rule dz-rule-h" data-role="guide" data-axis="y"
+              data-at="${at}" style="top:${at + margin.top}px"></span>`);
+
+    return [...across, ...down].join('');
+}
+
+
 /** the band name, in the gutter beside the page rather than over the design */
 function tag(z, margin) {
     return `<span class="dz-tag" data-band-tag="${esc(z.type)}"
@@ -248,9 +335,11 @@ export function selectionBoxes(layout, selections) {
  * The whole sheet: a gutter of band names, and the page itself.
  * @param {object} layout a validated layout
  * @param {object|object[]|null} [selection] the item or items to outline
+ * @param {object} [options]
+ * @param {boolean} [options.rulers] draw the rulers and the guides on them
  * @returns {string} markup
  */
-export function drawSheet(layout, selection = null) {
+export function drawSheet(layout, selection = null, { rulers = false } = {}) {
     const { page } = layout;
     const margin = page.margin;
     const zones = designZones(layout);
@@ -264,19 +353,110 @@ export function drawSheet(layout, selection = null) {
         `padding-top:${margin.top}px;padding-right:${margin.right}px;` +
         `padding-bottom:${margin.bottom}px;padding-left:${margin.left}px;`;
 
+    /** the printable area, which is what the rulers measure and guides sit in */
+    const paper = {
+        w: page.width - margin.left - margin.right,
+        h: page.height - margin.top - margin.bottom
+    };
+
     return `
-    <div class="dz-sheet" style="--page-height:${page.height}px">
+    <div class="dz-sheet${rulers ? ' has-rulers' : ''}"
+         style="--page-height:${page.height}px;--dz-margin-left:${margin.left}px;
+                --dz-margin-top:${margin.top}px">
+        ${rulers ? rulerFrame(layout, paper) : ''}
         <div class="dz-gutter">
             ${zones.map(z => tag(z, margin)).join('')}
         </div>
         <div class="page dz-page" style="${pageBox}">
+            <div class="dz-rules" data-role="rules"
+                 >${rulers ? guideLines(layout) : ''}</div>
             ${zones.map(z => zone(z, margin)).join('')}
             ${found.map((one, i) => overlay(one, {
                 withHandles: found.length === 1,
                 primary: i === found.length - 1
             })).join('')}
+            <div class="dz-guides" data-role="guides"></div>
         </div>
     </div>`;
+}
+
+
+/**
+ * A band's box: where it starts on the page, and how big it is in its own
+ * coordinates.
+ *
+ * Two coordinate systems in one object because the two callers want different
+ * halves of it - the guides are worked out in band coordinates and drawn in
+ * page ones, and the conversion between them is exactly `left` and `top`.
+ *
+ * @param {object} layout
+ * @param {string} bandType
+ * @returns {{left: number, top: number, w: number, h: number}|null}
+ */
+export function bandBox(layout, bandType) {
+    const zone = designZones(layout).find(z => z.type === bandType);
+    if (!zone) return null;
+
+    const margin = layout.page.margin;
+
+    return {
+        left: margin.left,
+        top: zone.top + margin.top,
+        w: layout.page.width - margin.left - margin.right,
+        h: zone.height,
+
+        /**
+         * Where the band starts inside the printable area, which is what the
+         * rulers measure and therefore what a guide's position means. `originX`
+         * is zero and stays in the object anyway: a caller converting one axis
+         * and not the other is the bug this is here to make impossible.
+         */
+        originX: 0,
+        originY: zone.top
+    };
+}
+
+
+/**
+ * The guides, as markup for the layer drawSheet leaves empty.
+ *
+ * Everything arrives in band coordinates and is drawn in page ones, so the
+ * band's own origin is added to all of it here - the one place that knows both.
+ *
+ * @param {object} band the bandBox the guides were worked out against
+ * @param {object[]} lines
+ * @param {object[]} gaps
+ * @returns {string} markup
+ */
+export function drawGuides(band, lines = [], gaps = []) {
+    if (!band) return '';
+
+    const across = (n) => n + band.left;
+    const down = (n) => n + band.top;
+
+    const drawnLines = lines.map(line => line.axis === 'x'
+        ? `<span class="dz-guide dz-guide-v${line.centre ? ' is-centre' : ''}"
+                 style="left:${across(line.at)}px;top:${down(line.from)}px;
+                        height:${Math.max(line.to - line.from, 0)}px"></span>`
+        : `<span class="dz-guide dz-guide-h${line.centre ? ' is-centre' : ''}"
+                 style="top:${down(line.at)}px;left:${across(line.from)}px;
+                        width:${Math.max(line.to - line.from, 0)}px"></span>`);
+
+    const drawnGaps = gaps.map(gap => {
+        const length = Math.max(gap.to - gap.from, 0);
+        const label = `<i>${Math.round(gap.distance)}</i>`;
+        const band_ = gap.toBand ? ' is-band' : '';
+
+        return gap.axis === 'y'
+            ? `<span class="dz-gap dz-gap-v${band_}"
+                     style="left:${across(gap.at)}px;top:${down(gap.from)}px;
+                            height:${length}px">${label}</span>`
+            : `<span class="dz-gap dz-gap-h${band_}"
+                     style="top:${down(gap.at)}px;left:${across(gap.from)}px;
+                            width:${length}px">${label}</span>`;
+    });
+
+    return [...drawnLines, ...drawnGaps].join('');
 }
 
 

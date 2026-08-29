@@ -32,6 +32,10 @@ export const ICONS = {
     /** a rule across the middle, with the dashes that say it need not be solid */
     line: wrap(`<path d="M2 8h3.5M7.25 8h1.5M10.5 8H14"/>`),
 
+    /** a rule with its ticks - the tool, drawn as itself */
+    ruler: wrap(`<rect x="1.75" y="5.25" width="12.5" height="5.5" rx="1"/>
+        <path d="M4.5 5.25v2M7 5.25v3M9.5 5.25v2M12 5.25v3"/>`),
+
     /** an arrow curving back on itself, the mark undo has had for forty years */
     undo: wrap(`<path d="M6 4.5 2.75 7.75 6 11"/>
                 <path d="M2.75 7.75h6.75a3.75 3.75 0 0 1 0 7.5H7"/>`),

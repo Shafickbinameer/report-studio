@@ -191,15 +191,98 @@ describe('group - report footer aggregates', () => {
             .toBe('Anand');
     });
 
-    it('leaves other bands alone', () => {
+    it('leaves a placeholder that is not an aggregate standing', () => {
         const data = { items: [{ name: 'a', price: 10 }] };
         const json = layout({
             bands: [
-                band('reportHeader', [text('rh', { value: 'Head {sum(price)}' })]),
+                band('reportHeader', [text('rh', { value: 'Page {page}' })]),
                 band('detail', [table()])
             ]
         });
         const out = group(resolve(json, data), data);
-        expect(out.bands[0].items[0].text).toBe('Head {sum(price)}');
+
+        /** paginate.js owns that one; group.js must not consume it */
+        expect(out.bands[0].items[0].text).toBe('Page {page}');
+    });
+});
+
+
+describe('group - an aggregate resolves in whatever band it is put in', () => {
+    /**
+     * It used to be reportFooter and nothing else, so a total written under the
+     * rows - the place a total is most often wanted - printed the raw
+     * `{sum(price)}` back at you. There is no set of rows a detail band or a
+     * page footer could mean other than the whole report, so there was never a
+     * reason to refuse them one.
+     */
+    const data = {
+        items: [
+            { name: 'a', qty: 2, price: 10 },
+            { name: 'b', qty: 4, price: 20 }
+        ]
+    };
+
+    const inBand = (type, value, extra = {}) => {
+        const json = layout({
+            bands: [
+                band('detail', [table(), text('here', { value, y: 200 })]),
+                band(type, [text('there', { value })])
+            ].filter((b, i) => i === 0 || type !== 'detail'),
+            ...extra
+        });
+
+        const out = group(resolve(json, data), data);
+        const found = out.bands.find(b => b.type === type);
+
+        return found.items.find(i => i.id === (type === 'detail' ? 'here' : 'there')).text;
+    };
+
+    it.each(['detail', 'pageHeader', 'pageFooter', 'reportHeader', 'reportFooter'])(
+        'works in the %s band', (type) => {
+            expect(inBand(type, 'Total: {sum(price)}')).toBe('Total: 30');
+        });
+
+    it('works over the whole report, not over one page of it', () => {
+        expect(inBand('detail', '{count()} rows, {avg(qty)} each')).toBe('2 rows, 3 each');
+    });
+
+    it('still leaves a group band for paginate.js to fill in per group', () => {
+        /**
+         * The one band that must not be touched here. Filling it in with the
+         * report's total would not merely be the wrong number - it would
+         * consume the placeholder, and the group's own answer would have
+         * nowhere left to go.
+         */
+        const json = layout({
+            groupBy: 'name',
+            bands: [
+                band('detail', [table()]),
+                band('groupFooter', [text('gf', { value: 'Sub: {sum(price)}' })])
+            ]
+        });
+
+        const out = group(resolve(json, data), data);
+        const footer = out.bands.find(b => b.type === 'groupFooter');
+
+        expect(footer.items[0].text ?? footer.items[0].value).toBe('Sub: {sum(price)}');
+    });
+
+    it("works out a group header's aggregates too, not only a footer's", () => {
+        /**
+         * "Region A - 12 orders" is a heading. A count that worked in the
+         * footer and printed blank in the header is the same fault.
+         */
+        const json = layout({
+            groupBy: 'name',
+            bands: [
+                band('detail', [table()]),
+                band('groupHeader', [text('gh', { value: '{count()} rows' })])
+            ]
+        });
+
+        const out = group(resolve(json, data), data);
+        const table_ = out.bands.find(b => b.type === 'detail').items[0];
+
+        expect(table_.groups[0].aggregates['']).toMatchObject({ count: 1 });
     });
 });

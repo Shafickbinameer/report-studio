@@ -2,12 +2,18 @@
  * The designer's chrome. How the report itself looks is render/report.css,
  * shared with the preview - so this file styles the bar, the gutter, the zone
  * outlines and the error panel, and nothing that ends up on paper.
+ *
+ * The viewer's chrome is imported too, and is not dead weight here: "open the
+ * report in its own tab" builds a window out of *this page's* stylesheets and
+ * mounts a viewer into it, so a toolbar and a pager the designer never draws
+ * itself still have to be reachable from here or that window arrives unstyled.
  */
 
 @import "../shared/theme.css";
 @import "../render/report.css";
 @import "../shared/modal.css";
 @import "../shared/dropdown.css";
+@import "../preview/chrome.css";
 
 :root {
   --dz-bar-height: 56px;
@@ -22,6 +28,15 @@
 .report-designer {
   min-height: 100vh;
   background-color: var(--backdrop);
+}
+
+/**
+ * The designer takes the focus so its shortcuts have somewhere to arrive, but
+ * it is not a control - a ring around the whole screen would be saying that it
+ * is. Nothing inside it loses its own ring; they are separate stops.
+ */
+.report-designer:focus {
+  outline: none;
 }
 
 /* ---------------- the bar ---------------- */
@@ -106,14 +121,54 @@
   padding: 24px 24px calc(var(--dz-foot-height) + var(--dz-foot-offset) + 24px);
 }
 
-/* the gutter and the page scroll together, so they stay in step vertically */
-.dz-sheet {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+/**
+ * The two boxes the zoom works through.
+ *
+ * The layer is what is scaled, and a transform changes nothing about layout -
+ * so at 200% there would be nothing to scroll. The stage is given the scaled
+ * size in px by applyZoom, and is what the canvas scrolls and centres.
+ */
+.dz-stage {
   width: max-content;
   margin: 0 auto;
 }
+
+.dz-zoom-layer {
+  width: max-content;
+  transform-origin: top left;
+}
+
+/* the zoom group in the bar, which is the viewer's three controls again */
+.dz-zoom-group .dropdown-trigger {
+  min-width: 92px;
+}
+
+/**
+ * The gutter, the rulers and the page scroll together, so they stay in step.
+ *
+ * A grid rather than a row, because the rulers have to line up with the page on
+ * both axes at once: the horizontal one starts where the page's left margin
+ * ends, and the vertical one starts where its top margin does. With the rulers
+ * off, both of their tracks collapse to nothing and the sheet is the row it
+ * always was.
+ */
+.dz-sheet {
+  display: grid;
+  grid-template-areas:
+    ".      corner  ruler-x"
+    "gutter ruler-y page";
+  grid-template-columns: var(--dz-gutter) auto auto;
+  grid-template-rows: auto auto;
+  align-items: start;
+  column-gap: 8px;
+  width: max-content;
+}
+
+.dz-gutter { grid-area: gutter; }
+.dz-page { grid-area: page; }
+.dz-ruler-corner { grid-area: corner; }
+.dz-ruler-x { grid-area: ruler-x; }
+.dz-ruler-y { grid-area: ruler-y; }
 
 .dz-gutter {
   position: relative;
@@ -211,6 +266,13 @@
 .dz-handle-w { left: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
 .dz-handle-e { right: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
 
+/* a toggle that is on says so, the way the preview button does */
+.dz-tool.is-on {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent-tint);
+}
+
 /* an item is grabbable, so it says so before it is grabbed */
 .dz-page [data-item-id] {
   cursor: move;
@@ -225,6 +287,238 @@
   user-select: none;
   cursor: grabbing;
 }
+
+/* ---------------- rulers and guides ---------------- */
+
+:root {
+  --dz-ruler: 18px;
+}
+
+/**
+ * The rulers measure the printable area, not the paper - the number under an
+ * item is the `x` the properties rail shows for it, and a ruler that disagreed
+ * with the rail would be worse than no ruler. They start where the margins end,
+ * which says how wide the margins are without a number for that too.
+ */
+.dz-ruler {
+  position: relative;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  cursor: crosshair;
+  user-select: none;
+  overflow: hidden;
+}
+
+.dz-ruler-x {
+  height: var(--dz-ruler);
+  /* the page's left margin, so 0 on the ruler is 0 for an item */
+  margin: 0 0 4px var(--dz-margin-left);
+}
+
+.dz-ruler-y {
+  width: var(--dz-ruler);
+  margin: var(--dz-margin-top) 4px 0 0;
+}
+
+/**
+ * A tick is drawn from the far edge inwards, so the labelled ones reach further
+ * into the ruler than the fine ones and the scale is readable without counting.
+ */
+.dz-tick {
+  position: absolute;
+  background: var(--border);
+}
+
+.dz-ruler-x .dz-tick { bottom: 0; width: 1px; height: 4px; }
+.dz-ruler-y .dz-tick { right: 0; height: 1px; width: 4px; }
+
+.dz-ruler-x .dz-tick.is-major { height: 8px; }
+.dz-ruler-y .dz-tick.is-major { width: 8px; }
+
+.dz-tick i {
+  position: absolute;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.dz-ruler-x .dz-tick i { bottom: 9px; left: 2px; }
+
+/**
+ * Turned on its side, so the vertical ruler stays 18px wide. Reading a number
+ * sideways beats a ruler wide enough to print it flat, which would push the
+ * page off centre by more than the ruler is worth.
+ */
+.dz-ruler-y .dz-tick i {
+  right: 9px;
+  top: 1px;
+  transform-origin: 100% 0;
+  transform: rotate(-90deg) translate(-100%, 0);
+}
+
+/* where a guide meets its ruler, so one dragged off the page is still findable */
+.dz-ruler-guide {
+  position: absolute;
+  background: var(--accent-strong);
+}
+
+.dz-ruler-x .dz-ruler-guide { top: 0; bottom: 0; width: 1px; }
+.dz-ruler-y .dz-ruler-guide { left: 0; right: 0; height: 1px; }
+
+/* the empty square where the two meet; it squares the corner off, nothing more */
+.dz-ruler-corner {
+  width: var(--dz-ruler);
+  height: var(--dz-ruler);
+  margin: 0 4px 4px 0;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+/**
+ * The guides on the page. Under the selection outline and over the design, and
+ * they take no pointer events: select.js finds the one nearest the pointer by
+ * arithmetic instead, because a one-pixel line is not something anyone can hit
+ * and a line wide enough to hit would cover the design it is aligning.
+ */
+.dz-rules {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.dz-rule {
+  position: absolute;
+  background: var(--accent-tint);
+}
+
+.dz-rule-v { top: 0; bottom: 0; width: 1px; }
+.dz-rule-h { left: 0; right: 0; height: 1px; }
+
+/* the whole page is a place a guide might be picked up from */
+.dz-sheet.has-rulers .dz-page { cursor: default; }
+
+/* ---------------- alignment guides ---------------- */
+
+/**
+ * The guides sit above the design and below nothing - they are the only thing
+ * on the canvas that is about the gesture rather than about the report, so they
+ * are drawn last and take no pointer events at all. A guide that could be
+ * clicked would end the drag that is drawing it.
+ */
+.dz-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/**
+ * A hairline, not a rule: it is saying "these two agree", and anything thicker
+ * reads as part of the design it is drawn over. The colour is the accent's
+ * darkest mix, which is the one shade that holds up over a white page and over
+ * a table header both.
+ */
+.dz-guide {
+  position: absolute;
+  background: var(--accent-strong);
+}
+
+.dz-guide-v { width: 1px; }
+.dz-guide-h { height: 1px; }
+
+/* a centre line is dashed, so "these middles agree" is not read as "these edges do" */
+.dz-guide-v.is-centre {
+  width: 0;
+  background: none;
+  border-left: 1px dashed var(--accent-strong);
+}
+
+.dz-guide-h.is-centre {
+  height: 0;
+  background: none;
+  border-top: 1px dashed var(--accent-strong);
+}
+
+/**
+ * A measurement, drawn as the space it is measuring rather than as a line
+ * beside it - the bar is the gap, and the number is on it.
+ */
+.dz-gap {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dz-gap-v {
+  width: 0;
+  border-left: 1px solid var(--accent-ink);
+}
+
+.dz-gap-h {
+  height: 0;
+  border-top: 1px solid var(--accent-ink);
+}
+
+/* the gap to the band's own edge is the quieter of the two: it is always there */
+.dz-gap.is-band {
+  opacity: 0.55;
+}
+
+/* the ticks that close the measurement off, so a 0px gap is still visible */
+.dz-gap::before,
+.dz-gap::after {
+  content: "";
+  position: absolute;
+  background: var(--accent-ink);
+}
+
+.dz-gap-v::before,
+.dz-gap-v::after {
+  left: -3px;
+  width: 7px;
+  height: 1px;
+}
+
+.dz-gap-v::before { top: 0; }
+.dz-gap-v::after { bottom: 0; }
+
+.dz-gap-h::before,
+.dz-gap-h::after {
+  top: -3px;
+  width: 1px;
+  height: 7px;
+}
+
+.dz-gap-h::before { left: 0; }
+.dz-gap-h::after { right: 0; }
+
+/**
+ * The number. Absolutely placed so it never stretches the bar it sits on, and
+ * given the page's own background so the line does not run through the digits.
+ */
+.dz-gap i {
+  position: absolute;
+  padding: 0 3px;
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 14px;
+  white-space: nowrap;
+
+  color: var(--surface);
+  background: var(--accent-ink);
+  border-radius: 2px;
+}
+
+/* clear of the bar, on the side there is most room on */
+.dz-gap-v i { left: 5px; }
+.dz-gap-h i { top: 5px; }
 
 /* ---------------- the properties rail ---------------- */
 
@@ -1098,6 +1392,17 @@
   color: var(--accent-ink);
   font-size: 11px;
   line-height: 1.45;
+}
+
+/**
+ * The same box saying which rows an aggregate will cover, which is information
+ * rather than a caution - so it drops back to the quiet border every other
+ * field in the dialog has, and keeps only the indent that sets it apart from
+ * the controls above it.
+ */
+.dz-token-warning.is-note {
+  border-color: var(--border);
+  color: var(--ink-soft);
 }
 
 .dz-token-warning[hidden] {

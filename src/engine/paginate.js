@@ -1,5 +1,6 @@
 
 import { pageRegions, bandZoneHeight } from './regions.js';
+import { designHeight, total, headerHeightFor } from './measure.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -60,6 +61,61 @@ export function paginate(json) {
 }
 
 
+/**
+ * How many rows starting at `from` fit in `room` px.
+ *
+ * A table used to be sliced with a division, because every row was the same
+ * height. A row is now as tall as its own text wraps to, so the only honest
+ * answer is to add them up until one does not fit.
+ *
+ * @param {number[]} heights every row's height, in order
+ * @param {number} from the first row still to be placed
+ * @param {number} room the space below the table's top on this page
+ * @param {number} [limit] never return more than this many
+ * @returns {number} rows to take, possibly zero
+ */
+function rowsThatFit(heights, from, room, limit = Infinity) {
+    let used = 0;
+    let taken = 0;
+
+    while (from + taken < heights.length && taken < limit) {
+        const next = used + heights[from + taken];
+        if (next > room) break;
+
+        used = next;
+        taken++;
+    }
+
+    return taken;
+}
+
+
+/** the height of one slice of rows */
+function sliceHeight(heights, from, count) {
+    return total(heights.slice(from, from + count));
+}
+
+
+/**
+ * A table's row heights, however the table came by them.
+ *
+ * measure.js writes them on; a table drawn straight from a layout - the
+ * designer canvas - has none, and every row is the height it declares.
+ *
+ * @param {object} item a table
+ * @param {object[]} rows the rows being placed
+ * @param {number[]} [heights] what measure.js worked out, if it ran
+ * @returns {number[]}
+ */
+function heightsFor(item, rows, heights) {
+    if (Array.isArray(heights) && heights.length === (rows ?? []).length) {
+        return heights;
+    }
+
+    return (rows ?? []).map(() => item.rowHeight ?? 0);
+}
+
+
 function calPages(bands, context) {
     let pages = [];
 
@@ -111,6 +167,23 @@ function calPages(bands, context) {
      */
     let carry = 0;
 
+    /**
+     * What every item placed on this page was designed to end at, and what it
+     * actually ended at - both in the band space of this page.
+     *
+     * Two kinds of item are only as tall as their data makes them: a table,
+     * which is its header plus however many rows arrive, and a text box, which
+     * wraps to as many lines as the words need. Neither is usually the last
+     * thing in a band - a total under the rows, a second line of the address
+     * under the first - and everything below was placed at the `y` it was
+     * given, which was measured against the size the designer drew.
+     *
+     * So what sits below something that grew has to float down with it, which
+     * is what this list is for.
+     */
+    let grown = [];
+
+
     /** the detail zone of the page being filled, which page 1 may shrink */
     const detailZone = () => currentPage.regions.detail.height;
 
@@ -131,6 +204,9 @@ function calPages(bands, context) {
         bandBottom = 0;
         carry = shiftTo;
 
+        /** whatever grew on this page did not grow on the next one */
+        grown = [];
+
         return { ...band, items: [] };
     };
 
@@ -148,6 +224,52 @@ function calPages(bands, context) {
         currentPage.usedHeight = (availableHeight - detailZone()) + bandBottom;
     };
 
+    /**
+     * How far down what is already on the page pushes something designed to
+     * start at `top`.
+     *
+     * Only what is *above* it counts, and above means the whole box is: an item
+     * level with a table's rows or beside a wrapping paragraph is not under it
+     * and is not moved by it.
+     *
+     * The shift is the difference between where those items were designed to
+     * end and where they really ended - not the sum of how much each one grew.
+     * Two paragraphs side by side that each wrap one extra line push what is
+     * under them down by one line, not by two; and a table with fewer rows than
+     * it was drawn with gives the space back rather than leaving a hole.
+     *
+     * @param {number} top the item's y, less the carry - so, on this page
+     * @returns {number} px, negative when what is above ended early
+     */
+    const shiftBelow = (top) => {
+        let designed = -Infinity;
+        let actual = -Infinity;
+
+        for (const box of grown) {
+            if (box.designBottom > top) continue;
+
+            designed = Math.max(designed, box.designBottom);
+            actual = Math.max(actual, box.actualBottom);
+        }
+
+        return designed === -Infinity ? 0 : actual - designed;
+    };
+
+    /**
+     * Where an item is drawn, in the band space of the page it lands on: the
+     * `y` in the file, less the carry of a band continued onto a new page, plus
+     * whatever grew above it. An item keeps the gap it was designed with - ten
+     * pixels under the last row stays ten pixels under the last row, however
+     * many rows there turn out to be.
+     *
+     * @param {number} itemY the item's y as designed
+     * @returns {number}
+     */
+    const pageY = (itemY) => {
+        const top = itemY - carry;
+        return top + shiftBelow(top);
+    };
+
 
     for (const band of bands) {
         let calBand = {
@@ -157,6 +279,9 @@ function calPages(bands, context) {
 
         /** the shift belongs to one band's coordinate space, not to the page */
         carry = 0;
+
+        /** and so does what grew inside it */
+        grown = [];
 
         /**
          * Top to bottom, not file order. Items are absolutely positioned, so
@@ -168,7 +293,7 @@ function calPages(bands, context) {
 
         for (const item of ordered) {
             const itemY = item.y ?? 0;
-            const localBottom = (itemY - carry) + item.measuredHeight;
+            const localBottom = pageY(itemY) + item.measuredHeight;
 
             if (localBottom > detailZone() && item.type != "table") {
                 /**
@@ -184,7 +309,7 @@ function calPages(bands, context) {
                     calBand = breakPage(calBand, band, itemY);
                 }
 
-                place(calBand, { ...structuredClone(item), y: itemY - carry });
+                place(calBand, { ...structuredClone(item), y: pageY(itemY) });
             }
             else if (localBottom > detailZone() && item.type == "table") {
 
@@ -205,9 +330,16 @@ function calPages(bands, context) {
                     */
                     const grpHeaderHgt = groupHeader?.measuredHeight ?? 0;
                     const grpFooterHgt = groupFooter?.measuredHeight ?? 0;
-                    const tblHeaderHgt = item?.headerHeight ?? 0;
+                    const tblHeaderHgt = item.headerMeasured ?? headerHeightFor(item);
+
+                    /** the tallest row anywhere in the table, since any group may hold it */
+                    const tallest = Math.max(
+                        item.rowHeight ?? 0,
+                        ...(item.groups ?? []).flatMap(grp =>
+                            heightsFor(item, grp.rows, grp.rowHeights)));
+
                     const reservedSpace =
-                        tblHeaderHgt + grpHeaderHgt + item.rowHeight + grpFooterHgt;
+                        tblHeaderHgt + grpHeaderHgt + tallest + grpFooterHgt;
 
                     /**
                      * same trap as the ungrouped path: if the minimum viable slice
@@ -236,21 +368,23 @@ function calPages(bands, context) {
                      * When the rows would fit but the footer would not, one row is
                      * deliberately held back so the footer lands on the next page
                      * beside a row rather than alone.
+                     * @param {number[]} heights the group's row heights, in order
+                     * @param {number} from the first row of this group still unplaced
                      * @param {number} room px left in the detail zone below the table top
                      * @param {number} rowsLeft rows still unplaced in this group
                      * @returns {number} rows to place now, possibly 0
                      */
-                    const fitRows = (room, rowsLeft) => {
+                    const fitRows = (heights, from, room, rowsLeft) => {
                         const body = room - grpHeaderHgt - tblHeaderHgt;
 
-                        const withFooter =
-                            Math.floor((body - grpFooterHgt) / item.rowHeight);
+                        const withFooter = rowsThatFit(
+                            heights, from, body - grpFooterHgt, rowsLeft);
 
                         /** the group ends here, so its footer has to fit here too */
                         if (rowsLeft <= withFooter) return rowsLeft;
 
                         return Math.min(
-                            Math.floor(body / item.rowHeight),
+                            rowsThatFit(heights, from, body, rowsLeft),
                             rowsLeft - 1
                         );
                     };
@@ -278,6 +412,7 @@ function calPages(bands, context) {
 
                         let currIdx = 0;
                         const rowLen = grp.rows.length;
+                        const heights = heightsFor(item, grp.rows, grp.rowHeights);
 
                         while (currIdx < rowLen) {
 
@@ -295,7 +430,8 @@ function calPages(bands, context) {
                              * footer whenever the group would end here, so the slice
                              * it hands back always fits the detail zone.
                              */
-                            let canFitRows = fitRows(roomHgt, rowLen - currIdx);
+                            let canFitRows = fitRows(
+                                heights, currIdx, roomHgt, rowLen - currIdx);
 
                             /**
                              * A page we have already emptied cannot be emptied again,
@@ -324,12 +460,15 @@ function calPages(bands, context) {
                             }
 
                             const rows = grp.rows.slice(currIdx, currIdx + canFitRows);
+                            const slice = heights.slice(currIdx, currIdx + canFitRows);
 
                             currIdx += rows.length;
 
                             const hasMoreRows = currIdx < rowLen;
 
-                            const occHgt = (rows.length * item.rowHeight) + (grpHeaderHgt + tblHeaderHgt) + (!hasMoreRows ? grpFooterHgt : 0);
+                            const occHgt = total(slice)
+                                + (grpHeaderHgt + tblHeaderHgt)
+                                + (!hasMoreRows ? grpFooterHgt : 0);
 
                             calItemHeight += occHgt;
 
@@ -341,6 +480,7 @@ function calPages(bands, context) {
                             let grpFragment = {
                                 key: grp.key,
                                 rows: rows,
+                                rowHeights: slice,
                                 aggregates: grp.aggregates,
                                 showHeader: true,
                                 showFooter: !hasMoreRows,
@@ -371,21 +511,28 @@ function calPages(bands, context) {
                     const rowLen = item.row.length;
                     let currIdx = 0;
 
-                    const tblHeaderHgt = item.showHeader ? item.headerHeight : 0;
+                    const tblHeaderHgt = item.headerMeasured ?? headerHeightFor(item);
+
+                    /** as tall as each row wrapped to, or its declared height */
+                    const heights = heightsFor(item, item.row, item.rowHeights);
 
                     /**
                      * a row taller than an empty page can never be placed by the normal
                      * rule, and asking for a new page forever is an infinite loop.
                      * detect it once, up front, and fall back to one row per page.
+                     *
+                     * The tallest one is what decides it now: with wrapping, one
+                     * row of a thousand can be the one that does not fit.
                      */
-                    const rowFitsAnyPage =
-                        Math.floor((freshPageHeight - tblHeaderHgt) / item.rowHeight) >= 1;
+                    const tallest = Math.max(item.rowHeight ?? 0, ...heights);
+                    const rowFitsAnyPage = freshPageHeight - tblHeaderHgt >= tallest;
 
                     if (!rowFitsAnyPage) {
                         console.warn(
-                            `Table "${item.id}": rowHeight ${item.rowHeight} plus header ${tblHeaderHgt} ` +
-                            `exceeds the ${freshPageHeight}px printable page. Falling back to one row per page; ` +
-                            `rows will overflow their page.`
+                            `Table "${item.id}": its tallest row is ${Math.ceil(tallest)}px, ` +
+                            `which with the ${tblHeaderHgt}px header exceeds the ` +
+                            `${freshPageHeight}px printable page. Falling back to one row ` +
+                            `per page; rows will overflow their page.`
                         );
                     }
 
@@ -393,7 +540,8 @@ function calPages(bands, context) {
                         /** the table starts at tableY, so only what is below it is usable */
                         const roomHgt = detailZone() - tableY;
 
-                        let canFitRows = Math.floor((roomHgt - tblHeaderHgt) / item.rowHeight);
+                        let canFitRows = rowsThatFit(
+                            heights, currIdx, roomHgt - tblHeaderHgt, rowLen - currIdx);
 
                         /** on a page we have already emptied, take one row anyway so currIdx advances */
                         const isFreshPage = calBand.items.length === 0
@@ -415,9 +563,12 @@ function calPages(bands, context) {
 
                         const rows = item.row.slice(currIdx, currIdx + canFitRows);
 
-                        const occHgt = (rows.length * item.rowHeight) + tblHeaderHgt;
+                        const occHgt =
+                            sliceHeight(heights, currIdx, canFitRows) + tblHeaderHgt;
 
                         dupItem.row = rows;
+                        /** the slice carries its own heights, so the renderer needs no arithmetic */
+                        dupItem.rowHeights = heights.slice(currIdx, currIdx + canFitRows);
                         dupItem.y = tableY;
                         dupItem.measuredHeight = occHgt;
 
@@ -448,7 +599,27 @@ function calPages(bands, context) {
                     ? { ...item, groups: wholeGroupFragments(item, groupHeader, groupFooter) }
                     : item;
 
-                place(calBand, { ...structuredClone(placed), y: itemY - carry });
+                place(calBand, { ...structuredClone(placed), y: pageY(itemY) });
+            }
+
+            /**
+             * The item has landed. Whatever it turned out to be worth is what
+             * the items still to be placed have to clear, so record it.
+             *
+             * It is read back out of the band rather than remembered, because
+             * the branches above place an item by several routes - whole,
+             * split, grouped - and what they all agree on is that the last
+             * thing to reach the band being built is this item.
+             */
+            const drawn = [...calBand.items]
+                .reverse()
+                .find(one => one.id === item.id);
+
+            if (drawn) {
+                grown.push({
+                    designBottom: (itemY - carry) + designHeight(item),
+                    actualBottom: (drawn.y ?? 0) + (drawn.measuredHeight ?? 0)
+                });
             }
         }
 
@@ -520,6 +691,7 @@ function wholeGroupFragments(item, groupHeader, groupFooter) {
     return item.groups.map(grp => ({
         key: grp.key,
         rows: grp.rows,
+        rowHeights: grp.rowHeights,
         aggregates: grp.aggregates,
         showHeader: true,
         showFooter: true,

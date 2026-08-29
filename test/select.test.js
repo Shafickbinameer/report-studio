@@ -908,3 +908,362 @@ describe('alt drags a copy', () => {
         expect(detailIds(d)).toHaveLength(2);
     });
 });
+
+
+describe('alignment guides and the alt measurement', () => {
+    /**
+     * The guides layer is the only thing on the canvas that belongs to the
+     * gesture rather than to the report, so a spec can read it as "what is the
+     * designer telling me right now".
+     */
+    const guides = () => [...root().querySelectorAll('[data-role="guides"] > *')];
+    const lines = () => guides().filter(n => n.classList.contains('dz-guide'));
+    const gaps = () => guides().filter(n => n.classList.contains('dz-gap'));
+
+    const distances = () => gaps().map(n => Number(n.querySelector('i').textContent));
+
+    function alt(down) {
+        document.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', {
+            key: 'Alt', bubbles: true, cancelable: true, altKey: down
+        }));
+    }
+
+    /** press, move, and stay down - so the guides can be read mid-drag */
+    function holdDrag(target, dx, dy, { altKey = false } = {}) {
+        pointer('pointerdown', target, { x: 0, y: 0 });
+
+        const event = new MouseEvent('pointermove', {
+            bubbles: true, cancelable: true,
+            clientX: dx, clientY: dy, button: 0, altKey
+        });
+        event.pointerId = 1;
+        canvas().dispatchEvent(event);
+    }
+
+    /**
+     * `a` sits off the grid on purpose. A drag snaps to the 10px grid first, so
+     * a neighbour standing on a grid line is one the grid alone would have
+     * found - and the spec would pass with the alignment torn out.
+     */
+    const two = () => layout({
+        bands: [
+            band('detail', [
+                text('a', { x: 98, y: 100, w: 200, h: 40 }),
+                text('b', { x: 140, y: 300, w: 200, h: 40 })
+            ])
+        ]
+    });
+
+    /** far enough for the grid to put b's left edge at 100, 2px off a's 98 */
+    const ONTO_A = -38;
+
+    it('draws a guide when a drag lines an item up with its neighbour', () => {
+        mount(two());
+        holdDrag(drawn('b'), ONTO_A, 0);
+
+        expect(lines().length).toBeGreaterThan(0);
+        pointer('pointerup', canvas(), { x: ONTO_A, y: 0 });
+    });
+
+    it('pulls the item the rest of the way onto the line', () => {
+        const d = mount(two());
+        holdDrag(drawn('b'), ONTO_A, 0);
+        pointer('pointerup', canvas(), { x: ONTO_A, y: 0 });
+
+        /** the grid put it on 100; the guide took it the last 2px onto a */
+        expect(itemIn(d, 'detail', 'b').x).toBe(98);
+    });
+
+    it('shows no measurements while alt is up', () => {
+        mount(two());
+        holdDrag(drawn('b'), ONTO_A, 0);
+
+        expect(gaps()).toHaveLength(0);
+        pointer('pointerup', canvas(), { x: ONTO_A, y: 0 });
+    });
+
+    it('shows them while alt is held during the drag', () => {
+        mount(two());
+        holdDrag(drawn('b'), ONTO_A, 0, { altKey: true });
+
+        expect(gaps().length).toBeGreaterThan(0);
+        pointer('pointerup', canvas(), { x: ONTO_A, y: 0 });
+    });
+
+    it('measures a selection that is not being dragged at all', () => {
+        mount(two());
+        pointer('pointerdown', drawn('b'));
+        pointer('pointerup', canvas());
+
+        alt(true);
+
+        /** 160px between a's bottom edge and b's top one */
+        expect(distances()).toContain(160);
+    });
+
+    it('does not move what it measures', () => {
+        const d = mount(two());
+        pointer('pointerdown', drawn('b'));
+        pointer('pointerup', canvas());
+
+        alt(true);
+
+        /** b is 2px off a's left edge; a snap would have taken it */
+        expect(itemIn(d, 'detail', 'b').x).toBe(140);
+        expect(lines()).toHaveLength(0);
+    });
+
+    it('takes them away again when alt comes up', () => {
+        mount(two());
+        pointer('pointerdown', drawn('b'));
+        pointer('pointerup', canvas());
+
+        alt(true);
+        expect(gaps().length).toBeGreaterThan(0);
+
+        alt(false);
+        expect(gaps()).toHaveLength(0);
+    });
+
+    it('has nothing to measure with nothing selected', () => {
+        mount(two());
+        alt(true);
+
+        expect(guides()).toHaveLength(0);
+    });
+
+    it('takes them away when the window loses the focus mid-press', () => {
+        /** alt-tab: the key never comes up, so blur has to stand in for it */
+        mount(two());
+        pointer('pointerdown', drawn('b'));
+        pointer('pointerup', canvas());
+
+        alt(true);
+        expect(gaps().length).toBeGreaterThan(0);
+
+        window.dispatchEvent(new Event('blur'));
+        expect(gaps()).toHaveLength(0);
+    });
+
+    it('keeps measuring the selection when the drop happens with alt still down', () => {
+        /** the mouse came up, the key did not - so the question is still being asked */
+        mount(two());
+        holdDrag(drawn('b'), ONTO_A, 0, { altKey: true });
+
+        const up = new MouseEvent('pointerup', {
+            bubbles: true, cancelable: true,
+            clientX: ONTO_A, clientY: 0, button: 0, altKey: true
+        });
+        up.pointerId = 1;
+        canvas().dispatchEvent(up);
+
+        expect(gaps().length).toBeGreaterThan(0);
+        expect(lines()).toHaveLength(0);
+    });
+
+    it('clears everything when the drag ends and alt is not held', () => {
+        mount(two());
+        holdDrag(drawn('b'), ONTO_A, 0, { altKey: true });
+        pointer('pointerup', canvas(), { x: ONTO_A, y: 0 });
+
+        expect(guides()).toHaveLength(0);
+    });
+});
+
+
+describe('rulers and the guides dragged off them', () => {
+    /**
+     * jsdom lays nothing out, so every box is 0x0 and select.js cannot work out
+     * where on the paper a pointer is. The page's own rectangle and padding are
+     * stubbed instead, which is exactly the pair of facts paperPoint reads -
+     * what it does with them is then the thing under test.
+     */
+    const PAGE = { left: 100, top: 50 };
+    const MARGIN = 40;
+
+    function stubPaper() {
+        /**
+         * On the prototype, not on the element: every one of these gestures
+         * redraws the sheet, and a stub on the page that was there when the
+         * test started is a stub on an element the designer has since thrown
+         * away.
+         */
+        const nothing = {
+            left: 0, top: 0, width: 0, height: 0,
+            right: 0, bottom: 0, x: 0, y: 0
+        };
+
+        const paper = {
+            left: PAGE.left, top: PAGE.top, width: 794, height: 1123,
+            right: PAGE.left + 794, bottom: PAGE.top + 1123,
+            x: PAGE.left, y: PAGE.top
+        };
+
+        vi.spyOn(Element.prototype, 'getBoundingClientRect')
+            .mockImplementation(function () {
+                return this.classList?.contains('dz-page') ? paper : nothing;
+            });
+
+        const real = window.getComputedStyle;
+
+        vi.spyOn(window, 'getComputedStyle').mockImplementation((el) =>
+            el?.classList?.contains('dz-page')
+                ? { paddingLeft: `${MARGIN}px`, paddingTop: `${MARGIN}px` }
+                : real(el));
+    }
+
+    /** a client point for a position in the printable area */
+    const at = (x, y) => ({
+        x: PAGE.left + MARGIN + x,
+        y: PAGE.top + MARGIN + y
+    });
+
+    /** select.test.js has no click helper of its own; the bar wants a real one */
+    const press = (node) => node.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    function showRulers() {
+        const d = mount(layout({
+            bands: [band('detail', [text('t1', { x: 100, y: 100, w: 200, h: 40 })])]
+        }));
+
+        press(root().querySelector('[data-action="toggle-rulers"]'));
+        stubPaper();
+        return d;
+    }
+
+    const ruler = (axis) => root().querySelector(`[data-role="ruler"][data-axis="${axis}"]`);
+    const guidesOn = (d) => d.layout.guides ?? null;
+
+    /** press on `target`, move to a printable-area point, release */
+    function dragTo(target, from, to) {
+        pointer('pointerdown', target, from);
+        pointer('pointermove', canvas(), to);
+        pointer('pointerup', canvas(), to);
+    }
+
+    it('draws no rulers until they are asked for', () => {
+        mount();
+
+        expect(ruler('x')).toBeNull();
+        expect(root().querySelector('[data-action="toggle-rulers"]')
+            .getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('draws both of them, and says the toggle is on', () => {
+        showRulers();
+
+        expect(ruler('x')).not.toBeNull();
+        expect(ruler('y')).not.toBeNull();
+        expect(root().querySelector('[data-action="toggle-rulers"]')
+            .getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('marks the ruler in the printable area, not the paper', () => {
+        /**
+         * So the number under an item is the `x` the properties rail shows for
+         * it. A4 less two 40px margins is 714.
+         */
+        showRulers();
+        const ticks = [...ruler('x').querySelectorAll('.dz-tick')];
+
+        expect(ticks[0].style.left).toBe('0px');
+        expect(ticks.at(-1).style.left).toBe('714px');
+    });
+
+    it('makes a guide where the ruler was pressed', () => {
+        const d = showRulers();
+        dragTo(ruler('x'), at(240, -9), at(240, 200));
+
+        expect(guidesOn(d)).toEqual({ x: [240], y: [] });
+    });
+
+    it('draws it on the page, offset by the margin', () => {
+        const d = showRulers();
+        dragTo(ruler('x'), at(240, -9), at(240, 200));
+
+        const drawn = root().querySelector('[data-role="guide"][data-axis="x"]');
+
+        expect(drawn.style.left).toBe(`${240 + MARGIN}px`);
+        expect(d.layout.guides.x).toEqual([240]);
+    });
+
+    it('makes a horizontal one off the side ruler', () => {
+        const d = showRulers();
+        dragTo(ruler('y'), at(-9, 300), at(200, 300));
+
+        expect(guidesOn(d)).toEqual({ x: [], y: [300] });
+    });
+
+    it('moves one that is picked up off the page', () => {
+        const d = showRulers();
+        dragTo(ruler('x'), at(240, -9), at(240, 200));
+
+        /** grabbed on the line, not on a handle - guideNear is what finds it */
+        dragTo(root().querySelector('.dz-page'), at(241, 300), at(300, 300));
+
+        expect(d.layout.guides.x).toEqual([300]);
+    });
+
+    it('throws one away when it is dragged off the printable area', () => {
+        const d = showRulers();
+        dragTo(ruler('x'), at(240, -9), at(240, 200));
+
+        dragTo(root().querySelector('.dz-page'), at(241, 300), at(-30, 300));
+
+        expect(d.layout.guides.x).toEqual([]);
+    });
+
+    it('is one undo step per gesture, not one for the lot', () => {
+        /**
+         * They used to share a key, and history.js collapses consecutive edits
+         * that do - so one undo took away every guide of the whole session.
+         */
+        const d = showRulers();
+        dragTo(ruler('x'), at(100, -9), at(100, 200));
+        dragTo(ruler('x'), at(400, -9), at(400, 200));
+
+        expect(d.layout.guides.x).toEqual([100, 400]);
+
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+
+        expect(d.layout.guides.x).toEqual([100]);
+    });
+
+    it('snaps a dragged item onto a guide', () => {
+        const d = showRulers();
+        dragTo(ruler('x'), at(96, -9), at(96, 200));
+
+        /** the grid would put it on 100; the guide is 4px off that */
+        pointer('pointerdown', drawn('t1'), { x: 0, y: 0 });
+        pointer('pointermove', canvas(), { x: -4, y: 0 });
+        pointer('pointerup', canvas(), { x: -4, y: 0 });
+
+        expect(itemIn(d, 'detail', 't1').x).toBe(96);
+    });
+
+    it('keeps the guides in the file when the rulers are put away', () => {
+        const d = showRulers();
+        dragTo(ruler('x'), at(240, -9), at(240, 200));
+
+        press(root().querySelector('[data-action="toggle-rulers"]'));
+
+        expect(ruler('x')).toBeNull();
+        expect(root().querySelectorAll('[data-role="guide"]')).toHaveLength(0);
+        expect(d.layout.guides.x).toEqual([240]);
+    });
+
+    it('leaves the page alone when the rulers are off', () => {
+        /** no ruler to drag off, and nothing on the page to pick up */
+        const d = mount(layout({
+            bands: [band('detail', [text('t1', { x: 100, y: 100, w: 200, h: 40 })])]
+        }));
+        stubPaper();
+
+        dragTo(root().querySelector('.dz-page'), at(240, 300), at(300, 300));
+
+        expect(guidesOn(d)).toBeNull();
+    });
+});

@@ -330,8 +330,19 @@ export function createTable(layout, band, columns = DEFAULT_COLUMNS) {
         rowHeight: 24,
         headerHeight: 28,
         showHeader: true,
+
+        /**
+         * A cell wider than its column runs onto another line and the row grows
+         * to hold it. Written down rather than left to the default, because it
+         * decides how many rows fit on a page - and a report file should say
+         * what it does rather than leave the next reader to find out.
+         */
+        wrap: true,
+
         columns: Array.from({ length: count }, (_, i) => makeColumn(i + 1)),
         style: {
+            /** the font the engine wraps against; report.css draws this one */
+            fontFamily: 'Helvetica, Arial, sans-serif',
             fontSize: 12,
             color: '#000000',
             borderStyle: 'solid',

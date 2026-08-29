@@ -181,17 +181,41 @@ export function fieldsFor(item) {
             box,
             {
                 title: 'Rows',
+                fields: [num('rowHeight', 'Row height', { min: 1 })]
+            },
+            {
+                /**
+                 * The header is the part of a table anyone styles first, and
+                 * its height was buried among the rows' - which is also the one
+                 * figure that is not a row's, since the engine paginates a
+                 * table as headerHeight + rows x rowHeight.
+                 */
+                title: 'Header',
                 fields: [
-                    num('rowHeight', 'Row height', { min: 1 }),
-                    num('headerHeight', 'Header height', { min: 1 }),
-                    { key: 'showHeader', label: 'Show header', type: 'toggle' }
+                    { key: 'showHeader', label: 'Show header', type: 'toggle' },
+                    num('headerHeight', 'Height', { min: 1 }),
+                    { key: 'style.headerBackground', label: 'Fill', type: 'color' },
+                    {
+                        key: 'style.headerColor', label: 'Text', type: 'color',
+                        hint: "Leave these alone to keep the stylesheet's own header"
+                    }
                 ]
             },
             {
                 title: 'Appearance',
                 fields: [
+                    {
+                        key: 'style.fontFamily', label: 'Font', type: 'choice',
+                        options: FONT_STACKS
+                    },
                     num('style.fontSize', 'Font size', { min: 1 }),
                     { key: 'style.color', label: 'Text', type: 'color' },
+                    {
+                        key: 'wrap', label: 'Wrap cells', type: 'toggle',
+                        hint: 'A cell wider than its column runs onto another ' +
+                            'line and the row grows; turn this off to keep ' +
+                            'every row one line, cut off with an ellipsis'
+                    },
                     {
                         key: 'style.borderStyle', label: 'Borders', type: 'choice',
                         options: RULE_STYLES
@@ -242,9 +266,170 @@ export function fieldsFor(item) {
  * browser print produces.
  */
 export const PAGE_PRESETS = [
+    { label: 'A2', width: 1587, height: 2245 },
+    { label: 'A3', width: 1123, height: 1587 },
     { label: 'A4', width: 794, height: 1123 },
-    { label: 'Letter', width: 816, height: 1056 }
+    { label: 'A5', width: 559, height: 794 },
+    { label: 'A6', width: 397, height: 559 },
+    { label: 'Letter', width: 816, height: 1056 },
+    { label: 'Legal', width: 816, height: 1344 },
+    { label: 'Tabloid', width: 1056, height: 1632 }
 ];
+
+/** what the dropdown says for a page that is not one of them */
+export const CUSTOM_PAPER = 'custom';
+
+
+/**
+ * Which sheet a page is, by its size.
+ *
+ * Either way round, because a landscape A4 is still A4 - and a dropdown that
+ * said "Custom" the moment somebody turned the page would be one nobody could
+ * use to turn it back.
+ *
+ * Derived rather than stored: the size is the fact, the name is a reading of
+ * it. A layout hand-edited to 794 x 1123 reads as A4 without anyone having had
+ * to also write the word down, and the two can never disagree.
+ *
+ * The one thing that cannot be derived is somebody having *asked* for the
+ * boxes on a page that is currently a named size, so that alone is remembered.
+ * Only the absence of a name is ever written down - never a name - so the file
+ * has nothing in it that can contradict the size beside it.
+ *
+ * @param {object} page the layout's page
+ * @returns {string} a preset label, or CUSTOM_PAPER
+ */
+export function paperOf(page) {
+    if (page?.paper === CUSTOM_PAPER) return CUSTOM_PAPER;
+
+    const w = page?.width;
+    const h = page?.height;
+
+    const found = PAGE_PRESETS.find(sheet =>
+        (sheet.width === w && sheet.height === h)
+        || (sheet.height === w && sheet.width === h));
+
+    return found ? found.label : CUSTOM_PAPER;
+}
+
+
+/** which way up it is, which only means anything once it has a size */
+function orientationOf(page) {
+    return (page?.width ?? 0) > (page?.height ?? 0) ? 'landscape' : 'portrait';
+}
+
+
+/**
+ * Puts a named sheet on the layout, keeping the way up it already had.
+ *
+ * @param {object} layout mutated in place
+ * @param {string} label
+ * @returns {boolean} whether anything changed
+ */
+function setPaper(layout, label) {
+    const sheet = PAGE_PRESETS.find(one => one.label === label);
+
+    /**
+     * Custom is not a size, it is the absence of one - so choosing it leaves the
+     * page exactly as it is and only reveals the two boxes. Throwing the
+     * dimensions away at the moment somebody asked to edit them would be a
+     * strange way to help.
+     *
+     * It has to stick, though. Without the flag, a page that happens to be A4
+     * would read as A4 again the instant the rail was rebuilt, and the boxes
+     * would vanish before anyone could type in them.
+     */
+    if (!sheet) {
+        if (layout.page.paper === CUSTOM_PAPER) return false;
+
+        layout.page.paper = CUSTOM_PAPER;
+        return true;
+    }
+
+    const landscape = orientationOf(layout.page) === 'landscape';
+
+    const width = landscape ? sheet.height : sheet.width;
+    const height = landscape ? sheet.width : sheet.height;
+
+    const wasCustom = layout.page.paper === CUSTOM_PAPER;
+
+    /** a named sheet is a name again; the flag is only ever the lack of one */
+    delete layout.page.paper;
+
+    if (layout.page.width === width && layout.page.height === height) {
+        return wasCustom;
+    }
+
+    layout.page.width = width;
+    layout.page.height = height;
+    return true;
+}
+
+
+/** turns the page, whatever size it is */
+function setOrientation(layout, value) {
+    const wanted = value === 'landscape';
+
+    if (wanted === (orientationOf(layout.page) === 'landscape')) return false;
+
+    const { width, height } = layout.page;
+
+    layout.page.width = height;
+    layout.page.height = width;
+    return true;
+}
+
+
+/**
+ * The Page section: which sheet, which way up, and - only when the sheet is
+ * Custom - the two numbers themselves.
+ *
+ * The boxes are hidden rather than disabled for a named sheet, because a
+ * disabled 794 invites somebody to try to change it and then wonder why they
+ * cannot. The number is in the dropdown's own label instead, so nothing is
+ * hidden that anyone needed to read.
+ *
+ * @param {object} layout
+ * @returns {object[]}
+ */
+function pageFields(layout) {
+    const custom = paperOf(layout.page) === CUSTOM_PAPER;
+
+    const paper = {
+        key: 'paper',
+        label: 'Paper',
+        type: 'choice',
+        /** the controls below it differ per sheet, so the rail is rebuilt */
+        rebuilds: true,
+        options: [
+            ...PAGE_PRESETS.map(sheet => ({
+                value: sheet.label,
+                label: `${sheet.label}  ${sheet.width} x ${sheet.height}`
+            })),
+            { value: CUSTOM_PAPER, label: 'Custom' }
+        ],
+        read: (target) => paperOf(target.page),
+        write: (target, value) => setPaper(target, value)
+    };
+
+    const orientation = {
+        key: 'orientation',
+        label: 'Orientation',
+        type: 'choice',
+        rebuilds: true,
+        options: [
+            { value: 'portrait', label: 'Portrait' },
+            { value: 'landscape', label: 'Landscape' }
+        ],
+        read: (target) => orientationOf(target.page),
+        write: (target, value) => setOrientation(target, value)
+    };
+
+    return custom
+        ? [paper, num('page.width', 'Width', { min: 1 }),
+            num('page.height', 'Height', { min: 1 })]
+        : [paper, orientation];
+}
 
 
 /**
@@ -277,10 +462,7 @@ export function reportFields(layout) {
         },
         {
             title: 'Page',
-            fields: [
-                num('page.width', 'Width', { min: 1 }),
-                num('page.height', 'Height', { min: 1 })
-            ]
+            fields: pageFields(layout)
         },
         {
             title: 'Margins',
@@ -318,6 +500,13 @@ function pathOf(key) {
  * @returns {*} undefined when the item does not carry it
  */
 export function readField(item, field) {
+    /**
+     * A field that is a reading of the object rather than a place on it - the
+     * paper size is the width and the height, said as a name. It has no path to
+     * walk, so it says how to be read instead.
+     */
+    if (field.read) return field.read(item);
+
     let node = item;
 
     for (const step of pathOf(field.key)) {
@@ -345,6 +534,9 @@ export function readField(item, field) {
 export function writeField(item, field, raw) {
     const value = coerce(field, raw);
     if (value === undefined) return false;
+
+    /** the other half of a derived field: it says how to be written, too */
+    if (field.write) return field.write(item, value);
 
     const path = pathOf(field.key);
     const last = path.pop();
