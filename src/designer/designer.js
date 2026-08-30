@@ -32,7 +32,7 @@ import {
 } from '../preview/viewer.js';
 import { buildPages } from '../engine/index.js';
 import { drawProblems, sameIssues } from './toast.js';
-import { askColumns, askReport, askName, askData, askToken } from './dialog.js';
+import { askColumns, askReport, askName, askData, askToken, askDiscard } from './dialog.js';
 import { sampleData } from './sample-data.js';
 import { drawPreview } from './preview.js';
 import { createHistory } from './history.js';
@@ -53,6 +53,9 @@ import {
  * @param {string} [options.id] the report's filename stem, when it has one
  * @param {object} [options.store] where reports are read and written; the dev
  *   server's routes by default
+ * @param {boolean} [options.guardUnload=true] ask the browser to confirm before
+ *   the tab or window closes on unsaved changes. The browser words that prompt
+ *   itself and will not take ours; pass false in a host that has its own.
  * @returns {object} a handle: the current layout, redraw, and destroy
  */
 /**
@@ -100,7 +103,9 @@ export function openDesignerWindow({
 }
 
 
-export function createDesigner({ mount, layout, id = null, store } = {}) {
+export function createDesigner({
+    mount, layout, id = null, store, guardUnload = true
+} = {}) {
     const root = typeof mount === 'string'
         ? document.querySelector(mount)
         : mount;
@@ -986,13 +991,35 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
 
 
     /**
+     * Whether the report being edited may be closed.
+     *
+     * A report with no unsaved changes closes without a word - a question
+     * nobody needs to answer is one they stop reading, and then they stop
+     * reading the one that mattered too.
+     *
+     * @returns {Promise<boolean>}
+     */
+    async function mayClose() {
+        if (!state.dirty) return true;
+
+        return askDiscard(root, state.layout?.name ?? '');
+    }
+
+
+    /**
      * Opens another report.
+     *
+     * Asked before the list is fetched rather than after one is chosen: what
+     * the user is deciding is whether to leave this report, and that is settled
+     * at the click, not three steps into a flow they would then have to unwind.
      *
      * The list comes from the server, so this is also where the designer finds
      * out there is no server - and says so in terms of what to do about it,
      * rather than letting a failed fetch surface as nothing happening.
      */
     async function openReport() {
+        if (!await mayClose()) return;
+
         let reports;
 
         try {
@@ -1298,6 +1325,35 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
 
     view.addEventListener('resize', onViewportResize);
 
+    /**
+     * The tab or the window closing, which is the other way to close a report.
+     *
+     * Nothing of ours can be shown here. A page may only ask the browser to put
+     * its own question - "leave site?" - and browsers stopped letting the page
+     * word it years ago, because a page that could write that text could write
+     * anything into a box the user reads as the browser's. So askDiscard cannot
+     * be reached from here, and the choice is this prompt or no prompt at all.
+     *
+     * preventDefault is the modern spelling and returnValue the old one; both
+     * are set because which one a browser honours still varies. Neither shows
+     * anything unless the user has interacted with the page - a rule against
+     * pages that trap people who only glanced at them, and no obstacle to
+     * somebody who has been dragging text boxes around.
+     *
+     * Registered by default and turned off with `guardUnload: false`: a host
+     * embedding the designer in a larger application may have its own unsaved
+     * state and its own prompt, and two prompts for one close is worse than the
+     * one it already had.
+     */
+    const onBeforeUnload = (event) => {
+        if (!state.dirty) return;
+
+        event.preventDefault();
+        event.returnValue = '';
+    };
+
+    if (guardUnload) view.addEventListener('beforeunload', onBeforeUnload);
+
     draw();
     drawRail();
     refreshBar();
@@ -1554,7 +1610,19 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
 
         if (key === 'z') {
             event.preventDefault();
-            act(event.shiftKey ? 'redo' : 'undo');
+
+            /**
+             * ctrl+alt+z redoes, as well as the ctrl+shift+z every editor has.
+             * Two spellings of one thing rather than a choice between them:
+             * shift+z is the one people arrive with, and alt+z is the one that
+             * matches the zoom pair next door - z in, alt+z out, so alt is
+             * already the "and back again" key on this keyboard.
+             *
+             * Plain alt+z is the zoom, and cannot be reached from here: the
+             * branch at the top of this function takes it while ctrl is up, and
+             * nothing gets this far without ctrl or meta down.
+             */
+            act(event.shiftKey || event.altKey ? 'redo' : 'undo');
             return;
         }
 
@@ -1641,6 +1709,7 @@ export function createDesigner({ mount, layout, id = null, store } = {}) {
             doc.removeEventListener('keydown', onMenuKey);
             (doc.defaultView ?? globalThis)
                 .removeEventListener('resize', onViewportResize);
+            view.removeEventListener('beforeunload', onBeforeUnload);
             zoomPicker?.destroy();
             closeMenu();
             clearTimeout(complain.timer);
@@ -1675,7 +1744,7 @@ function chrome(layout) {
                     title="Undo (ctrl+Z)" aria-label="Undo" disabled
                 >${icon('undo')}</button>
             <button type="button" class="dz-tool" data-role="redo" data-action="redo"
-                    title="Redo (ctrl+shift+Z)" aria-label="Redo" disabled
+                    title="Redo (ctrl+alt+Z or ctrl+shift+Z)" aria-label="Redo" disabled
                 >${icon('redo')}</button>
         </div>
 

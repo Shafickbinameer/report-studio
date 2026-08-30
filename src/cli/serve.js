@@ -23,7 +23,10 @@ const TYPES = {
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
-    '.svg': 'image/svg+xml'
+    '.svg': 'image/svg+xml',
+    /* the tab icon, and anything else the pages point at in src/asset */
+    '.png': 'image/png',
+    '.ico': 'image/x-icon'
 };
 
 /** where the designer's own files are, relative to this module */

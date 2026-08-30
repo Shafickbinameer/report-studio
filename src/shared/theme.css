@@ -12,7 +12,12 @@
  * The three shades below are mixes of those, not new colours - each one exists
  * because the base is too light to carry contrast on its own, and each says
  * which ratio it buys. Change the three above and the shades stay in family.
+ *
+ * The product's two marks come in with it, from brand.css: they are drawn from
+ * this palette, so whoever takes the palette should get them as well.
  */
+@import "./brand.css";
+
 :root {
   /* the palette */
   --surface: #fdfdfe;

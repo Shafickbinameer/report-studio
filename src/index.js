@@ -23,6 +23,7 @@ export {
     search,
     searchPages,
     toCSV,
+    toReportCSV,
     reportFilename,
     measureText,
     wrapLines,

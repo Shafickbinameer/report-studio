@@ -95,6 +95,21 @@
   color: var(--surface);
 }
 
+/**
+ * The button that throws something away. It stays a plain button rather than
+ * taking a fill: it sits beside the one that keeps the work, and two filled
+ * buttons in a row make the reader pick by position instead of by reading.
+ * The colour arrives on hover, once the pointer is already on it.
+ */
+.modal-actions button.is-danger {
+  color: var(--danger);
+}
+
+.modal-actions button.is-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
 .modal-actions button:disabled {
   opacity: .5;
   cursor: default;

@@ -151,6 +151,31 @@ export function askName(root, suggested = '') {
 
 
 /**
+ * Asks whether to leave a report with changes the disk has not seen.
+ *
+ * Answered `false` by everything except the discard button - escape, the
+ * backdrop, the close of the dialog. Somebody who dismisses a question about
+ * losing work has not agreed to lose it, and the safe answer is the one that
+ * costs a second click rather than an afternoon.
+ *
+ * Keeping is the primary button and takes the focus for the same reason: enter
+ * is what a dialog gets pressed at, and enter here means "not that".
+ *
+ * @param {Element} root
+ * @param {string} [name] the report's name, so the question says which
+ * @returns {Promise<boolean>} true only when discard was chosen
+ */
+export function askDiscard(root, name = '') {
+    return open(root, 'discard-dialog', discardMarkup(name), (host, done) => {
+        host.querySelector('[data-role="discard"]')
+            .addEventListener('click', () => done(true));
+
+        host.querySelector('[data-role="cancel"]').focus();
+    }).then(answer => answer === true);
+}
+
+
+/**
  * The shell every dialog shares: mount, focus, wire cancel, resolve once.
  *
  * @param {Element} root
@@ -336,6 +361,36 @@ function nameMarkup(suggested) {
                 <button type="submit" class="is-primary" data-role="confirm">Save</button>
             </div>
         </form>
+    </div>`;
+}
+
+
+/**
+ * The unsaved-changes question.
+ *
+ * Discard sits on the left as the plain button and keeping takes the accent,
+ * because the accent is where the eye goes and the eye should not be led to the
+ * one that throws work away.
+ */
+function discardMarkup(name) {
+    const subject = name ? `<strong>${esc(name)}</strong>` : 'This report';
+
+    return `
+    <div class="modal-backdrop" data-role="backdrop"></div>
+
+    <div class="modal-card" role="dialog" aria-modal="true"
+         aria-labelledby="dz-discard-title">
+        <h2 id="dz-discard-title">Unsaved changes</h2>
+
+        <p class="modal-summary">
+            ${subject} has changes that have not been saved. Opening another
+            report closes this one, and the changes go with it.
+        </p>
+
+        <div class="modal-actions">
+            <button type="button" class="is-danger" data-role="discard">Discard changes</button>
+            <button type="button" class="is-primary" data-role="cancel">Keep editing</button>
+        </div>
     </div>`;
 }
 

@@ -211,12 +211,21 @@
   white-space: nowrap;
 }
 
+/*
+ * The monogram, not the wordmark: the text beside it is the report's name
+ * rather than the product's, so the mark is the only thing saying whose viewer
+ * this is and it has to sit in a square beside a line of type.
+ */
 .report-viewer .toolbar-brand::before {
   content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--accent);
+  flex: none;
+  width: 26px;
+  height: 26px;
+
+  background-image: var(--brand-icon);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
 }
 
 /* search, then zoom to its right - one cluster on the centre of the window */

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { toCSV, reportFilename } from '../src/engine/csv.js';
-import { layout, text, table, band, rows, groupedRows, run } from './helpers/layout.js';
+import { toCSV, toReportCSV, reportFilename } from '../src/engine/csv.js';
+import { layout, text, line, box, table, band, rows, groupedRows, run } from './helpers/layout.js';
 
 beforeEach(() => {
     vi.spyOn(console, 'debug').mockImplementation(() => { });
@@ -170,6 +170,185 @@ describe('toCSV - spreadsheet formula safety', () => {
         expect(cell('Cable')).toBe('Cable,1,1');
     });
 });
+
+/**
+ * The other shape: the report as it reads, rather than the table on its own.
+ * A box and a rule are drawn rather than written, so those two are what cannot
+ * come along - everything else arrives in the order the page draws it.
+ */
+describe('toReportCSV - report order', () => {
+    const report = (data) => run(layout({
+        bands: [
+            band('pageHeader', [text('ph', { value: 'Acme Ltd' })]),
+            band('reportHeader', [
+                text('title', { value: 'INVOICE' }),
+                text('date', { value: 'June 2026', x: 420, y: 2, h: 16 })
+            ]),
+            band('detail', [table()]),
+            band('reportFooter', [
+                text('lbl', { value: 'Total' }),
+                text('sum', { value: '1240', x: 420 })
+            ])
+        ]
+    }), data);
+
+    it('writes what is above the table before the table', () => {
+        const out = lines(toReportCSV(report({ items: rows(1) }).pages));
+
+        expect(out[0]).toBe('Acme Ltd');
+        expect(out[1]).toBe('INVOICE,June 2026');
+        expect(out[2]).toBe('Item,Qty,Price');
+        expect(out[3]).toBe('row-0,0,0');
+    });
+
+    it('writes what is below the table after it', () => {
+        expect(lines(toReportCSV(report({ items: rows(1) }).pages)).at(-1))
+            .toBe('Total,1240');
+    });
+
+    /** the bands arrive built rather than stacked: only `top` knows the order */
+    it('reads a page footer last, wherever the band list holds it', () => {
+        const out = run(layout({
+            bands: [
+                band('pageFooter', [text('pf', { value: 'foot' })]),
+                band('detail', [table()]),
+                band('pageHeader', [text('ph', { value: 'head' })])
+            ]
+        }), { items: rows(1) });
+
+        const csv = lines(toReportCSV(out.pages));
+
+        expect(csv[0]).toBe('head');
+        expect(csv.at(-1)).toBe('foot');
+    });
+
+    it('puts items that share a line in one row, left to right', () => {
+        const out = run(layout({
+            bands: [band('reportHeader', [
+                text('right', { value: 'second', x: 400, y: 4, h: 16 }),
+                text('left', { value: 'first', y: 0, h: 20 })
+            ])]
+        }), {});
+
+        expect(lines(toReportCSV(out.pages))[0]).toBe('first,second');
+    });
+
+    it('starts a new row for a line that clears the one above', () => {
+        const out = run(layout({
+            bands: [band('reportHeader', [
+                text('a', { value: 'one', y: 0, h: 20 }),
+                text('b', { value: 'two', y: 40, h: 20 })
+            ])]
+        }), {});
+
+        expect(lines(toReportCSV(out.pages))).toEqual(['one', 'two']);
+    });
+
+    it('leaves out the boxes and the rules', () => {
+        const out = run(layout({
+            bands: [band('reportHeader', [
+                box('panel', { y: 0, h: 60 }),
+                text('t', { value: 'kept', y: 10 }),
+                line('rule', { y: 70 })
+            ])]
+        }), {});
+
+        expect(lines(toReportCSV(out.pages))).toEqual(['kept']);
+    });
+
+    /** the two shapes of the same report, side by side */
+    it('keeps the text the table export drops', () => {
+        const out = run(layout({
+            bands: [
+                band('reportHeader', [text('t', { value: 'note' })]),
+                band('detail', [table({ showHeader: false })])
+            ]
+        }), { items: [] });
+
+        /* the rectangle: column labels, and nothing the bands said */
+        expect(toCSV(out.pages)).toBe('Item,Qty,Price');
+
+        /* the report: what it says, and no header the table was told to hide */
+        expect(toReportCSV(out.pages)).toBe('note');
+    });
+
+    it('is empty when the report draws nothing that can be written', () => {
+        const out = run(layout({
+            bands: [band('detail', [table({ showHeader: false })])]
+        }), { items: [] });
+
+        expect(toReportCSV(out.pages)).toBe('');
+        expect(toReportCSV([])).toBe('');
+        expect(toReportCSV(undefined)).toBe('');
+    });
+
+    it('repeats a page header once per page, as the report does', () => {
+        const out = report({ items: rows(120) });
+        expect(out.pages.length).toBeGreaterThan(1);
+
+        expect(lines(toReportCSV(out.pages)).filter(l => l === 'Acme Ltd'))
+            .toHaveLength(out.pages.length);
+    });
+
+    it('writes every table row exactly once, in order', () => {
+        const body = lines(toReportCSV(report({ items: rows(120) }).pages))
+            .filter(l => /^row-\d+,/.test(l));
+
+        expect(body).toHaveLength(120);
+        expect(body[0]).toMatch(/^row-0,/);
+        expect(body.at(-1)).toMatch(/^row-119,/);
+    });
+
+    it('escapes and neutralises exactly as the table export does', () => {
+        const out = run(layout({
+            bands: [band('reportHeader', [text('t', { value: '=SUM(A1)' })])]
+        }), {});
+
+        expect(lines(toReportCSV(out.pages))[0]).toBe('\t=SUM(A1)');
+        expect(lines(toReportCSV(out.pages, { neutraliseFormulas: false }))[0])
+            .toBe('=SUM(A1)');
+    });
+
+    it('honours a different delimiter', () => {
+        const out = run(layout({
+            bands: [band('reportHeader', [
+                text('a', { value: 'one', y: 0, h: 20 }),
+                text('b', { value: 'two', x: 400, y: 0, h: 20 })
+            ])]
+        }), {});
+
+        expect(lines(toReportCSV(out.pages, { delimiter: ';' }))[0]).toBe('one;two');
+    });
+});
+
+
+describe('toReportCSV - grouped reports', () => {
+    const grouped = (data) => run(layout({
+        groupBy: 'name',
+        bands: [
+            band('groupHeader', [text('gh', { value: '{name}', h: 22 })], { height: 22 }),
+            band('detail', [table()]),
+            band('groupFooter', [text('gf', { value: '{sum(price)}', h: 20 })], { height: 20 })
+        ]
+    }), data);
+
+    it("wraps a group's rows in that group's own bands", () => {
+        const out = lines(toReportCSV(grouped({ items: groupedRows(['North'], 2) }).pages));
+
+        expect(out[0]).toBe('Item,Qty,Price');
+        expect(out[1]).toBe('North');
+        expect(out[2]).toBe('North,0,10');
+        expect(out[3]).toBe('North,1,10');
+        expect(out[4]).toBe('20');
+    });
+
+    it('keeps the groups in report order', () => {
+        const out = lines(toReportCSV(grouped({ items: groupedRows(['North', 'South'], 1) }).pages));
+
+        expect(out.indexOf('North')).toBeLessThan(out.indexOf('South'));
+    });
+});
+
 
 describe('reportFilename', () => {
     it('uses the layout name', () => {

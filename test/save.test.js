@@ -76,8 +76,10 @@ function fakeStore(files = {}, data = {}) {
     };
 }
 
-function mount({ store = fakeStore(), l = json(), id = null } = {}) {
-    designer = createDesigner({ mount: '#report-designer', layout: l, id, store });
+function mount({ store = fakeStore(), l = json(), id = null, ...rest } = {}) {
+    designer = createDesigner({
+        mount: '#report-designer', layout: l, id, store, ...rest
+    });
     return designer;
 }
 
@@ -441,6 +443,218 @@ describe('opening', () => {
 });
 
 
+/**
+ * Opening another report closes this one, so it is the moment unsaved work is
+ * lost. Every way of dismissing the question means keep, because dismissing a
+ * question about losing work is not agreeing to lose it.
+ */
+describe('closing a report with unsaved changes', () => {
+    const store = () => fakeStore({
+        invoice: { ...json(), name: 'Invoice' },
+        sales: { ...json(), name: 'Sales summary' }
+    });
+
+    /** mounted under a name, so the question can be checked for saying which */
+    const open = (extra = {}) => mount({
+        store: store(), id: 'invoice', l: { ...json(), name: 'Invoice' }, ...extra
+    });
+
+    const escape = (node) => node.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true
+    }));
+
+    it('asks nothing when the disk has seen everything', async () => {
+        open();
+
+        press('open');
+        await settle();
+
+        expect(dialog('discard-dialog')).toBeNull();
+        expect(dialog('open-dialog')).not.toBeNull();
+    });
+
+    it('asks before opening another report, and waits', async () => {
+        open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+
+        expect(dialog('discard-dialog')).not.toBeNull();
+        expect(dialog('open-dialog')).toBeNull();
+    });
+
+    it('names the report it is about to close', async () => {
+        open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+
+        expect(dialog('discard-dialog').textContent).toContain('Invoice');
+    });
+
+    it('keeps the report, and its changes, on keep editing', async () => {
+        const d = open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+        click(dialog('discard-dialog').querySelector('[data-role="cancel"]'));
+        await settle();
+
+        expect(dialog('open-dialog')).toBeNull();
+        expect(d.id).toBe('invoice');
+        expect(d.dirty).toBe(true);
+        expect(d.layout.bands[0].items[0].x).toBe(50);
+    });
+
+    it('goes on to the report list on discard', async () => {
+        open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+        click(dialog('discard-dialog').querySelector('[data-role="discard"]'));
+        await settle();
+
+        expect(dialog('discard-dialog')).toBeNull();
+        expect(dialog('open-dialog')).not.toBeNull();
+    });
+
+    it('opens the chosen report once the changes are discarded', async () => {
+        const d = open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+        click(dialog('discard-dialog').querySelector('[data-role="discard"]'));
+        await settle();
+        await chooseReport('sales');
+
+        expect(d.id).toBe('sales');
+        expect(d.dirty).toBe(false);
+    });
+
+    /** escape is a dismissal, and a dismissal is never a yes */
+    it('treats escape as keep editing', async () => {
+        const d = open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+        escape(dialog('discard-dialog'));
+        await settle();
+
+        expect(dialog('open-dialog')).toBeNull();
+        expect(d.dirty).toBe(true);
+    });
+
+    it('treats the backdrop as keep editing', async () => {
+        const d = open();
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+        click(dialog('discard-dialog').querySelector('[data-role="backdrop"]'));
+        await settle();
+
+        expect(dialog('open-dialog')).toBeNull();
+        expect(d.dirty).toBe(true);
+    });
+
+    /** the question is about leaving, so it comes before the server is asked */
+    it('does not reach the server while the question stands', async () => {
+        const counting = store();
+
+        open({ store: counting });
+        drag('t1', 50, 0);
+
+        press('open');
+        await settle();
+
+        expect(counting.calls).toEqual([]);
+    });
+
+    it('puts the shortcut behind the same guard as the button', async () => {
+        const d = open();
+        drag('t1', 50, 0);
+
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'o', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+        await settle();
+
+        expect(dialog('discard-dialog')).not.toBeNull();
+        expect(d.dirty).toBe(true);
+    });
+});
+
+
+/**
+ * The other way to close a report: the tab or the window itself.
+ *
+ * Nothing of the designer's can be shown here - a page may only ask the browser
+ * to put its own question, and cannot word it - so what is specified is that
+ * the page asks, and that it only asks when there is something to lose.
+ */
+describe('closing the tab with unsaved changes', () => {
+    const closing = () => {
+        const event = new Event('beforeunload', { cancelable: true });
+
+        window.dispatchEvent(event);
+        return event;
+    };
+
+    it('lets a saved report go without a word', () => {
+        mount({ id: 'invoice' });
+
+        expect(closing().defaultPrevented).toBe(false);
+    });
+
+    it('stops the page leaving while changes are unsaved', () => {
+        mount({ id: 'invoice' });
+        drag('t1', 50, 0);
+
+        expect(closing().defaultPrevented).toBe(true);
+    });
+
+    /**
+     * `returnValue` is set by the handler too, because some browsers still read
+     * that spelling - but it is not asserted here. On a real BeforeUnloadEvent
+     * it is a string of its own; on the plain Event jsdom gives us it is the
+     * legacy boolean, which reads back as the inverse of defaultPrevented. The
+     * assertion would be about jsdom rather than about the designer.
+     */
+    it('stops asking once the report is saved', async () => {
+        mount({ store: fakeStore(), id: 'invoice' });
+        drag('t1', 50, 0);
+        press('save');
+        await settle();
+
+        expect(closing().defaultPrevented).toBe(false);
+    });
+
+    it('can be turned off by a host with its own prompt', () => {
+        mount({ id: 'invoice', guardUnload: false });
+        drag('t1', 50, 0);
+
+        expect(closing().defaultPrevented).toBe(false);
+    });
+
+    /** a destroyed designer must not go on guarding the host's page */
+    it('stops guarding once the designer is destroyed', () => {
+        const d = mount({ id: 'invoice' });
+        drag('t1', 50, 0);
+
+        d.destroy();
+        designer = null;
+
+        expect(closing().defaultPrevented).toBe(false);
+    });
+});
+
+
 describe('undo and redo', () => {
     it('takes back a drag', () => {
         const d = mount();
@@ -547,6 +761,10 @@ describe('undo and redo', () => {
 
         drag('t1', 50, 0);
         press('open');
+        await settle();
+
+        /* the drag left changes unsaved, so leaving is asked about first */
+        click(dialog('discard-dialog').querySelector('[data-role="discard"]'));
         await settle();
         await chooseReport('invoice');
 

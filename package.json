@@ -19,6 +19,7 @@
   "type": "module",
   "files": [
     "dist",
+    "src/asset",
     "src/cli",
     "src/designer",
     "src/engine",

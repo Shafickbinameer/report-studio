@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { createViewer } from '../src/preview/viewer.js';
 import { render } from '../src/render/render.js';
-import { layout, text, table, band, rows, groupedRows, run } from './helpers/layout.js';
+import { layout, text, line, box, table, band, rows, groupedRows, run } from './helpers/layout.js';
 
 /**
  * The preview page's own body, minus its module script, so the specs drive the
@@ -598,8 +598,13 @@ describe('viewer - export dialog', () => {
 });
 
 describe('viewer - export dialog with nothing to export', () => {
+    /**
+     * A rule and a panel and nothing else. A report with no table but with text
+     * still exports - the CSV is the report's lines now, not only its rows - so
+     * the only report left with nothing to write is one that writes nothing.
+     */
     const noTableLayout = () => layout({
-        bands: [band('detail', [text('only', { value: 'nothing tabular here' })])]
+        bands: [band('detail', [line('rule'), box('panel', { y: 30 })])]
     });
 
     beforeEach(() => {
@@ -617,6 +622,18 @@ describe('viewer - export dialog with nothing to export', () => {
 
         expect(csv.disabled).toBe(true);
         expect(csv.closest('.format').classList.contains('is-unavailable')).toBe(true);
+    });
+
+    it('offers CSV for a report with text but no table', () => {
+        mountReport({}, layout({
+            bands: [band('detail', [text('only', { value: 'nothing tabular here' })])]
+        }));
+        el('export').click();
+
+        const csv = [...document.querySelectorAll('input[name="export-format"]')]
+            .find(i => i.value === 'csv');
+
+        expect(csv.disabled).toBe(false);
     });
 
     it('leaves PDF available', () => {

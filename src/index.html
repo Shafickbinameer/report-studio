@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Report Studio</title>
+    <link rel="icon" type="image/png" href="./asset/images/icon.png">
     <link rel="stylesheet" href="./shared/theme.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,19 +23,19 @@
             color: var(--ink);
         }
 
+        /* the wordmark stands in for the heading; the text stays for readers */
         h1 {
-            font-size: 20px;
-            font-weight: 600;
-        }
+            height: 26px;
+            width: calc(26px * var(--brand-logo-ratio));
 
-        h1::before {
-            content: "";
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            margin-right: 10px;
-            border-radius: 2px;
-            background: var(--accent);
+            background-image: var(--brand-logo);
+            background-repeat: no-repeat;
+            background-position: left center;
+            background-size: contain;
+
+            text-indent: -9999px;
+            overflow: hidden;
+            white-space: nowrap;
         }
 
         p {

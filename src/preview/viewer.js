@@ -13,7 +13,7 @@
  */
 
 import { search, searchPages } from '../engine/search.js';
-import { toCSV, reportFilename } from '../engine/csv.js';
+import { toReportCSV, reportFilename } from '../engine/csv.js';
 import { openWindow, closeWithOpener } from '../shared/window.js';
 import { createDropdown } from '../shared/dropdown.js';
 import { render } from '../render/render.js';
@@ -281,10 +281,10 @@ export function createViewer({ mount, paginated, title } = {}) {
             run: () => printReport()
         },
         csv: {
-            available: () => toCSV(paginated.pages) !== '',
+            available: () => toReportCSV(paginated.pages) !== '',
             summary: () => FORMATS.csv.available()
                 ? `Downloads ${reportFilename(paginated, 'csv')}.`
-                : 'This report has no table to export.',
+                : 'This report has nothing to write out.',
             run: () => downloadCSV()
         }
     };
@@ -341,9 +341,13 @@ export function createViewer({ mount, paginated, title } = {}) {
         style.textContent = `@page { size: ${width}px ${height}px; margin: 0; }`;
     }
 
-    /** the table rows behind the report, as a spreadsheet would want them */
+    /**
+     * The report as text: every line and every table row, in the order the
+     * pages draw them. Boxes and rules are the only things left behind, having
+     * nothing to write.
+     */
     function downloadCSV() {
-        const csv = toCSV(paginated.pages);
+        const csv = toReportCSV(paginated.pages);
         if (csv === '') return false;
 
         /** the BOM is what makes Excel read the file as UTF-8 rather than latin-1 */

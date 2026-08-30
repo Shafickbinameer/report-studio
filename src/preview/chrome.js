@@ -130,7 +130,7 @@ export function chrome({ title = 'Report Studio' } = {}) {
                     <input type="radio" name="export-format" value="csv">
                     <span class="format-body">
                         <span class="format-name">CSV</span>
-                        <span class="format-note">The table rows, for a spreadsheet</span>
+                        <span class="format-note">Every text line and table row, in report order</span>
                     </span>
                 </label>
             </div>

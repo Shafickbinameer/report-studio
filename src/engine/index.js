@@ -18,7 +18,7 @@ export { paginate } from './paginate.js';
 export { validateLayout, ReportError } from './validate.js';
 export { search, searchPages } from './search.js';
 export { pageRegions, bandZoneHeight, resolveHeight, DEFAULT_BAND_HEIGHTS } from './regions.js';
-export { toCSV, reportFilename } from './csv.js';
+export { toCSV, toReportCSV, reportFilename } from './csv.js';
 export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
 
 

@@ -60,19 +60,28 @@
   color: var(--ink);
 }
 
+/*
+ * The wordmark, drawn rather than typed. The text stays in the markup and is
+ * only pushed out of sight, so the bar still has an accessible name and a
+ * document read aloud still starts with "Report Studio".
+ *
+ * Height is set and the width follows from the mark's own ratio, so the bar
+ * keeps its rhythm if the artwork is ever redrawn at another size.
+ */
 .dz-brand {
-  font-weight: 600;
-  letter-spacing: .02em;
-}
+  height: 18px;
+  width: calc(18px * var(--brand-logo-ratio));
+  flex: none;
 
-.dz-brand::before {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 8px;
-  border-radius: 2px;
-  background: var(--accent);
+  background-image: var(--brand-logo);
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: contain;
+
+  /* the name is for screen readers now, not for eyes */
+  text-indent: -9999px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* the report's name is the subject of the screen, so it takes the middle */

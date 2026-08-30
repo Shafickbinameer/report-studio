@@ -372,3 +372,108 @@ describe('zoom', () => {
         expect(d.layout.bands[0].items[0].x).toBe(100);
     });
 });
+
+
+describe('undo and redo', () => {
+    let designer = null;
+
+    afterEach(() => {
+        designer?.destroy();
+        designer = null;
+    });
+
+    const one = () => layout({
+        bands: [band('detail', [text('t1', { x: 0, y: 0, w: 200, h: 40 })])]
+    });
+
+    const items = (d) => d.layout.bands[0].items.length;
+
+    const click = (node) => node.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    const press = (key, mods = {}) => root().dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key, bubbles: true, cancelable: true, ...mods
+        }));
+
+    /** an edit worth taking back */
+    function addOne() {
+        click(root().querySelector('[data-action="add-text"]'));
+    }
+
+    const label = () => root()
+        .querySelector('[data-role="zoom-dropdown"] .dropdown-value')
+        .textContent.trim();
+
+    it('undoes on ctrl+z', () => {
+        const d = designer = mount(one());
+        addOne();
+
+        expect(items(d)).toBe(2);
+        press('z', { ctrlKey: true });
+        expect(items(d)).toBe(1);
+    });
+
+    it('redoes on ctrl+alt+z', () => {
+        const d = designer = mount(one());
+        addOne();
+        press('z', { ctrlKey: true });
+
+        expect(items(d)).toBe(1);
+        press('z', { ctrlKey: true, altKey: true });
+        expect(items(d)).toBe(2);
+    });
+
+    it('redoes on ctrl+shift+z too, which is what people arrive with', () => {
+        const d = designer = mount(one());
+        addOne();
+        press('z', { ctrlKey: true });
+        press('z', { ctrlKey: true, shiftKey: true });
+
+        expect(items(d)).toBe(2);
+    });
+
+    it('still redoes on ctrl+y', () => {
+        const d = designer = mount(one());
+        addOne();
+        press('z', { ctrlKey: true });
+        press('y', { ctrlKey: true });
+
+        expect(items(d)).toBe(2);
+    });
+
+    it('leaves plain alt+z zooming, not redoing', () => {
+        /**
+         * The two live one modifier apart, so this is the pair that has to be
+         * kept honest: alt+z is zoom out, and only ctrl+alt+z is redo.
+         */
+        const d = designer = mount(one());
+        addOne();
+        press('z', { ctrlKey: true });
+
+        expect(items(d)).toBe(1);
+
+        press('z', { altKey: true });
+
+        expect(items(d), 'alt+z redid instead of zooming').toBe(1);
+        expect(label()).toBe('75%');
+    });
+
+    it('leaves plain z zooming in, not undoing', () => {
+        const d = designer = mount(one());
+        addOne();
+
+        press('z');
+
+        expect(items(d)).toBe(2);
+        expect(label()).toBe('125%');
+    });
+
+    it('does not redo a step there is none of', () => {
+        const d = designer = mount(one());
+
+        press('z', { ctrlKey: true, altKey: true });
+
+        expect(items(d)).toBe(1);
+    });
+});
