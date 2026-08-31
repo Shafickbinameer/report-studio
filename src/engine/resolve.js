@@ -128,25 +128,24 @@ function resolveTxt(item, rptData, deferUnknown) {
  * @returns
  */
 function validatePlaceHolder(match, key, rptData, item, deferUnknown) {
-    if (AGGREGATE.test(key)) {
-        console.debug(`Aggregate expression found: ${key}. Deferred until grouping.`);
-        return match;
-    }
+    /**
+     * Handed on rather than reported. An aggregate belongs to grouping and a
+     * page key belongs to pagination, so neither is resolvable here and neither
+     * is a surprise - these two were logged on the way past, which meant a
+     * footer with a page number wrote a line to the console for every page of
+     * every report. Only the unresolvable placeholder below is worth a word.
+     */
+    if (AGGREGATE.test(key)) return match;
 
-    if (PAGE_KEYS.includes(key)) {
-        console.debug(`System key found: ${key}. Deferred until pagination.`);
-        return match;
-    }
+    if (PAGE_KEYS.includes(key)) return match;
 
     if (key == 'today') return new Date().toISOString().slice(0, 10);
 
     const value = findVal(key, rptData);
 
     if (value === undefined || value === null) {
-        if (deferUnknown) {
-            console.debug(`Placeholder "{${key}}" on item "${item.id}". Deferred until grouping.`);
-            return match;
-        }
+        /** a group's own field, which only has a value once the rows are split */
+        if (deferUnknown) return match;
         console.warn(`Unresolved placeholder "{${key}}" on item "${item.id}".`);
         return '';
     }

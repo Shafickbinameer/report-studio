@@ -6,11 +6,19 @@
  * items.js, because the designer canvas needs that half and none of this one.
  */
 
-import { items, esc } from './items.js';
+import { items, esc, px } from './items.js';
 
 
-/** used to return the padding config */
-const padding = (m) => `padding-top:${m.top}px;padding-left:${m.left}px;padding-bottom:${m.bottom}px;padding-right:${m.right}px;`
+/**
+ * The page margins, as padding.
+ *
+ * Every length goes through px() on the way into a style attribute. The page
+ * block is the layout's, buildPages does not run the validator over it, and a
+ * margin that arrived as a string writes `padding-top:undefinedpx` - or worse,
+ * closes the attribute.
+ */
+const padding = (m) => `padding-top:${px(m?.top)}px;padding-left:${px(m?.left)}px;` +
+    `padding-bottom:${px(m?.bottom)}px;padding-right:${px(m?.right)}px;`
 
 /** display order */
 const order = ['pageHeader', 'reportHeader', 'detail', 'reportFooter', 'pageFooter'];
@@ -22,7 +30,7 @@ export function render(json) {
         <main id="main-page">
             ${json.pages.map(p =>
         `
-                <section id="page-${esc(p.pageNO)}" class="page"  style="height:${pageConf.height}px; width:${pageConf.width}px; ${padding(pageConf.margin)};position:relative">
+                <section id="page-${esc(p.pageNO)}" class="page"  style="height:${px(pageConf.height)}px; width:${px(pageConf.width)}px; ${padding(pageConf.margin)};position:relative">
                     ${page(p, pageConf)}
                 </section>
                 `
@@ -75,15 +83,15 @@ function bandConversion(comp, pageNO, pageConf) {
      * added back here, or every band would sit inside them.
      */
     const box = anchored
-        ? `position:absolute;top:${comp.top + margin.top}px;` +
-          `left:${margin.left}px;right:${margin.right}px;`
+        ? `position:absolute;top:${px(comp.top) + px(margin.top)}px;` +
+          `left:${px(margin.left)}px;right:${px(margin.right)}px;`
         : `position:relative;`;
 
     /** the zone is the height; a band that outgrew it keeps its measured height */
     const height = Math.max(comp.zoneHeight ?? 0, comp.measuredHeight ?? 0);
 
     return `
-    <div class="band" id="${esc(comp.type)}-${esc(pageNO)}" style="${box}${height > 0 ? `height:${height}px` : ""}" data-band-type="${esc(comp.type)}">
+    <div class="band" id="${esc(comp.type)}-${esc(pageNO)}" style="${box}${height > 0 ? `height:${px(height)}px` : ""}" data-band-type="${esc(comp.type)}">
         ${items(comp.items)}
     </div>
     `

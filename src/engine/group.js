@@ -286,7 +286,7 @@ function compute(expr, rows) {
         case 'min':
             return values.length ? Math.min(...values) : null;
         default:
-            console.debug(`No aggregate function found for key: ${expr.key}`);
+            console.warn(`Unknown aggregate "${expr.key}()"; it has no value.`);
             return null;
     }
 }

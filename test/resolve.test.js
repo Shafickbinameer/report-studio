@@ -94,3 +94,50 @@ describe('resolve - input validation', () => {
         expect(() => resolve(json, {})).toThrow(/bands\[0\]\.items\[0\]\.type "blob"/);
     });
 });
+
+
+/**
+ * A library that talks while it works is a library the host cannot hear over.
+ * These are console.debug in a browser, where the level is hidden by default -
+ * and stdout under Node, where a host rendering a report on a server got the
+ * lot.
+ */
+describe('resolve - what it says while it works', () => {
+    const buildOne = (value, data = {}) => {
+        const json = layout({ bands: [band('reportHeader', [text('t', { value })])] });
+        return resolve(json, data);
+    };
+
+    it('says nothing about a placeholder it resolves', () => {
+        buildOne('Hello {name}', { name: 'Ana' });
+
+        expect(console.debug).not.toHaveBeenCalled();
+        expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it('says nothing about an aggregate, which is grouping\'s to answer', () => {
+        buildOne('Total {sum(price)}');
+
+        expect(console.debug).not.toHaveBeenCalled();
+        expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it('says nothing about a page key, which is pagination\'s to answer', () => {
+        /**
+         * The loud one: a footer reading "Page {page} of {totalPages}" wrote
+         * two lines per page, so a two hundred page report opened behind four
+         * hundred lines of the engine narrating itself.
+         */
+        buildOne('Page {page} of {totalPages}');
+
+        expect(console.debug).not.toHaveBeenCalled();
+        expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it('still warns about a placeholder nothing can resolve', () => {
+        /** the one case worth a word: the report will print a gap */
+        buildOne('Hello {nobody}', { name: 'Ana' });
+
+        expect(console.warn).toHaveBeenCalled();
+    });
+});

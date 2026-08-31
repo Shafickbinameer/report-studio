@@ -13,7 +13,7 @@
 
 import { parseArgs } from 'node:util';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { serve } from './serve.js';
@@ -237,14 +237,40 @@ function launch([next, ...rest]) {
 
 
 /**
- * Only when run as a command, so the module stays importable by the specs.
+ * Whether this module is the script that was run, rather than one the specs
+ * imported.
+ *
+ * Two ways to get this wrong, and the package has had both.
  *
  * pathToFileURL rather than building the URL by hand: a Windows path becomes
  * `file:///D:/...` - three slashes and a drive letter - so a hand-rolled
  * `file://${path}` never matches and the command silently does nothing at all.
+ *
+ * realpathSync because argv[1] is whatever was typed, and what npm puts on the
+ * PATH is a *symlink*: `node_modules/.bin/report-studio` points at this file on
+ * macOS and Linux, which is the path `npx report-studio` runs. Node resolves
+ * `import.meta.url` through that link and argv[1] keeps it, so the two sides
+ * never match and the command exits zero having printed nothing. It went
+ * unnoticed for as long as it did because npm writes a shim holding the real
+ * path on Windows, where the failure does not reproduce.
+ *
+ * @param {string|undefined} argv1 process.argv[1]
+ * @param {string} moduleUrl import.meta.url
+ * @returns {boolean}
  */
-const invoked = process.argv[1]
-    && import.meta.url === pathToFileURL(process.argv[1]).href;
+export function runAsScript(argv1, moduleUrl) {
+    if (!argv1) return false;
+
+    try {
+        return moduleUrl === pathToFileURL(realpathSync(argv1)).href;
+    } catch {
+        /** argv[1] is not a file we can resolve; it is not this module either */
+        return false;
+    }
+}
+
+
+const invoked = runAsScript(process.argv[1], import.meta.url);
 
 if (invoked) {
     /**

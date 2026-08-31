@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { JSDOM } from 'jsdom';
 import { render } from '../src/render/render.js';
 import { items } from '../src/render/items.js';
+import { validateLayout } from '../src/engine/validate.js';
 import {
     layout, text, table, band, rows, groupedRows, run, box as boxItem
 } from './helpers/layout.js';
@@ -458,5 +460,139 @@ describe('render - a wrapped row is drawn at the height it was measured at', () 
 
     it('says nothing about wrapping when it is on, which is the default', () => {
         expect(html()).not.toContain('--rs-cell-wrap');
+    });
+});
+
+
+/**
+ * A layout is a file, and the README documents an application letting its own
+ * users draw one. So the layout is an input like any other, and the renderer
+ * has to hold whatever is in it inside the attribute it was written for.
+ */
+describe('render - a layout it does not trust', () => {
+    /** the helpers build a style block of their own; these tests are about its values */
+    const styled = (item, style) => ({ ...item, style: { ...item.style, ...style } });
+
+    /**
+     * The attributes a browser really parses out of the markup, rather than a
+     * regex over it - the whole failure was that a browser read the string
+     * differently from the way it looked, so reading it back with a regex would
+     * have missed it exactly as the eye did. These specs run under node, so the
+     * parser is asked for by hand.
+     */
+    const parse = (html, selector = 'p') => new JSDOM(`<body>${html}</body>`)
+        .window.document.querySelector(selector);
+
+    const attributesOf = (html, selector = 'p') => {
+        const el = parse(html, selector);
+        return el ? [...el.attributes].map(a => a.name) : [];
+    };
+
+    /** the declarations the browser actually made out of the style attribute */
+    const declarationsOf = (html, selector = 'p') => {
+        const { style } = parse(html, selector);
+        return [...style].sort();
+    };
+
+    it('will not let a style value close the attribute it sits in', () => {
+        /**
+         * `color: 'red" onmouseover="alert(1)'` used to write a live event
+         * handler onto the paragraph - the quote closed style= and the browser
+         * parsed what followed as markup rather than as CSS.
+         */
+        const html = items([styled(text('t'), { color: 'red" onmouseover="alert(1)' })]);
+
+        expect(attributesOf(html)).toEqual(
+            ['id', 'style', 'data-item-id', 'data-item-type']);
+    });
+
+    it('will not let one style value add a declaration of its own', () => {
+        /**
+         * The properties the paragraph is drawn with are the ones written for
+         * it, whatever the value tried to append - checked as the browser
+         * parsed them rather than as they read in the string.
+         */
+        const html = items([styled(text('t'), { color: 'red;position:fixed;top:0' })]);
+
+        const written = [
+            'color', 'font-family', 'font-size', 'font-style', 'font-weight',
+            'height', 'left', 'position', 'text-align', 'top', 'width'
+        ];
+
+        /**
+         * A subset, not the set: the mangled remainder is no longer a colour,
+         * so the browser drops that declaration outright. What matters is that
+         * nothing arrived that was not written, and that the two properties the
+         * value was reaching for still say what the renderer said.
+         */
+        for (const property of declarationsOf(html)) {
+            expect(written, property).toContain(property);
+        }
+
+        expect(parse(html).style.position).toBe('absolute');
+        expect(parse(html).style.top).toBe('0px');
+    });
+
+    it('holds a table\'s colours inside their custom properties too', () => {
+        const html = items([{
+            ...table(),
+            style: { borderColor: '#0a0" onload="alert(1)', headerBackground: 'red;z-index:9' }
+        }]);
+
+        expect(attributesOf(html, 'table')).toEqual(
+            ['id', 'style', 'data-item-id', 'data-item-type']);
+
+        /** a custom property holds whatever is left of it, and nothing escapes it */
+        expect(parse(html, 'table').style.zIndex).toBe('');
+    });
+
+    it('does not let a report fetch anything while it is being read', () => {
+        /** url() is the one CSS function that goes to the network */
+        const html = items([
+            boxItem('b', { background: 'url(http://example.invalid/pixel.png)' })]);
+
+        expect(html).not.toContain('url(');
+    });
+
+    it('keeps the colour notations somebody might legitimately write', () => {
+        const html = items([styled(text('t'), { color: 'rgb(10, 20, 30)' })]);
+
+        expect(html).toContain('color:rgb(10, 20, 30)');
+    });
+
+    it('draws whatever validateLayout has just called valid', () => {
+        /**
+         * The two halves have to agree. The validator asks for a style block to
+         * be an object *if there is one*, so a layout without one is valid -
+         * and render threw a TypeError over it, which is the package
+         * contradicting itself in front of whoever wrote the layout by hand.
+         */
+        const json = layout({
+            bands: [band('detail', [
+                { id: 't', type: 'text', x: 0, y: 0, w: 200, h: 20, value: 'hello' }
+            ])]
+        });
+
+        expect(() => validateLayout(json)).not.toThrow();
+        expect(() => render(run(json, {}))).not.toThrow();
+    });
+
+    it('draws a text item that has no style block at all', () => {
+        /**
+         * validateLayout accepts one - it asks for style to be an object only
+         * if there is one - and the renderer then threw a TypeError over a
+         * layout the validator had just called fine.
+         */
+        expect(() => items([{ id: 't', type: 'text', text: 'hello', x: 0, y: 0, w: 90, h: 20 }]))
+            .not.toThrow();
+    });
+
+    it('writes a real length for a size that arrived as something else', () => {
+        const html = items([{ ...text('t'), w: '90', h: null }]);
+
+        expect(html).toContain('width:90px');
+        expect(html).toContain('height:0px');
+        expect(html).not.toContain('NaN');
+        expect(html).not.toContain('undefinedpx');
     });
 });

@@ -10,11 +10,12 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { serve } from '../src/cli/serve.js';
-import { browserLaunch } from '../src/cli/index.js';
+import { browserLaunch, runAsScript } from '../src/cli/index.js';
 
 const run = promisify(execFile);
 const CLI = resolve(process.cwd(), 'src/cli/index.js');
@@ -65,6 +66,47 @@ describe('the command', () => {
 
         expect(result.code).toBe(1);
         expect(result.stderr).toContain('frobnicate');
+    });
+
+    it('runs when it is reached through a symlink, which is how npm installs it', async () => {
+        /**
+         * `node_modules/.bin/report-studio` is a *symlink* to this file on
+         * macOS and Linux, and that link is the path `npx report-studio` runs.
+         * Node resolves import.meta.url through it and argv[1] does not, so an
+         * entry guard that compares the two without realpath never matches:
+         * the command loaded, did nothing and exited zero, on every platform
+         * except the one it was written on - npm writes a shim holding the real
+         * path on Windows.
+         */
+        const dir = await mkdtemp(join(tmpdir(), 'report-studio-bin-'));
+        const link = join(dir, 'report-studio');
+
+        try {
+            await symlink(CLI, link, 'file');
+        } catch (error) {
+            /** an unprivileged Windows box cannot make one; the unit test below still runs */
+            await rm(dir, { recursive: true, force: true });
+            return;
+        }
+
+        try {
+            const { stdout } = await run(process.execPath, [link, '--help']);
+            expect(stdout).toContain('report-studio');
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('knows it is the script whatever path was used to reach it', () => {
+        /** the same guard without a filesystem, so it is checked everywhere */
+        const url = pathToFileURL(CLI).href;
+
+        expect(runAsScript(CLI, url)).toBe(true);
+        expect(runAsScript(undefined, url)).toBe(false);
+        expect(runAsScript(resolve('src/cli/serve.js'), url)).toBe(false);
+
+        /** a path that is not there resolves to nothing, and is not this module */
+        expect(runAsScript(resolve('src/cli/nope.js'), url)).toBe(false);
     });
 
     it('accepts --no-open', async () => {
