@@ -1,0 +1,14 @@
+# Line endings are checked out LF on every platform, whatever core.autocrlf says.
+#
+# Two things break on a CRLF checkout of this repo:
+#
+#   - src/cli/index.js is a `bin` entry, so its shebang must end in a bare \n.
+#     A published `#!/usr/bin/env node\r` makes `npx report-studio` fail with
+#     `env: node\r: No such file or directory` on macOS and Linux. Vite's own
+#     hashbang strip is /^#!.*\n/, so under CRLF it leaves the `#!` in place and
+#     every spec that imports the CLI dies with a bare SyntaxError.
+#   - test/styles.test.js matches multi-line CSS selectors as literal text.
+#
+* text=auto eol=lf
+
+*.png binary

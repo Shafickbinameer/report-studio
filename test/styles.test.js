@@ -16,8 +16,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 
+/**
+ * Newlines are normalised because the selectors below are looked for as literal
+ * text, newline and all: a multi-line selector is never found in a CRLF
+ * checkout, and the miss reads as a deleted rule rather than as a git setting.
+ * .gitattributes pins the endings to LF; this keeps the check honest anyway.
+ */
 const read = (file) =>
-    readFileSync(resolvePath(process.cwd(), file), 'utf8');
+    readFileSync(resolvePath(process.cwd(), file), 'utf8').replace(/\r\n/g, '\n');
 
 const SHEETS = [
     'src/shared/theme.css',
