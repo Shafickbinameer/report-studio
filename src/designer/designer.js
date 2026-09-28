@@ -33,15 +33,67 @@ import {
 import { buildPages } from '../engine/index.js';
 import { drawProblems, sameIssues } from './toast.js';
 import { askColumns, askReport, askName, askData, askToken, askDiscard } from './dialog.js';
-import { sampleData } from './sample-data.js';
+import { sampleData, completeData } from './sample-data.js';
 import { drawPreview } from './preview.js';
 import { createHistory } from './history.js';
 import { createStore, StoreError, toId } from '../shared/store.js';
 import {
     addBand, removeBand, findBand, addItem, removeItem, duplicateItem, pasteItems,
-    moveItemToBand, createText, createTable, createLine, createBox, addColumn,
+    moveItemToBand, createText, createTable, createLine, createBox, createImage, addColumn,
     removeColumn, targetBand, canAddTable
 } from './structure.js';
+
+
+/** the raster formats the renderer will draw from a data: URI; see imageSrc */
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/**
+ * How large a picture may be before it is kept out of the layout, and before
+ * storing one earns a word. A data: URI is a third larger than the file, and
+ * the layout is fetched whole every time a report is shown.
+ */
+const IMAGE_MAX_BYTES = 1024 * 1024;
+const IMAGE_WARN_BYTES = 200 * 1024;
+
+const kb = (bytes) => `${Math.round(bytes / 1024)} KB`;
+
+
+/** what a store has to be able to do; the rest of its methods are optional */
+const STORE_METHODS = ['list', 'load', 'save'];
+
+
+/**
+ * Refuses a store that is not one, at mount rather than at the first click.
+ *
+ * A folder path is the natural thing to try - `store: './reports'` - and it
+ * used to get as far as the report picker, which called `store.list()` and
+ * failed with "l.list is not a function" from somewhere inside the bundle.
+ * Nothing in that says what a store is or how to get reports from a folder,
+ * so this does.
+ *
+ * @param {*} store the option as given; absent is fine and means the dev server
+ */
+function assertStore(store) {
+    if (store == null) return;
+
+    if (typeof store === 'string') {
+        throw new TypeError(
+            `createDesigner: store must be an object with list, load and save ` +
+            `functions, not a path ("${store}"). To keep reports in a folder, ` +
+            `leave store out and serve the folder: \`npx report-studio design ` +
+            `--dir ${store}\`, or reportStudio({ dir: '${store}' }) from ` +
+            `'report-studio/vite' in your vite.config.`);
+    }
+
+    const missing = STORE_METHODS.filter(name => typeof store?.[name] !== 'function');
+
+    if (missing.length > 0) {
+        throw new TypeError(
+            `createDesigner: store is missing ${missing.join(', ')} - it must be ` +
+            `an object with list, load and save functions (see the store contract), ` +
+            `or left out to use the dev server's routes.`);
+    }
+}
 
 
 /**
@@ -56,6 +108,10 @@ import {
  * @param {boolean} [options.guardUnload=true] ask the browser to confirm before
  *   the tab or window closes on unsaved changes. The browser words that prompt
  *   itself and will not take ours; pass false in a host that has its own.
+ * @param {(layout: object) => void} [options.onChange] called after every edit
+ *   that lands in the undo history, and after undo, redo or opening another
+ *   report - with the layout as it now stands. The designer's own object, not
+ *   a copy: clone it before keeping it anywhere that outlives the next edit.
  * @returns {object} a handle: the current layout, redraw, and destroy
  */
 /**
@@ -104,7 +160,7 @@ export function openDesignerWindow({
 
 
 export function createDesigner({
-    mount, layout, id = null, store, guardUnload = true
+    mount, layout, id = null, store, guardUnload = true, onChange = null
 } = {}) {
     const root = typeof mount === 'string'
         ? document.querySelector(mount)
@@ -123,6 +179,8 @@ export function createDesigner({
  * document, and a listener put on the opener's would never hear it.
  */
     const doc = root.ownerDocument;
+
+    assertStore(store);
 
     const files = store ?? createStore();
 
@@ -422,6 +480,25 @@ export function createDesigner({
         if (history.push(state.layout, key)) {
             state.dirty = true;
             refreshBar();
+            changed();
+        }
+    }
+
+
+    /**
+     * Tells the host the layout moved on.
+     *
+     * A host's callback that throws is the host's fault, but it must not leave
+     * the designer half-way through an edit - so it is caught and reported
+     * rather than let through the middle of a redraw.
+     */
+    function changed() {
+        if (typeof onChange !== 'function') return;
+
+        try {
+            onChange(state.layout);
+        } catch (error) {
+            console.error('createDesigner: onChange threw', error);
         }
     }
 
@@ -458,13 +535,10 @@ export function createDesigner({
         rulers.setAttribute('aria-pressed', String(state.rulers));
         rulers.classList.toggle('is-on', state.rulers);
 
-        /** greyed rather than absent: it says the tool exists and why it cannot be used */
+        /** greyed rather than absent, should canAddTable ever say no */
         const addTable = foot.querySelector('[data-role="add-table"]');
 
         addTable.disabled = !canAddTable(state.layout);
-        addTable.title = addTable.disabled
-            ? 'A report binds one table'
-            : 'Add a table';
         bar.dataset.dirty = String(state.dirty);
 
         const saved = bar.querySelector('[data-role="status"]');
@@ -493,6 +567,7 @@ export function createDesigner({
         if (dirty !== undefined) state.dirty = dirty;
 
         drawMode();
+        changed();
     }
 
 
@@ -670,8 +745,9 @@ export function createDesigner({
         main.insertAdjacentHTML('beforeend', drawMenu(menuActions({
             count: state.selection.length,
             canPaste: state.clipboard.length > 0,
-            /** a copy of a table would be the second one this report cannot hold */
-            canDuplicate: !selectedItems().some(item => item.type === 'table')
+            /** should canAddTable ever say no, a copy of a table is what it refuses */
+            canDuplicate: canAddTable(state.layout)
+                || !selectedItems().some(item => item.type === 'table')
         })));
 
         menu = main.querySelector('[data-role="menu"]');
@@ -770,6 +846,25 @@ export function createDesigner({
                 return;
             }
 
+            case 'add-image': {
+                const type = targetBand(state.layout, primary());
+                if (!type) return;
+
+                place(type, createImage(state.layout, findBand(state.layout, type)));
+                return;
+            }
+
+            case 'upload-image':
+                if (item?.type !== 'image') return;
+                chooseImage(item);
+                return;
+
+            case 'clear-image':
+                if (item?.type !== 'image' || !item.src) return;
+                item.src = null;
+                restructured(`image:${item.id}`);
+                return;
+
             case 'add-line': {
                 const type = targetBand(state.layout, primary());
                 if (!type) return;
@@ -807,19 +902,7 @@ export function createDesigner({
                 const type = targetBand(state.layout, primary());
                 if (!type) return;
 
-                /**
-                 * The engine binds the dataset to one table (validate.js says
-                 * so). Refused here as well as there, so the answer arrives
-                 * when the tool is pressed rather than as a problem in the
-                 * corner after the table has been drawn.
-                 */
-                if (!canAddTable(state.layout)) {
-                    flashStatus(
-                        'This report already has a table - a report binds one',
-                        { ms: 3000 }
-                    );
-                    return;
-                }
+                if (!canAddTable(state.layout)) return;
 
                 /**
                  * A table is asked about first: how many columns it starts with
@@ -851,15 +934,7 @@ export function createDesigner({
                     if (made) copies.push({ band: one.band, id: made.id });
                 }
 
-                if (!copies.length) {
-                    if (sources.some(one => itemAt(one)?.type === 'table')) {
-                        flashStatus(
-                            'A report binds one table, so it cannot be copied',
-                            { ms: 3000 }
-                        );
-                    }
-                    return;
-                }
+                if (!copies.length) return;
 
                 /**
                  * The copies are what is selected afterwards, not the originals:
@@ -1083,21 +1158,25 @@ export function createDesigner({
 
 
     /**
-     * Writes a sample data file for a report that has none.
+     * Writes a sample data file for a report that has none, and brings one that
+     * exists up to date with the layout.
      *
-     * Only when there is none. Once someone has put real figures in that file,
-     * every later save must leave it exactly alone - a designer that quietly
-     * replaced the host application's data with "Customer 1" would be worse
-     * than one that never offered to help.
+     * Up to date means *added to*, never changed. Once someone has put real
+     * figures in that file, a later save must not touch them - a designer that
+     * quietly replaced the host application's data with "Customer 1" would be
+     * worse than one that never offered to help. But a table added since the
+     * file was written needs rows, or the preview has nothing to bind it to, so
+     * what the layout asks for and the file lacks is filled in from the sample.
+     * A file with nothing missing is not written at all.
      */
     async function seedData(saveId) {
         if (!files.loadData || !files.saveData) return;
 
         try {
             const existing = await files.loadData(saveId);
-            if (existing) return;
+            const { data, added } = completeData(existing, state.layout);
 
-            await files.saveData(saveId, sampleData(state.layout));
+            if (added) await files.saveData(saveId, data);
         } catch {
             /**
              * A report that saved but whose sample data did not is a working
@@ -1127,7 +1206,9 @@ export function createDesigner({
         }
 
         const generated = current == null;
-        const edited = await askData(root, current ?? sampleData(state.layout), {
+
+        /** a table added since the file was written shows up with its rows */
+        const edited = await askData(root, completeData(current, state.layout).data, {
             id: state.id, generated
         });
 
@@ -1217,7 +1298,12 @@ export function createDesigner({
             }
         }
 
-        state.data = data ?? sampleData(state.layout);
+        /**
+         * Completed rather than taken as it is: a data file written before the
+         * newest table or placeholder existed would otherwise fail the preview
+         * on a dataset "which is not present in the data".
+         */
+        state.data = completeData(data, state.layout).data;
         state.mode = 'preview';
 
         /** an outline over a paginated page points at nothing */
@@ -1269,6 +1355,71 @@ export function createDesigner({
             delete note.dataset.problem;
             refreshBar();
         }, ms);
+    }
+
+
+    /**
+     * Asks for a picture and stores it on the item as a data: URI.
+     *
+     * Into the layout rather than beside it: a layout is one JSON file that the
+     * host fetches and hands to buildPages, and a picture stored anywhere else
+     * is a second thing to deploy and a broken image when somebody forgets to.
+     * The cost is size, so a large file is refused outright and a middling one
+     * stored with a word about it - a picture that big wants to be a URL in
+     * the data instead.
+     *
+     * @param {object} item the image item; still checked when the file arrives,
+     *   because the selection may have moved on while the dialog was open
+     */
+    function chooseImage(item) {
+        const input = doc.createElement('input');
+
+        input.type = 'file';
+        input.accept = IMAGE_TYPES.join(',');
+
+        input.addEventListener('change', () => {
+            const file = input.files?.[0];
+            if (!file) return;
+
+            if (!IMAGE_TYPES.includes(file.type)) {
+                flashStatus(`${file.name} is not a PNG, JPEG, GIF or WebP image`,
+                    { problem: true });
+                return;
+            }
+
+            if (file.size > IMAGE_MAX_BYTES) {
+                flashStatus(
+                    `${file.name} is ${kb(file.size)} - too large to store in a layout. ` +
+                    `Bind the image to a data field and supply its URL instead`,
+                    { problem: true });
+                return;
+            }
+
+            const reader = new (doc.defaultView ?? globalThis).FileReader();
+
+            reader.addEventListener('load', () => {
+                if (!itemStillThere(item)) return;
+
+                item.src = String(reader.result);
+                restructured(`image:${item.id}`);
+
+                if (file.size > IMAGE_WARN_BYTES) {
+                    flashStatus(`Stored ${file.name} (${kb(file.size)}) in the layout - ` +
+                        `every copy of the report carries it`);
+                }
+            });
+
+            reader.addEventListener('error', () => complain(reader.error));
+            reader.readAsDataURL(file);
+        });
+
+        input.click();
+    }
+
+
+    /** whether an item is still in the layout - undo can take it while a dialog is open */
+    function itemStillThere(item) {
+        return (state.layout.bands ?? []).some(band => (band.items ?? []).includes(item));
     }
 
 
@@ -1857,6 +2008,9 @@ function chrome(layout) {
                 <button type="button" class="dz-tool" data-action="add-box"
                         title="Add a box" aria-label="Add a box"
                     >${icon('box')}</button>
+                <button type="button" class="dz-tool" data-action="add-image"
+                        title="Add an image" aria-label="Add an image"
+                    >${icon('image')}</button>
                 <button type="button" class="dz-tool" data-action="add-field"
                         title="Insert a page number, date or total"
                         aria-label="Insert a field"

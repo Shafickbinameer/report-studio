@@ -1,5 +1,6 @@
 /**
- * group.js partitions the dataset and resolves aggregate placeholders.
+ * group.js binds every table to its rows, partitions the grouped one, and
+ * resolves aggregate placeholders.
  *
  * An aggregate has to be worked out over some set of rows, and there are only
  * two sets a band can mean:
@@ -9,89 +10,112 @@
  *     each copy has a different answer. Filled in per fragment by paginate.js,
  *     where which group is being drawn is known.
  *
- *   every other band - the whole dataset. Filled in here, once.
+ *   every other band - a whole dataset. Filled in here, once.
  *
- * It used to be reportFooter and nothing else, which made a total under the
- * rows - the place a total is most often wanted, and the one a designer reaches
- * for first - print the raw `{sum(amount)}` back at you. There is no scope a
- * detail or a page footer could mean *other* than the whole report, so there
- * was never a reason to refuse them one.
+ * Which dataset, now that a report can hold more than one table: the one the
+ * expression names, as `{sum(sales.amount)}` or `{count(sales)}`, and the
+ * first table's when it names none - which is what every expression written
+ * before there could be a second table meant.
  */
 
 import { ReportError } from './validate.js';
+import { tablesOf, datasetOf, groupingOf } from './tables.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
 
 
 export function group(resolvedJson, data) {
-    let json = structuredClone(resolvedJson);
-    const hasGroup = json.groupBy != null;
-    if (hasGroup) {
-        return withGroup(json, data);
-    } else {
-        return withoutGroup(json, data);
-    }
-}
-
-
-function withGroup(json, data) {
+    const json = structuredClone(resolvedJson);
     const bands = json.bands;
-    const tableBand = findTableBand(bands);
+    const tables = tablesOf(json);
 
-    if (!tableBand) {
+    if (json.groupBy != null && tables.length === 0) {
         throw new ReportError(
             `group: layout.groupBy is "${json.groupBy}" but no band contains a table to group`
         );
     }
 
-    const dataset = datasetFor(tableBand, json, data);
-    const groupedData = groupedRows(dataset, json.groupBy);
-    const groupedAggregates = groupedAggregate(bands, groupedData);
+    const grouping = groupingOf(json);
+    const named = namedDatasets(data);
 
-    tableBand.groups =
-        Object.entries(groupedData).map(
-            ([key, rows]) => ({
-                key,
-                rows,
-                aggregates: groupedAggregates[key]
-            })
-        );
+    /** the rows each table reads, bound as they are found */
+    const bound = tables.map(table => {
+        const rows = datasetFor(table, json, data);
+        named.set(datasetOf(table, json), rows);
+        return { table, rows };
+    });
 
-    aggregate(bands, dataset);
+    for (const { table, rows } of bound) {
+        if (table === grouping?.table) {
+            bindGroups(table, rows, grouping.by, bands, datasetOf(table, json));
+        } else {
+            table.row = rows;
+        }
+    }
+
+    /** a report of nothing but text bands is legal - there is simply nothing to bind */
+    const scope = { rows: bound[0]?.rows ?? [], named };
+
+    aggregate(bands, scope);
     return json;
 }
 
 
-function withoutGroup(json, data) {
-    const bands = json.bands;
-    const tableBand = findTableBand(bands);
+/**
+ * Splits the grouped table's rows into groups, each carrying its own totals.
+ * @param {object} table
+ * @param {object[]} rows
+ * @param {string} by the field that decides which group a row is in
+ * @param {object[]} bands
+ * @param {string|null} dataset the table's dataset name, which a group band's
+ *   aggregate may carry as a prefix
+ */
+function bindGroups(table, rows, by, bands, dataset) {
+    const groupedData = groupedRows(rows, by);
+    const groupedAggregates = groupedAggregate(bands, groupedData, dataset);
 
-    /** a report of nothing but text bands is legal - there is simply nothing to bind */
-    const dataset = tableBand ? datasetFor(tableBand, json, data) : [];
+    table.groups = Object.entries(groupedData).map(([key, groupRows]) => ({
+        key,
+        rows: groupRows,
+        aggregates: groupedAggregates[key]
+    }));
+}
 
-    if (tableBand) tableBand.row = dataset;
 
-    aggregate(bands, dataset);
-    return json;
+/**
+ * Every top-level array in the payload, by name - the datasets an aggregate
+ * can name. Not only the ones a table is bound to: a total of payments is a
+ * reasonable thing to print under an invoice that draws no table of them.
+ * @param {object} data
+ * @returns {Map<string, object[]>}
+ */
+function namedDatasets(data) {
+    const found = new Map();
+
+    for (const [name, value] of Object.entries(data ?? {})) {
+        if (Array.isArray(value)) found.set(name, value);
+    }
+
+    return found;
 }
 
 
 /**
  * The rows a table is bound to. A missing dataset is a layout/data mismatch
  * worth naming rather than a silent empty table.
- * @param {object} tableBand the table item
+ * @param {object} table the table item
  * @param {object} json
  * @param {object} data
  * @returns {object[]}
  */
-function datasetFor(tableBand, json, data) {
-    const key = tableBand.dataset ?? json.dataset;
-    const dataset = data[key];
+function datasetFor(table, json, data) {
+    const key = datasetOf(table, json);
+    const dataset = key == null ? undefined : data[key];
 
     if (dataset === undefined) {
         throw new ReportError(
-            `group: table "${tableBand.id}" is bound to dataset "${key}", which is not present in the data`
+            `group: table "${table.id}" is bound to dataset "${key}", which is not present in the data`
         );
     }
 
@@ -102,17 +126,6 @@ function datasetFor(tableBand, json, data) {
     }
 
     return dataset;
-}
-
-
-function findTableBand(bands) {
-    for (const band of bands) {
-        for (const item of band.items) {
-            if (item.type == "table") {
-                return item;
-            }
-        }
-    }
 }
 
 
@@ -129,9 +142,9 @@ const GROUP_SCOPED = ['groupHeader', 'groupFooter'];
 /**
  * Report-wide aggregates: every band except the two that mean a group.
  * @param {object[]} bands
- * @param {object[]} dataset
+ * @param {{rows: object[], named: Map<string, object[]>}} scope
  */
-function aggregate(bands, dataset) {
+function aggregate(bands, scope) {
     for (const band of bands) {
         if (GROUP_SCOPED.includes(band.type)) continue;
 
@@ -144,7 +157,7 @@ function aggregate(bands, dataset) {
              * standing; re-resolving from `value` here would discard its work
              * and leave "{authorizer}" printed literally on the report.
              */
-            item.text = fillAggregates(item.text ?? item.value, dataset);
+            item.text = fillAggregates(item.text ?? item.value, scope);
         }
     }
 }
@@ -156,17 +169,49 @@ function aggregate(bands, dataset) {
  * Non-aggregate placeholders were already handled by resolve.js and are left
  * as they are.
  * @param {string} value
- * @param {object[]} dataset
+ * @param {{rows: object[], named: Map<string, object[]>}} scope
  * @returns {string}
  */
-function fillAggregates(value, dataset) {
+function fillAggregates(value, scope) {
     return value.replace(REGEX, (match, key) => {
         const expr = parseAggregate(key.trim());
         if (!expr) return match;
 
-        const result = compute(expr, dataset);
+        const { rows, field } = scoped(expr.field, scope);
+        const result = compute({ key: expr.key, field }, rows);
         return result == null ? '' : String(result);
     });
+}
+
+
+/**
+ * Which rows an aggregate's argument means, and which field of them.
+ *
+ *   count(sales)        every row of `sales`
+ *   sum(sales.amount)   `amount` over the rows of `sales`
+ *   sum(amount)         `amount` over the first table's rows, as ever
+ *
+ * A prefix is only a dataset if the payload has an array of that name. Rows are
+ * flat, so a dot has never meant anything inside a row field and nothing that
+ * worked before is read differently now.
+ *
+ * @param {string} field the expression's argument
+ * @param {{rows: object[], named: Map<string, object[]>}} scope
+ * @returns {{rows: object[], field: string}}
+ */
+function scoped(field, scope) {
+    if (scope.named.has(field)) return { rows: scope.named.get(field), field: '' };
+
+    const dot = field.indexOf('.');
+
+    if (dot > 0) {
+        const name = field.slice(0, dot);
+        if (scope.named.has(name)) {
+            return { rows: scope.named.get(name), field: field.slice(dot + 1) };
+        }
+    }
+
+    return { rows: scope.rows, field };
 }
 
 
@@ -189,12 +234,19 @@ function parseAggregate(expr) {
  * heading, and a count that worked in the footer and printed blank in the
  * header is the same fault this file exists to have stopped having.
  *
+ * Keyed on the expression's argument as written, because that is what
+ * paginate.js looks it up by - so `{sum(sales.amount)}` in a group footer is
+ * stored under "sales.amount" and computed over the group's `amount`. A group
+ * band only ever means its group's rows; naming the grouped dataset is allowed
+ * because it is the same thing said in full.
+ *
  * Shape: aggregates[groupKey][field] = { count, sum, avg, min, max }
  * @param {object[]} bands
  * @param {object} dataset grouped rows, keyed by group key
+ * @param {string|null} name the grouped table's dataset
  * @returns {object}
  */
-function groupedAggregate(bands, dataset) {
+function groupedAggregate(bands, dataset, name) {
     const aggregates = {};
 
     /** every group gets a slot, even one no groupFooter expression touches */
@@ -209,6 +261,8 @@ function groupedAggregate(bands, dataset) {
             if (item.type != "text") continue;
 
             for (const expr of parseAll(item.value)) {
+                const field = withoutScope(expr.field, name);
+
                 for (const [key, rows] of Object.entries(dataset)) {
                     if (!aggregates[key][expr.field]) {
                         aggregates[key][expr.field] = {
@@ -220,13 +274,22 @@ function groupedAggregate(bands, dataset) {
                         };
                     }
 
-                    aggregates[key][expr.field][expr.key] = compute(expr, rows);
+                    aggregates[key][expr.field][expr.key] =
+                        compute({ key: expr.key, field }, rows);
                 }
             }
         }
     }
 
     return aggregates;
+}
+
+
+/** `sales.amount` to `amount`, and `sales` to nothing, when sales is the dataset */
+function withoutScope(field, name) {
+    if (name == null) return field;
+    if (field === name) return '';
+    return field.startsWith(`${name}.`) ? field.slice(name.length + 1) : field;
 }
 
 

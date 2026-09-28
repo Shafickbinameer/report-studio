@@ -22,7 +22,7 @@ import {
     COLUMN_FIELDS, readField, writeField
 } from './fields.js';
 import { BAND_TYPES, BAND_NOTES, hasBand, findBand } from './structure.js';
-import { esc } from '../render/items.js';
+import { esc, imageSrc } from '../render/items.js';
 
 
 /**
@@ -174,6 +174,26 @@ function input(id, bind, field, value) {
         case 'toggle':
             return `<input type="checkbox" id="${id}" ${bind}
                 ${value ? 'checked' : ''}>`;
+
+        case 'image':
+            /**
+             * Buttons rather than a bound input: a picture arrives through a
+             * file dialog, which the designer opens, and the rail is rebuilt
+             * once it lands. No data-field, so syncPanel has nothing here to
+             * write a data: URI into.
+             */
+            return `
+            <div class="dz-image" id="${id}">
+                ${value
+                    ? `<img class="dz-image-thumb" src="${esc(imageSrc(value))}" alt="">`
+                    : '<span class="dz-image-none">No image stored</span>'}
+                <div class="dz-image-actions">
+                    <button type="button" class="dz-add-row"
+                            data-action="upload-image">${value ? 'Replace' : 'Upload'}</button>
+                    ${value ? `<button type="button" class="dz-add-row"
+                            data-action="clear-image">Remove</button>` : ''}
+                </div>
+            </div>`;
 
         case 'text':
             return `<input type="text" id="${id}" ${bind}

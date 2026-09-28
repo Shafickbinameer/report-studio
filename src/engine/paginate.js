@@ -17,7 +17,6 @@ export function paginate(json) {
     let context = {
         page: paginateJSON.page,
         bands: paginateJSON.bands,
-        group: paginateJSON.groupBy,
         assignedBands: {
             reportHeader: paginateJSON.bands.find(b => b.type === "reportHeader"),
             reportFooter: paginateJSON.bands.find(b => b.type === "reportFooter"),
@@ -124,7 +123,7 @@ function calPages(bands, context) {
     pages.push(currentPage);
 
     // spreading the report header and footer from the context.assignedBands
-    const { assignedBands, availableHeight, group } = context;
+    const { assignedBands, availableHeight } = context;
     const { reportFooter, reportHeader, groupHeader, groupFooter, pageHeader, pageFooter } = assignedBands;
 
     /**
@@ -319,11 +318,16 @@ function calPages(bands, context) {
                  * sits above it is on this page too. A continuation slice has
                  * nothing above it, so it starts at the top of the zone rather
                  * than leaving that gap blank on every page.
+                 *
+                 * pageY, not the designed y less the carry: a table under
+                 * another table starts under however far the first one really
+                 * reached, the same as a fixed item does. Placed at its designed
+                 * y it drew straight over the rows above it.
                  */
-                let tableY = itemY - carry;
+                let tableY = pageY(itemY);
 
                 // when the table has group
-                if (group !== null) {
+                if (item.groups) {
                     /**  reserved hgt for group table at least i a page we should fit this
                     * table header, group header, min of one row and the group footer
                     * also provide the table header hgt , group header and footer hgt

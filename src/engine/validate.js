@@ -7,6 +7,10 @@
  */
 
 
+import { tablesOf, hasOwnGrouping } from './tables.js';
+import { designHeight } from './measure.js';
+
+
 const BAND_TYPES = [
     'reportHeader',
     'pageHeader',
@@ -17,7 +21,7 @@ const BAND_TYPES = [
     'pageFooter'
 ];
 
-const ITEM_TYPES = ['text', 'table', 'line', 'box'];
+const ITEM_TYPES = ['text', 'table', 'line', 'box', 'image'];
 
 /** spec 3.3: a line runs along one axis; which one is the item's to say */
 const LINE_ORIENTATIONS = ['horizontal', 'vertical'];
@@ -27,6 +31,9 @@ const LINE_STYLES = ['solid', 'dashed', 'dotted', 'double'];
 
 /** a table's grid may also be turned off, which a line cannot be */
 const RULE_STYLES = [...LINE_STYLES, 'none'];
+
+/** how a picture is fitted to its box: the three object-fit values that mean something here */
+export const IMAGE_FITS = ['contain', 'cover', 'fill'];
 
 
 /** Thrown for a layout the engine cannot work with. */
@@ -98,45 +105,79 @@ export function validateLayout(json) {
         issues.push('layout.groupBy is set but there is no groupHeader or groupFooter band to show it');
     }
 
-    validateOneTable(json.bands, issues);
+    validateTables(json, json.bands, issues);
 
     return issues;
 }
 
 
 /**
- * One table per report, for now.
+ * What the tables of a report may be, together.
  *
- * group.js binds the dataset to the first table it finds and stops, so a second
- * one renders its header and no rows - and nothing anywhere said so. The
- * designer drew sample rows in both, the validator passed it, and the fault
- * only showed up in the printed report.
+ * Any number of them, each bound to its own dataset - but two things they may
+ * not do, because the engine has no honest way to print them:
  *
- * Refused rather than warned about, because the alternative is a report that
- * quietly leaves data out. Binding a table each is a real feature and a bigger
- * change than a guard: it needs a dataset per table through group.js, more than
- * one splittable item per band in paginate.js, and an answer for what a CSV
- * export of two tables means. Until then this is the honest boundary, and it is
- * one function to delete when that lands.
+ *   Two grouped tables. groupHeader and groupFooter are the report's bands, so
+ *   both tables would draw their groups with the same heading - and a subtotal
+ *   in it would be summed over whichever table happened to be drawn.
  *
+ *   Two tables side by side. Each table splits across pages on its own, so the
+ *   one on the left would run to page three before the one on the right began,
+ *   and began on page three. Tables in one band are stacked: each starts below
+ *   where the one above it was designed to end, and the engine moves it down
+ *   by however far the rows above really ran.
+ *
+ * @param {object} json the layout
  * @param {object[]} bands
  * @param {string[]} issues
  */
-function validateOneTable(bands, issues) {
-    const tables = [];
+function validateTables(json, bands, issues) {
+    const tables = tablesOf(json);
+
+    for (const table of tables) {
+        if (table.groupBy != null && typeof table.groupBy !== 'string') {
+            issues.push(`table "${table.id}".groupBy must be a field name or null`);
+        }
+
+        if (table.dataset != null && typeof table.dataset !== 'string') {
+            issues.push(`table "${table.id}".dataset must be a dataset name or null`);
+        }
+    }
+
+    const grouped = tables.filter(hasOwnGrouping);
+
+    if (grouped.length > 1) {
+        issues.push(
+            `${grouped.length} tables are grouped (${grouped.map(t => `"${t.id}"`).join(', ')}); ` +
+            `a report groups one, because groupHeader and groupFooter are shared`);
+    }
+
+    if (grouped.length > 0 && json.groupBy == null
+        && !bands.some(b => b?.type === 'groupHeader' || b?.type === 'groupFooter')) {
+        issues.push(
+            `table "${grouped[0].id}" is grouped by "${grouped[0].groupBy}" but there is ` +
+            `no groupHeader or groupFooter band to show it`);
+    }
 
     for (const band of bands) {
         if (!Array.isArray(band?.items)) continue;
 
-        for (const item of band.items) {
-            if (item?.type === 'table') tables.push(item.id ?? '(unnamed)');
-        }
-    }
+        const stack = band.items
+            .filter(item => item?.type === 'table')
+            .map(item => ({ item, top: Number(item.y) || 0, bottom: (Number(item.y) || 0) + designHeight(item) }))
+            .sort((a, b) => a.top - b.top);
 
-    if (tables.length > 1) {
-        issues.push(
-            `layout has ${tables.length} tables (${tables.map(id => `"${id}"`).join(', ')}); ` +
-            `a report binds one - the rest would print their header and no rows`);
+        for (let i = 1; i < stack.length; i++) {
+            const above = stack[i - 1];
+            const below = stack[i];
+
+            if (below.top < above.bottom) {
+                issues.push(
+                    `tables "${above.item.id}" and "${below.item.id}" overlap in the ${band.type} band; ` +
+                    `move "${below.item.id}" to y ${Math.ceil(above.bottom)} or lower - tables are ` +
+                    `stacked, one under another, not placed side by side`);
+            }
+        }
     }
 }
 
@@ -203,6 +244,11 @@ function validateItem(item, where, issues) {
         return;
     }
 
+    if (item.type === 'image') {
+        validateImage(item, where, issues);
+        return;
+    }
+
     /** table */
     if (!(typeof item.rowHeight === 'number' && item.rowHeight > 0)) {
         issues.push(`${where}.rowHeight must be a positive number`);
@@ -264,6 +310,35 @@ function validateBox(item, where, issues) {
                 `${where}.style.${key} must be a number of pixels` +
                 (floor ? ' greater than zero' : ' of zero or more'));
         }
+    }
+}
+
+
+/**
+ * An image is a fixed box with a picture in it: `src` is one stored in the
+ * layout, `field` is a path into the data whose value is the picture's URL.
+ *
+ * Neither is required. A freshly drawn image has no picture yet, and an empty
+ * frame is a layout the designer has to be able to save - it prints nothing,
+ * the way a text box with an empty value does. Whether a URL is one the page
+ * will actually load is the renderer's question, not this one: a layout can be
+ * valid and its data still point somewhere a report should not go.
+ */
+function validateImage(item, where, issues) {
+    if (item.src != null && typeof item.src !== 'string') {
+        issues.push(`${where}.src must be a string - a URL or a data: URI`);
+    }
+
+    if (item.field != null && typeof item.field !== 'string') {
+        issues.push(`${where}.field must be a data path such as "company.logo"`);
+    }
+
+    if (item.fit != null && !IMAGE_FITS.includes(item.fit)) {
+        issues.push(`${where}.fit "${item.fit}" is not one of: ${IMAGE_FITS.join(', ')}`);
+    }
+
+    if (item.alt != null && typeof item.alt !== 'string') {
+        issues.push(`${where}.alt must be a string`);
     }
 }
 

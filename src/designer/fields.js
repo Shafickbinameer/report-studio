@@ -46,6 +46,12 @@ const ALIGNMENTS = [
     { label: 'Right', value: 'right' }
 ];
 
+const IMAGE_FITS = [
+    { label: 'Fit inside', value: 'contain' },
+    { label: 'Fill and crop', value: 'cover' },
+    { label: 'Stretch', value: 'fill' }
+];
+
 const ORIENTATIONS = [
     { label: 'Horizontal', value: 'horizontal' },
     { label: 'Vertical', value: 'vertical' }
@@ -155,6 +161,32 @@ export function fieldsFor(item) {
         ];
     }
 
+    if (item.type === 'image') {
+        return [
+            {
+                title: 'Picture',
+                fields: [
+                    {
+                        key: 'src', label: 'Image', type: 'image',
+                        hint: 'Stored in the layout file. Keep it small - a logo, ' +
+                            'not a photograph'
+                    },
+                    {
+                        key: 'field', label: 'From data', type: 'text', nullable: true,
+                        hint: 'A data path such as company.logo, whose value is the ' +
+                            "picture's URL. It replaces the stored image when present"
+                    },
+                    { key: 'fit', label: 'Fit', type: 'choice', options: IMAGE_FITS },
+                    {
+                        key: 'alt', label: 'Description', type: 'text',
+                        hint: 'Read out by a screen reader in place of the picture'
+                    }
+                ]
+            },
+            box
+        ];
+    }
+
     if (item.type === 'line') {
         return [
             box,
@@ -179,6 +211,21 @@ export function fieldsFor(item) {
     if (item.type === 'table') {
         return [
             box,
+            {
+                title: 'Data',
+                fields: [
+                    {
+                        key: 'dataset', label: 'Dataset', type: 'text', nullable: true,
+                        hint: "The key in the data object whose rows this table " +
+                            "draws. Blank reads the report's dataset"
+                    },
+                    {
+                        key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
+                        hint: 'A field to group these rows by, or blank. One table ' +
+                            'in a report can be grouped'
+                    }
+                ]
+            },
             {
                 title: 'Rows',
                 fields: [num('rowHeight', 'Row height', { min: 1 })]
@@ -452,11 +499,13 @@ export function reportFields(layout) {
                 { key: 'name', label: 'Name', type: 'text' },
                 {
                     key: 'dataset', label: 'Dataset', type: 'text', nullable: true,
-                    hint: 'The key in the data object that drives the rows'
+                    hint: 'The key in the data object that drives the rows, ' +
+                        'for every table that does not name its own'
                 },
                 {
                     key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
-                    hint: 'A field name, or blank for no grouping'
+                    hint: 'A field name, or blank for no grouping. Groups the ' +
+                        'first table, unless a table sets its own'
                 }
             ]
         },

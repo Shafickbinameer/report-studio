@@ -25,6 +25,7 @@ export {
     toCSV,
     toReportCSV,
     reportFilename,
+    reportTables,
     measureText,
     wrapLines,
     textHeight,

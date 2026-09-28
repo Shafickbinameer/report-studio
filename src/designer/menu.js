@@ -31,7 +31,7 @@ export const MENU_EDGE_GAP = 8;
  * @param {number} [options.count] how many items are selected
  * @param {boolean} [options.canPaste] whether the clipboard holds anything
  * @param {boolean} [options.canDuplicate] false when a copy of the selection
- *   would be one the report cannot hold - a second table, today
+ *   would be one the report cannot hold
  * @returns {object[]} entries, in the order they are drawn
  */
 export function menuActions({
@@ -55,7 +55,7 @@ export function menuActions({
             glyph: 'duplicate',
             label: canDuplicate
                 ? `Duplicate${many}`
-                : 'A report holds one table',
+                : 'This cannot be duplicated',
             hint: 'ctrl+D, or alt-drag',
             disabled: !canDuplicate
         },

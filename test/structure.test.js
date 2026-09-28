@@ -407,15 +407,23 @@ describe('duplicateItem', () => {
         expect(detailOf(l).items[0].style.fontSize).not.toBe(40);
     });
 
-    /**
-     * A report binds one table (validateOneTable in validate.js), so a copy of
-     * one would print its header and no rows. Refused rather than made.
-     */
-    it('will not copy a table, since a report binds one', () => {
+    /** tables are stacked, never overlapped, so a copy goes below the band's contents */
+    it('copies a table below everything on the band', () => {
         const l = layout({ bands: [band('detail', [table({ id: 'tbl' })])] });
+        const copy = duplicateItem(l, 'detail', 'tbl');
 
-        expect(duplicateItem(l, 'detail', 'tbl')).toBeNull();
-        expect(detailOf(l).items).toHaveLength(1);
+        expect(copy.type).toBe('table');
+        expect(copy.y).toBeGreaterThanOrEqual(116);
+        expect(validateLayout(l)).toEqual([]);
+    });
+
+    /** a report groups one table, and the original is already that one */
+    it('does not copy the grouping of a grouped table', () => {
+        const l = layout({
+            bands: [band('detail', [{ ...table({ id: 'tbl' }), groupBy: 'name' }])]
+        });
+
+        expect(duplicateItem(l, 'detail', 'tbl')).not.toHaveProperty('groupBy');
     });
 
     it('returns null for an item that is not on that band', () => {
@@ -511,12 +519,14 @@ describe('pasteItems', () => {
         expect(source.style.fontSize).not.toBe(40);
     });
 
-    it('skips a table when the report already has one', () => {
+    it('pastes a table under the one already there', () => {
         const source = table({ id: 'tbl' });
         const l = layout({ bands: [band('detail', [source])] });
+        const [copy] = pasteItems(l, 'detail', [{ band: 'detail', item: source }]);
 
-        expect(pasteItems(l, 'detail', [{ band: 'detail', item: source }])).toEqual([]);
-        expect(findBand(l, 'detail').items).toHaveLength(1);
+        expect(copy.y).toBeGreaterThanOrEqual(116);
+        expect(findBand(l, 'detail').items).toHaveLength(2);
+        expect(validateLayout(l)).toEqual([]);
     });
 
     it('pastes a table into a report that has none, columns and all', () => {
@@ -532,8 +542,7 @@ describe('pasteItems', () => {
         expect(validateLayout(l)).toEqual([]);
     });
 
-    /** one item of a clipboard being unplaceable does not refuse the rest */
-    it('places what it can when one of several cannot be pasted', () => {
+    it('pastes a table alongside the other items of a clipboard', () => {
         const l = layout({ bands: [band('detail', [table({ id: 'tbl' })])] });
 
         const made = pasteItems(l, 'detail', [
@@ -541,8 +550,7 @@ describe('pasteItems', () => {
             { band: 'detail', item: text('t1', { w: 100 }) }
         ]);
 
-        expect(made).toHaveLength(1);
-        expect(made[0].type).toBe('text');
+        expect(made.map(i => i.type)).toEqual(['table', 'text']);
     });
 
     it('does nothing for a band that is not switched on', () => {

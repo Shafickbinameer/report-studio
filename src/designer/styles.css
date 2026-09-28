@@ -849,6 +849,44 @@
   color: var(--accent-ink);
 }
 
+/* the stored picture, small, with what can be done to it underneath */
+.dz-image {
+  display: grid;
+  gap: 6px;
+}
+
+.dz-image-thumb,
+.dz-image-none {
+  box-sizing: border-box;
+  width: 100%;
+  height: 72px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--backdrop);
+}
+
+.dz-image-thumb {
+  object-fit: contain;
+}
+
+.dz-image-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--ink-soft);
+}
+
+.dz-image-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* nothing is being added by these two, so the plus goes */
+.dz-image-actions .dz-add-row::before {
+  content: none;
+}
+
 /* a column is a card, because four controls will not sit on one rail-wide row */
 .dz-column {
   margin-bottom: 10px;

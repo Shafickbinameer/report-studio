@@ -19,6 +19,7 @@
  */
 
 import { PLACEHOLDER, isEngineKey, isRowScoped } from '../engine/resolve.js';
+import { groupingOf, datasetOf } from '../engine/tables.js';
 
 
 /** enough rows to show a group break, few enough to read at a glance */
@@ -33,6 +34,16 @@ const AGGREGATE = /\{\s*(\w+)\(([^)]*)\)\s*\}/g;
 
 /** and ones that want a date */
 const DATEISH = /(date|day|when)$/i;
+
+/**
+ * What a bound image previews with: a small grey PNG, stored inline.
+ *
+ * Inline rather than a placeholder service's URL, so a designer opened on a
+ * machine with no network still previews - and so opening one does not tell a
+ * third party that it has been.
+ */
+export const SAMPLE_IMAGE = 'data:image/png;base64,' +
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAAAAADRSSBWAAAAC0lEQVR4nGO4eRcAApIBt+wBgUAAAAAASUVORK5CYII=';
 
 
 /**
@@ -73,6 +84,32 @@ export function requiredKeys(layout) {
 
 
 /**
+ * The data paths the layout's images are bound to.
+ *
+ * Kept apart from requiredKeys because the answer is a different kind of
+ * value: a picture's URL, not a word or a figure. Always read from the root -
+ * resolve.js looks an image's field up in the payload whatever band it is in.
+ *
+ * @param {object} layout
+ * @returns {string[]} paths, de-duplicated
+ */
+export function imageKeys(layout) {
+    const found = new Set();
+
+    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+        for (const item of (band.items || [])) {
+            if (item.type !== 'image' || typeof item.field !== 'string') continue;
+
+            const key = item.field.trim();
+            if (key) found.add(key);
+        }
+    }
+
+    return [...found];
+}
+
+
+/**
  * The dataset key rows are read from, and the fields each row needs.
  *
  * A table names its own dataset and falls back to the report's (spec 3.3), so a
@@ -103,15 +140,28 @@ export function datasets(layout) {
 
     /**
      * A report can group and place row placeholders without ever drawing a
-     * table, so the fallback dataset is created if anything needs rows at all.
+     * table, so the rows they read are created if anything needs them at all.
+     * They are the grouped table's: a group band's `{region}` is read off the
+     * rows of the table being grouped, whichever table that is.
      */
     const { row } = requiredKeys(layout);
+    const grouping = groupingOf(layout);
+    const by = grouping?.by ?? layout?.groupBy ?? null;
 
-    if (row.length || layout?.groupBy) {
-        const fields = fieldsOf(fallback);
+    if (row.length || by) {
+        const fields = fieldsOf(
+            (grouping && datasetOf(grouping.table, layout)) || fallback);
 
         for (const key of row) fields.add(key);
-        if (layout?.groupBy) fields.add(layout.groupBy);
+        if (by) fields.add(by);
+    }
+
+    /**
+     * `{sum(payments.amount)}` names a dataset of its own, which the report
+     * may total without drawing a table of it - so it needs rows as well.
+     */
+    for (const scoped of scopedAggregates(layout)) {
+        fieldsOf(scoped.dataset).add(scoped.field);
     }
 
     return found;
@@ -134,13 +184,79 @@ export function sampleData(layout) {
     const { root } = requiredKeys(layout);
     const summed = summedFields(layout);
 
+    /** first, so a text placeholder on the same path does not take it as a word */
+    for (const path of imageKeys(layout)) place(data, path, SAMPLE_IMAGE);
+
     for (const path of root) place(data, path);
 
+    const groupedBy = groupedFieldsByDataset(layout);
+
     for (const [name, fields] of datasets(layout)) {
-        data[name] = rowsFor([...fields], layout?.groupBy, summed);
+        data[name] = rowsFor([...fields], groupedBy.get(name) ?? null, summed);
     }
 
     return data;
+}
+
+
+/**
+ * A data payload with whatever the layout now asks for and it lacks filled in -
+ * and nothing it already has touched.
+ *
+ * The data file is written once, on the first save, and after that it is the
+ * user's: real figures typed into it must survive every later save. But a
+ * report goes on growing after that save - a second table, a new placeholder,
+ * an image bound to a field - and a file that never learned about them made the
+ * preview fail on a dataset "which is not present in the data". So what is
+ * missing is added from the sample, and what is there is left as it is.
+ *
+ * "Missing" is `undefined`, walked down through plain objects. An existing
+ * array is a dataset the user owns, so its rows are never added to or edited,
+ * even if a column has appeared since; and a value that is present, `null`
+ * included, is an answer rather than a gap.
+ *
+ * @param {object|null} data what is on disk, or nothing
+ * @param {object} layout
+ * @returns {{data: object, added: boolean}} a new object, never the one given;
+ *   `added` says whether anything was filled in
+ */
+export function completeData(data, layout) {
+    const sample = sampleData(layout);
+
+    if (data == null || typeof data !== 'object' || Array.isArray(data)) {
+        return { data: sample, added: true };
+    }
+
+    const out = structuredClone(data);
+    const added = fillMissing(out, sample);
+
+    return { data: out, added };
+}
+
+
+/** copies into `target` every key of `source` it lacks; says whether it did */
+function fillMissing(target, source) {
+    let added = false;
+
+    for (const [key, value] of Object.entries(source)) {
+        const current = target[key];
+
+        if (current === undefined) {
+            target[key] = structuredClone(value);
+            added = true;
+            continue;
+        }
+
+        const bothObjects = isPlainObject(current) && isPlainObject(value);
+        if (bothObjects && fillMissing(current, value)) added = true;
+    }
+
+    return added;
+}
+
+
+function isPlainObject(value) {
+    return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 
@@ -167,7 +283,13 @@ export function summedFields(layout) {
             if (item.type !== 'text') continue;
 
             for (const [, , field] of String(item.value ?? '').matchAll(AGGREGATE)) {
-                if (field.trim()) found.add(field.trim());
+                const name = field.trim();
+                if (!name) continue;
+
+                found.add(name);
+
+                /** `sales.amount` sums the `amount` of each row of sales */
+                if (name.includes('.')) found.add(name.slice(name.indexOf('.') + 1));
             }
         }
     }
@@ -176,8 +298,57 @@ export function summedFields(layout) {
 }
 
 
-/** writes a value at a dotted path, building the objects on the way down */
-function place(data, path) {
+/**
+ * The field each dataset is grouped by - one at most, the grouped table's.
+ * @param {object} layout
+ * @returns {Map<string, string>}
+ */
+function groupedFieldsByDataset(layout) {
+    const found = new Map();
+    const grouping = groupingOf(layout);
+
+    if (grouping) {
+        found.set(datasetOf(grouping.table, layout) || layout?.dataset || 'rows', grouping.by);
+    }
+
+    return found;
+}
+
+
+/**
+ * Aggregates that name a dataset, as `{sum(payments.amount)}`: the dataset,
+ * and the field of it. The prefix is taken to be a dataset whether or not a
+ * table reads it - that is what the engine does when the payload has one.
+ * @param {object} layout
+ * @returns {{dataset: string, field: string}[]}
+ */
+function scopedAggregates(layout) {
+    const found = [];
+
+    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+        for (const item of (band.items || [])) {
+            if (item.type !== 'text') continue;
+
+            for (const [, , arg] of String(item.value ?? '').matchAll(AGGREGATE)) {
+                const [dataset, ...rest] = arg.trim().split('.');
+                const field = rest.join('.');
+
+                if (dataset && field) found.push({ dataset, field });
+            }
+        }
+    }
+
+    return found;
+}
+
+
+/**
+ * Writes a value at a dotted path, building the objects on the way down.
+ * @param {object} data
+ * @param {string} path
+ * @param {*} [value] what to write; a value made up from the key when absent
+ */
+function place(data, path, value) {
     const parts = path.split('.').filter(Boolean);
     if (!parts.length) return;
 
@@ -189,7 +360,7 @@ function place(data, path) {
         node = node[part];
     }
 
-    if (node[last] === undefined) node[last] = valueFor(last, 0);
+    if (node[last] === undefined) node[last] = value ?? valueFor(last, 0);
 }
 
 

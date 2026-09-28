@@ -13,9 +13,10 @@ import { reportStudio } from './src/vite/index.js';
  * `vite build` is the library build and stays at the project root, because the
  * lib entries are written relative to it.
  *
- * No React plugin: nothing in this package is React, and the screens are plain
- * DOM. The old src/react stub has gone with the peer dependency that announced
- * a requirement the package never had.
+ * No React plugin: the screens are plain DOM, and the two React entries under
+ * src/react are thin wrappers written with createElement, so they need no JSX
+ * transform. React itself is external - an optional peer dependency the host
+ * supplies, never a copy bundled into dist.
  *
  * The report routes are mounted with the package's own Vite plugin, so the
  * playground reads and writes real files in reports/ - and the plugin is
@@ -35,9 +36,14 @@ export default defineConfig(({ command }) => ({
     lib: {
       entry: {
         index: 'src/index.js',
-        designer: 'src/designer/designer.js'
+        designer: 'src/designer/designer.js',
+        react: 'src/react/index.js',
+        'react-designer': 'src/react/designer.js'
       },
       formats: ['es']
+    },
+    rollupOptions: {
+      external: ['react', 'react-dom', /^react\//]
     }
   }
 }));

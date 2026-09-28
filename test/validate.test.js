@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { validateLayout } from '../src/engine/validate.js';
-import { layout, table, band, rows, run } from './helpers/layout.js';
+import { layout, table, band } from './helpers/layout.js';
 
 
 const withTable = (style) => layout({
@@ -85,12 +85,10 @@ describe('a table rule width', () => {
     });
 });
 
-describe('one table per report', () => {
-    const twoTables = () => layout({
-        bands: [
-            band('reportHeader', [table({ id: 'a' })], { height: 200 }),
-            band('detail', [table({ id: 'b' })])
-        ]
+describe('several tables in a report', () => {
+    /** table() is 32 + 3 x 28 = 116px tall as designed */
+    const stacked = (...ys) => layout({
+        bands: [band('detail', ys.map((y, i) => table({ id: `t${i + 1}`, y })))]
     });
 
     it('takes one', () => {
@@ -102,46 +100,88 @@ describe('one table per report', () => {
         expect(validateLayout(layout({ bands: [band('detail', [])] }))).toEqual([]);
     });
 
+    it('takes several, one under another', () => {
+        expect(validateLayout(stacked(0, 140, 280))).toEqual([]);
+    });
+
+    it('takes tables in different bands', () => {
+        expect(validateLayout(layout({
+            bands: [
+                band('reportHeader', [table({ id: 'a' })], { height: 200 }),
+                band('detail', [table({ id: 'b' })])
+            ]
+        }))).toEqual([]);
+    });
+
+    it('takes one that starts exactly where the one above ends', () => {
+        expect(validateLayout(stacked(0, 116))).toEqual([]);
+    });
+
     /**
-     * group.js binds the dataset to the first table it finds and stops, so a
-     * second one printed its header and no rows - and nothing said so. Refused
-     * rather than warned about: the alternative is a report that quietly leaves
-     * data out.
+     * Each table splits across pages on its own, so two side by side would
+     * print one after the other rather than together.
      */
-    it('refuses a second, wherever the two bands are', () => {
-        const issues = validateLayout(twoTables());
+    it('refuses two that share any height of a band', () => {
+        const issues = validateLayout(stacked(0, 60));
 
         expect(issues).toHaveLength(1);
-        expect(issues[0]).toMatch(/2 tables/);
-        expect(issues[0]).toMatch(/"a", "b"/);
+        expect(issues[0]).toMatch(/"t1" and "t2" overlap in the detail band/);
     });
 
-    it('refuses two on one band as readily as two on separate ones', () => {
-        const issues = validateLayout(layout({
-            bands: [band('detail', [table({ id: 'a' }), table({ id: 'b' })])]
-        }));
-
-        expect(issues).toHaveLength(1);
-        expect(issues[0]).toMatch(/2 tables/);
+    it('says where the lower one has to go', () => {
+        expect(validateLayout(stacked(0, 60))[0]).toMatch(/y 116 or lower/);
     });
 
-    it('says what would go wrong, not just that it is wrong', () => {
-        expect(validateLayout(twoTables())[0])
-            .toMatch(/header and no rows/);
-    });
-
-    it('counts them all, so the message is not off by one', () => {
+    it('refuses side by side, whatever x each is at', () => {
         const issues = validateLayout(layout({
             bands: [band('detail', [
-                table({ id: 'a' }), table({ id: 'b' }), table({ id: 'c' })
+                { ...table({ id: 'left' }), w: 300 },
+                { ...table({ id: 'right' }), x: 400, w: 300 }
             ])]
         }));
 
-        expect(issues[0]).toMatch(/3 tables/);
+        expect(issues[0]).toMatch(/"left" and "right" overlap/);
     });
 
-    /** the engine refuses to build it rather than building it wrongly */
-    it('stops the engine, rather than printing an empty table', () => {
-        expect(() => run(twoTables(), { items: rows(2) })).toThrow(/2 tables/);
+    it('checks every neighbour, not only the first pair', () => {
+        const issues = validateLayout(stacked(0, 140, 200));
+
+        expect(issues).toHaveLength(1);
+        expect(issues[0]).toMatch(/"t2" and "t3"/);
+    });
+
+    /** groupHeader and groupFooter are shared, so they cannot head two tables */
+    it('refuses two grouped tables', () => {
+        const issues = validateLayout(layout({
+            bands: [
+                band('detail', [
+                    { ...table({ id: 'a' }), groupBy: 'name' },
+                    { ...table({ id: 'b', y: 140 }), groupBy: 'qty' }
+                ]),
+                band('groupHeader', [], { height: 20 })
+            ]
+        }));
+
+        expect(issues).toHaveLength(1);
+        expect(issues[0]).toMatch(/2 tables are grouped \("a", "b"\)/);
+    });
+
+    it('asks for a group band to show a table grouped by its own field', () => {
+        const issues = validateLayout(layout({
+            bands: [band('detail', [{ ...table(), groupBy: 'name' }])]
+        }));
+
+        expect(issues).toEqual([expect.stringMatching(/no groupHeader or groupFooter/)]);
+    });
+
+    it('refuses a dataset or a groupBy that is not a name', () => {
+        const issues = validateLayout(layout({
+            bands: [band('detail', [{ ...table(), dataset: 4, groupBy: ['x'] }])]
+        }));
+
+        expect(issues).toEqual(expect.arrayContaining([
+            expect.stringMatching(/groupBy must be a field name/),
+            expect.stringMatching(/dataset must be a dataset name/)
+        ]));
     });
 });

@@ -26,6 +26,11 @@ export const ICONS = {
     table: wrap(`<rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.25"/>
                  <path d="M2.25 6.5h11.5M6.5 6.5v6.25M10 6.5v6.25"/>`),
 
+    /** a frame with a hill and a sun in it - a picture, not a box */
+    image: wrap(`<rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.25"/>
+                 <path d="m2.75 11.5 3.5-3.5 2.5 2.5 1.5-1.5 3 3"/>
+                 <circle cx="10.25" cy="6.25" r="1"/>`),
+
     /** an empty rectangle: the frame, and nothing in it */
     box: wrap(`<rect x="2.5" y="3.75" width="11" height="8.5" rx="1.25"/>`),
 

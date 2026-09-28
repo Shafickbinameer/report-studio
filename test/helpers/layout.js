@@ -73,6 +73,17 @@ export function box(id, {
 }
 
 
+/**
+ * An image: a fixed box with a picture in it, stored (`src`) or read from the
+ * data (`field`). Either, both or neither.
+ */
+export function image(id, {
+    x = 0, y = 0, w = 160, h = 80, src = null, field = null, fit = 'contain', alt = ''
+} = {}) {
+    return { id, type: 'image', x, y, w, h, src, field, fit, alt };
+}
+
+
 export function table({
     id = 'tbl',
     rowHeight = 28,

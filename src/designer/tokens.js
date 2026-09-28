@@ -186,6 +186,15 @@ export function availableFields(layout) {
 
     if (layout?.groupBy) found.add(layout.groupBy);
 
+    /** a table grouped by a field of its own */
+    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+        for (const item of (band.items || [])) {
+            if (item?.type === 'table' && typeof item.groupBy === 'string' && item.groupBy) {
+                found.add(item.groupBy);
+            }
+        }
+    }
+
     return [...found].sort();
 }
 

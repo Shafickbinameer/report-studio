@@ -216,11 +216,9 @@ export function designHeight(item) {
 
 export function measure(json) {
     const measureJson = structuredClone(json);
-    const grouped = measureJson.groupBy != null;
-
     for (const band of measureJson.bands) {
         if (!band.items) continue;
-        measureBand(band, grouped, measureJson);
+        measureBand(band, measureJson);
     }
 
     return measureJson;
@@ -233,15 +231,14 @@ export function measure(json) {
  * independent, and handles items side by side on the same row as well as items
  * separated by a gap, neither of which a running total can express.
  * @param {object} band
- * @param {boolean} grouped
  * @param {object} json
  * @returns {object} the same band, measured
  */
-function measureBand(band, grouped, json) {
+function measureBand(band, json) {
     let contentHeight = 0;
 
     for (const item of band.items) {
-        item.measuredHeight = measureItem(item, grouped, json);
+        item.measuredHeight = measureItem(item, json);
         contentHeight = Math.max(contentHeight, (item.y ?? 0) + item.measuredHeight);
     }
 
@@ -264,15 +261,17 @@ function holdsTable(band) {
 }
 
 
-function measureItem(item, grouped, json) {
+function measureItem(item, json) {
     switch (item.type) {
         case 'text':
             return measureTextItem(item);
         case 'table':
-            return measureTableItem(item, grouped, json);
+            return measureTableItem(item, json);
         case 'line':
             return measureLineItem(item);
         case 'box':
+        case 'image':
+            /** a picture is scaled into its box, never the box grown round it */
             return item.h ?? 0;
         default:
             console.warn(`Unknown item type "${item.type}" on item "${item.id}"; treating as zero height.`);
@@ -317,15 +316,17 @@ function measureLineItem(item) {
 
 
 /**
- * headerHeight + rows x rowHeight. When the report is grouped, each group also
+ * headerHeight + rows x rowHeight. When the table is grouped, each group also
  * carries its own header and footer band, and a table header that repeats per
  * group - all of which occupy real space and were previously unaccounted for.
+ *
+ * Grouped is the table's own fact - group.js gave it `groups` - and not the
+ * report's: of two tables in a grouped report, only one is split into groups.
  * @param {object} item
- * @param {boolean} grouped
  * @param {object} json
  * @returns {number}
  */
-function measureTableItem(item, grouped, json) {
+function measureTableItem(item, json) {
     const headerHgt = headerHeightFor(item);
 
     /** stamped on so the renderer draws the row at the height that was budgeted */
@@ -337,7 +338,7 @@ function measureTableItem(item, grouped, json) {
      * row at its own. Measuring the same wrap three times in three files is how
      * the three of them come to disagree.
      */
-    if (!grouped) {
+    if (!Array.isArray(item.groups)) {
         item.rowHeights = rowHeightsFor(item, item.row);
 
         return headerHgt + total(item.rowHeights);

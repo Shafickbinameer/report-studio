@@ -805,29 +805,29 @@ describe('duplicating an item', () => {
     });
 
     /**
-     * A report binds one table, so a copy of it would be one that printed its
-     * header and no rows. Offered greyed rather than hidden, so the pill says
-     * the action exists and why it cannot be taken.
+     * A report can hold several tables, so a table is copied like anything
+     * else - but below everything on the band rather than a step across,
+     * because two tables cannot share any height of a band.
      */
-    it('will not copy the table, and says why in the pill', () => {
-        const d = mount();
-        select('tbl');
-
-        const button = menuOn('tbl').querySelector('[data-action="duplicate-item"]');
-
-        expect(button.disabled).toBe(true);
-        expect(button.getAttribute('aria-label')).toMatch(/one table/);
-        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
-    });
-
-    it('says why when the shortcut is used instead', () => {
+    it('copies the table below everything on the band', () => {
         const d = mount();
         select('tbl');
         chord('d');
 
-        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
-        expect(root().querySelector('[data-role="status"]').textContent)
-            .toMatch(/one table/);
+        const detail = d.layout.bands.find(b => b.type === 'detail');
+        const [original, copy] = detail.items.filter(i => i.type === 'table');
+
+        expect(copy).toBeDefined();
+        expect(copy.y).toBeGreaterThanOrEqual(original.y + 116);
+        expect(validateLayout(d.layout)).toEqual([]);
+    });
+
+    it('offers Duplicate for a table in the pill', () => {
+        mount();
+        select('tbl');
+
+        const button = menuOn('tbl').querySelector('[data-action="duplicate-item"]');
+        expect(button.disabled).toBe(false);
     });
 
     it('copies every item of a multiple selection', () => {
@@ -1476,7 +1476,7 @@ describe('the box tool', () => {
     });
 });
 
-describe('the table tool is offered once', () => {
+describe('the table tool', () => {
     const foot = () => root().querySelector('.dz-foot');
     const tool = () => foot().querySelector('[data-role="add-table"]');
 
@@ -1487,49 +1487,33 @@ describe('the table tool is offered once', () => {
         expect(tool().title).toBe('Add a table');
     });
 
-    /** greyed rather than absent: it says the tool exists, and why it is not usable */
-    it('is greyed once the report has one, and says why', () => {
+    it('stays available once the report has one', () => {
         mount();
-
-        expect(tool().disabled).toBe(true);
-        expect(tool().title).toMatch(/one table/);
-    });
-
-    it('comes back when the table is deleted', () => {
-        mount();
-        select('tbl');
-        press(menuOn('tbl'), 'delete-item');
-
         expect(tool().disabled).toBe(false);
     });
 
-    it('goes again on undo, which puts the table back', () => {
-        mount();
-        select('tbl');
-        press(menuOn('tbl'), 'delete-item');
-
-        root().dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
-        }));
-
-        expect(tool().disabled).toBe(true);
-    });
-
-    it('refuses the action too, not only the button', () => {
+    /**
+     * A second table goes under the first, reading a dataset of its own - a
+     * second table over the same rows is rarely what anyone draws one for.
+     */
+    it('adds a second table under the first, on a dataset of its own', async () => {
         const d = mount();
+        await addTable(2);
 
-        press(foot(), 'add-table');
+        const tables = d.layout.bands.find(b => b.type === 'detail')
+            .items.filter(i => i.type === 'table');
 
-        expect(root().querySelector('[data-role="column-dialog"]')).toBeNull();
-        expect(itemsOn(d, 'detail')).toEqual(['t1', 'tbl']);
-        expect(root().querySelector('[data-role="status"]').textContent)
-            .toMatch(/already has a table/);
-    });
-
-    it('leaves the report the engine accepts', () => {
-        const d = mount();
-        press(foot(), 'add-table');
-
+        expect(tables).toHaveLength(2);
+        expect(tables[1].dataset).toBe('items2');
+        expect(tables[1].y).toBeGreaterThanOrEqual(tables[0].y + 116);
         expect(validateLayout(d.layout)).toEqual([]);
+    });
+
+    it('offers each table its own dataset and grouping in the rail', async () => {
+        mount();
+        await addTable(2);
+
+        const labels = [...panel().querySelectorAll('label')].map(l => l.textContent.trim());
+        expect(labels).toEqual(expect.arrayContaining(['Dataset', 'Group by']));
     });
 });

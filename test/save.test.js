@@ -419,7 +419,9 @@ describe('opening', () => {
         const broken = {
             list: () => Promise.reject(
                 new StoreError('Cannot reach the report server. Start it with ' +
-                    '`npx report-studio design`.', { offline: true }))
+                    '`npx report-studio design`.', { offline: true })),
+            load: async () => ({}),
+            save: async () => ({})
         };
 
         mount({ store: broken });
@@ -871,14 +873,17 @@ describe('the data file that goes with a report', () => {
             .toEqual(['name', 'price', 'qty', 'region']);
     });
 
-    it('is never overwritten once it holds real data', async () => {
+    it('never changes the real data once it holds some', async () => {
         /**
          * The rule this whole feature stands on. Quietly replacing the host
          * application's figures with "Customer 1" would be worse than never
          * having offered to help.
          */
-        const real = { items: [{ name: 'Real thing', qty: 1, price: 9 }] };
-        const store = fakeStore({}, { sales: real });
+        const real = {
+            report: { period: 'Q3' },
+            items: [{ name: 'Real thing', qty: 1, price: 9 }]
+        };
+        const store = fakeStore({}, { sales: structuredClone(real) });
 
         mount({ store, l: withPlaceholders(), id: 'sales' });
 
@@ -886,7 +891,55 @@ describe('the data file that goes with a report', () => {
         await settle();
 
         expect(store.data.sales).toEqual(real);
+    });
+
+    it('is not written again when it lacks nothing the layout asks for', async () => {
+        const real = {
+            report: { period: 'Q3' },
+            items: [{ name: 'Real thing', qty: 1, price: 9 }]
+        };
+        const store = fakeStore({}, { sales: real });
+
+        mount({ store, l: withPlaceholders(), id: 'sales' });
+
+        press('save');
+        await settle();
+
         expect(store.calls).not.toContain('saveData:sales');
+    });
+
+    /**
+     * A report grows after its first save. The file has to learn about what was
+     * added - but only by being added to, never by being changed.
+     */
+    it('gains what the layout has asked for since, and keeps the rest', async () => {
+        const real = { items: [{ name: 'Real thing', qty: 1, price: 9 }] };
+        const store = fakeStore({}, { sales: structuredClone(real) });
+
+        mount({ store, l: withPlaceholders(), id: 'sales' });
+
+        press('save');
+        await settle();
+
+        expect(store.data.sales.items).toEqual(real.items);
+        expect(store.data.sales.report).toHaveProperty('period');
+    });
+
+    /** the bug this was written for: a second table and a data file that predates it */
+    it('gives a table added after the first save rows of its own', async () => {
+        const real = { items: [{ name: 'Real thing', qty: 1, price: 9 }] };
+        const store = fakeStore({}, { sales: structuredClone(real) });
+
+        const l = withPlaceholders();
+        l.bands[1].items.push({ ...table({ id: 'tbl2', y: 140 }), dataset: 'refunds' });
+
+        mount({ store, l, id: 'sales' });
+
+        press('save');
+        await settle();
+
+        expect(store.data.sales.items).toEqual(real.items);
+        expect(store.data.sales.refunds).toHaveLength(6);
     });
 
     it('does not fail the save when seeding the data cannot be done', async () => {
@@ -904,6 +957,35 @@ describe('the data file that goes with a report', () => {
 
         expect(d.dirty).toBe(false);
         expect(status()).toBe('Saved as sales.json');
+    });
+});
+
+
+describe('previewing on a data file older than the layout', () => {
+    /**
+     * The report as the user met it: saved with one table, so its data file has
+     * rows for that one - then a second table added. The preview failed with
+     * "table "tbl2" is bound to dataset "refunds", which is not present".
+     */
+    it('runs, drawing the real rows and sample rows for the new table', async () => {
+        const store = fakeStore({}, {
+            sales: { items: [{ name: 'Real thing', qty: 1, price: 9 }] }
+        });
+
+        const l = layout({
+            bands: [band('detail', [
+                table({ id: 'tbl' }),
+                { ...table({ id: 'tbl2', y: 140 }), dataset: 'refunds' }
+            ])]
+        });
+
+        const d = mount({ store, l, id: 'sales' });
+
+        await d.togglePreview();
+
+        expect(root().querySelector('.dz-problems')).toBeNull();
+        expect(root().textContent).toContain('Real thing');
+        expect(root().querySelector('[data-item-id="tbl2"]')).not.toBeNull();
     });
 });
 
@@ -936,6 +1018,23 @@ describe('the data dialog', () => {
         await settle();
 
         expect(JSON.parse(payload().value)).toEqual(real);
+    });
+
+    it('shows the rows a table added since the file was written needs', async () => {
+        const real = { items: [{ name: 'Real thing', qty: 1, price: 9 }] };
+        const store = fakeStore({}, { sales: real });
+
+        const l = withPlaceholders();
+        l.bands[0].items.push({ ...table({ id: 'tbl2', y: 140 }), dataset: 'refunds' });
+
+        mount({ store, l, id: 'sales' });
+
+        press('data');
+        await settle();
+
+        const shown = JSON.parse(payload().value);
+        expect(shown.items).toEqual(real.items);
+        expect(shown.refunds).toHaveLength(6);
     });
 
     it('answers the question even for a report never saved', async () => {

@@ -96,10 +96,47 @@ export function resolve(rptJson, rptData) {
         for (const item of band.items) {
             if (item.type == "text")
                 item.text = resolveTxt(item, rptData, deferUnknown);
+
+            if (item.type == "image")
+                item.resolvedSrc = resolveImage(item, rptData);
         }
     }
 
     return resolved;
+}
+
+
+/**
+ * The picture an image item shows: the value at its `field` when the data has
+ * one there, and the `src` stored in the layout otherwise - so a report can
+ * carry a default logo that the host replaces per customer.
+ *
+ * Always written, if only as '', because its presence is what tells the
+ * renderer this item went through the engine. The designer canvas draws items
+ * straight from the layout and shows a placeholder for a bound image; a built
+ * report whose data had no picture should print an empty frame instead.
+ *
+ * The URL is not checked here. Every route to the page goes through the
+ * renderer, which is where it is made safe - checking twice is two lists of
+ * schemes to keep in step.
+ *
+ * @param {object} item an image item
+ * @param {object} rptData
+ * @returns {string}
+ */
+function resolveImage(item, rptData) {
+    const field = typeof item.field === 'string' ? item.field.trim() : '';
+
+    if (field) {
+        const value = findVal(field, rptData);
+        if (typeof value === 'string' && value !== '') return value;
+
+        if (!item.src) {
+            console.warn(`Unresolved image field "${field}" on item "${item.id}".`);
+        }
+    }
+
+    return typeof item.src === 'string' ? item.src : '';
 }
 
 

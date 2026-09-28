@@ -1,5 +1,6 @@
 /**
- * items.js draws the things that live inside a band: text boxes and tables.
+ * items.js draws the things that live inside a band: text boxes, tables,
+ * rules, boxes and images.
  *
  * Split out of render.js because the designer canvas needs exactly this and
  * nothing more. The preview wraps these in anchored, paginated bands; the
@@ -106,6 +107,8 @@ export function items(list) {
                 return line(i)
             case "box":
                 return box(i)
+            case "image":
+                return image(i)
             default:
                 console.warn(`Unknown item type "${i?.type}"; it is not drawn.`);
                 return '';
@@ -172,6 +175,96 @@ function box(i) {
     ${radius ? `border-radius:${radius}px;` : ''}
     ${background ? `background:${background};` : ''}
     " data-item-id="${esc(i.id)}" data-item-type="box"></div>
+    `
+}
+
+
+/** how a picture may be fitted to its box; anything else is `contain` */
+const IMAGE_FITS = ['contain', 'cover', 'fill'];
+
+/**
+ * The raster formats a `data:` URI may carry.
+ *
+ * SVG is left out on purpose. As an <img> it cannot run script, but it is also
+ * the one image format that is a document, and a layout or a payload is a file
+ * an application may let its own users write - "save image as" and "open in
+ * new tab" both turn it back into a page that can.
+ */
+const DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp|avif|bmp);base64,[a-z0-9+/=\s]*$/i;
+
+/** the schemes an image may be fetched from, besides a data: URI and a relative path */
+const IMAGE_SCHEMES = ['http:', 'https:', 'blob:'];
+
+
+/**
+ * An image URL, or '' when it is not one a report should load.
+ *
+ * The picture's address comes from the layout or from the host's data, and it
+ * ends up in a `src` attribute - so `javascript:` and its relatives are refused
+ * here, once, for every route to the page. `esc` still runs over what is
+ * returned; this decides *whether* to load it, not how to write it down.
+ *
+ * Whitespace and control characters are stripped before the scheme is read,
+ * because a browser does the same: "java\tscript:" is `javascript:` to it.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+export function imageSrc(value) {
+    if (typeof value !== 'string') return '';
+
+    const url = value.trim();
+    if (url === '') return '';
+
+    /** read for its scheme only - a space in the middle of a path is the path's */
+    const bare = url.replace(/[\u0000-\u0020\u007f]+/g, '');
+
+    if (/^data:/i.test(bare)) return DATA_IMAGE.test(bare) ? bare : '';
+
+    /** a scheme is letters up to the first colon, before any / ? or # */
+    const scheme = bare.match(/^([a-z][a-z0-9+.-]*:)/i)?.[1]?.toLowerCase();
+
+    if (scheme == null) return url;
+
+    return IMAGE_SCHEMES.includes(scheme) ? url : '';
+}
+
+
+/**
+ * A picture, scaled into a fixed box.
+ *
+ * The box is the item and the <img> fills it, so `w` and `h` mean what they
+ * mean for every other item and `fit` decides how the picture sits inside -
+ * letterboxed, cropped, or stretched. The engine paginated against `h`, and an
+ * image that grew to its natural size would undo that.
+ *
+ * Three states, told apart by `resolvedSrc`, which only the engine writes:
+ *   a picture         - drawn
+ *   engine, no picture - an empty frame; the report prints nothing there
+ *   designer canvas   - a placeholder naming the field it will be read from,
+ *                       since a frame with nothing in it cannot be found again
+ */
+function image(i) {
+    const built = Object.prototype.hasOwnProperty.call(i, 'resolvedSrc');
+    const src = imageSrc(built ? i.resolvedSrc : i.src);
+    const fit = IMAGE_FITS.includes(i.fit) ? i.fit : 'contain';
+
+    let inner = '';
+
+    if (src) {
+        inner = `<img src="${esc(src)}" alt="${esc(i.alt ?? '')}" ` +
+            `style="object-fit:${fit}" draggable="false">`;
+    } else if (!built) {
+        const field = typeof i.field === 'string' ? i.field.trim() : '';
+        inner = `<span class="image-empty">${field ? esc(`{${field}}`) : 'Image'}</span>`;
+    }
+
+    return `
+    <div id="${esc(i.id)}" class="image" style="
+    width:${px(i.w)}px;
+    height:${px(i.h)}px;
+    ${position(i)}
+    " data-item-id="${esc(i.id)}" data-item-type="image">${inner}</div>
     `
 }
 

@@ -1,9 +1,11 @@
 /**
  * csv.js writes a report out as CSV, in two shapes.
  *
- * toCSV is the data rectangle: the table's rows and nothing else, one header
+ * toCSV is the data rectangle: one table's rows and nothing else, one header
  * row and uniform columns, which is what a spreadsheet needs to sort, filter
- * and pivot. Rows split across a page break come back in one piece.
+ * and pivot. Rows split across a page break come back in one piece. A report
+ * with several tables is several rectangles, so it is asked for one of them by
+ * id - the first when it is not told.
  *
  * toReportCSV is the report as it reads on paper: every text line and every
  * table row, in the order the page draws them. Lines and boxes have no text to
@@ -21,17 +23,19 @@ const FORMULA_LEAD = /^[=+\-@\t\r]/;
 
 
 /**
- * The report's table as CSV text.
+ * One of the report's tables as CSV text.
  *
  * @param {object[]} pages the `pages` array from buildPages
  * @param {object} [options]
+ * @param {string} [options.table] the id of the table to write; the first
+ *   table in the report when absent. reportTables lists what there is
  * @param {string} [options.delimiter=','] use ';' for locales where Excel expects it
  * @param {string} [options.newline='\r\n'] RFC 4180 line ending
  * @param {boolean} [options.header=true] emit the column labels as the first row
  * @param {boolean} [options.groupColumn=true] prepend the group key on a grouped report
  * @param {string} [options.groupLabel='Group']
  * @param {boolean} [options.neutraliseFormulas=true] see below
- * @returns {string} CSV text, empty when the report holds no table
+ * @returns {string} CSV text, empty when the report holds no such table
  */
 export function toCSV(pages, options = {}) {
     const {
@@ -40,10 +44,11 @@ export function toCSV(pages, options = {}) {
         header = true,
         groupColumn = true,
         groupLabel = 'Group',
-        neutraliseFormulas = true
+        neutraliseFormulas = true,
+        table: only = null
     } = options;
 
-    const table = collect(pages);
+    const table = collect(pages, only);
     if (!table) return '';
 
     const grouped = groupColumn && table.rows.some(r => r.group !== null);
@@ -242,15 +247,45 @@ export function reportFilename(paginated, extension = 'csv') {
 
 
 /**
- * Walks the page list for the first table, gathering its rows across every page
- * and every group fragment. One table per report today; if that ever changes,
- * this is the single place that has to decide what a multi-table export means.
+ * The tables a built report holds, in the order they first appear - what a
+ * host offers when it asks which one to export with toCSV.
+ *
+ * Read from the pages rather than the layout, like everything in this file:
+ * a table split over three pages is listed once, by its id.
+ *
+ * @param {object[]} pages the `pages` array from buildPages
+ * @returns {{id: string, columns: string[]}[]}
+ */
+export function reportTables(pages) {
+    const found = new Map();
+
+    for (const page of (pages ?? [])) {
+        for (const band of (page.bands ?? [])) {
+            for (const item of (band.items ?? [])) {
+                if (item.type !== 'table' || found.has(item.id)) continue;
+
+                found.set(item.id, {
+                    id: item.id,
+                    columns: (item.columns ?? []).map(c => c.label ?? c.field)
+                });
+            }
+        }
+    }
+
+    return [...found.values()];
+}
+
+
+/**
+ * Walks the page list for one table, gathering its rows across every page and
+ * every group fragment.
  * @param {object[]} pages
+ * @param {string|null} [only] the table's id; the first table met when absent
  * @returns {{columns: object[], rows: {group: string|null, row: object}[]}|null}
  */
-function collect(pages) {
+function collect(pages, only = null) {
     let columns = null;
-    let id = null;
+    let id = only;
     const rows = [];
 
     for (const page of (pages ?? [])) {

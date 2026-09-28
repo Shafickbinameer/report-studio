@@ -162,6 +162,36 @@
   box-sizing: border-box;
 }
 
+/* the box is the item; the picture is scaled into it and never resizes it */
+.page .image {
+  position: absolute;
+  overflow: hidden;
+}
+
+.page .image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* an image with no picture yet, on the designer canvas only - a built report
+   prints an empty frame instead */
+.page .image-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px dashed #9aa0a6;
+  color: #6b7280;
+  font: 11px/1.2 Helvetica, Arial, sans-serif;
+  text-align: center;
+  word-break: break-all;
+}
+
 /**
  * A line is a box with a rule down the middle of it, not a rule that is the box:
  * see items.js. The box is what the designer can grab and what the engine

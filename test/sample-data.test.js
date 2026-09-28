@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-    requiredKeys, datasets, sampleData, summedFields
+    requiredKeys, datasets, sampleData, summedFields, completeData, SAMPLE_IMAGE
 } from '../src/designer/sample-data.js';
 import { buildPages } from '../src/engine/index.js';
 import { render } from '../src/render/render.js';
@@ -360,5 +360,78 @@ describe('a field the report takes a sum of is a number', () => {
         });
 
         expect(typeof sampleData(json).amt).toBe('number');
+    });
+});
+
+
+describe('completeData', () => {
+    const report = () => ({
+        version: 1, name: 'r', dataset: 'items', groupBy: null,
+        page: { width: 794, height: 1123, margin: { top: 40, right: 40, bottom: 40, left: 40 } },
+        bands: [{
+            type: 'detail',
+            items: [
+                { id: 'h', type: 'text', x: 0, y: 0, w: 200, h: 20, value: '{company.name} {company.city}' },
+                { id: 't1', type: 'table', y: 40, w: 700, rowHeight: 20, dataset: 'items', columns: [{ field: 'name' }] },
+                { id: 't2', type: 'table', y: 200, w: 700, rowHeight: 20, dataset: 'refunds', columns: [{ field: 'amount' }] },
+                { id: 'logo', type: 'image', x: 0, y: 400, w: 100, h: 50, field: 'company.logo' }
+            ]
+        }]
+    });
+
+    it('is the whole sample when there is no data yet', () => {
+        const { data, added } = completeData(null, report());
+
+        expect(added).toBe(true);
+        expect(data).toEqual(sampleData(report()));
+    });
+
+    it('adds a dataset for a table the data file predates', () => {
+        const { data, added } = completeData({ items: [{ name: 'Mine' }] }, report());
+
+        expect(added).toBe(true);
+        expect(data.items).toEqual([{ name: 'Mine' }]);
+        expect(data.refunds).toHaveLength(6);
+    });
+
+    it('fills a missing key inside an object that is there, keeping its siblings', () => {
+        const { data } = completeData({ company: { name: 'Acme' } }, report());
+
+        expect(data.company.name).toBe('Acme');
+        expect(data.company.city).toBe('City 1');
+        expect(data.company.logo).toBe(SAMPLE_IMAGE);
+    });
+
+    /** a dataset is the user's: a column added since is theirs to fill */
+    it('never adds to or edits the rows of a dataset that is there', () => {
+        const rows = [{ other: 1 }];
+        const { data } = completeData({ items: rows }, report());
+
+        expect(data.items).toEqual([{ other: 1 }]);
+    });
+
+    it('treats null as an answer rather than a gap', () => {
+        const { data } = completeData({ company: { name: null, city: 'X', logo: null } }, report());
+
+        expect(data.company).toEqual({ name: null, city: 'X', logo: null });
+    });
+
+    it('says when there was nothing to add', () => {
+        const full = sampleData(report());
+        const { added } = completeData(full, report());
+
+        expect(added).toBe(false);
+    });
+
+    it('returns a new object, leaving the one it was given alone', () => {
+        const given = { items: [] };
+        const { data } = completeData(given, report());
+
+        expect(data).not.toBe(given);
+        expect(given).toEqual({ items: [] });
+    });
+
+    it('replaces something that is not a payload with the sample', () => {
+        expect(completeData([1, 2], report()).data).toEqual(sampleData(report()));
     });
 });

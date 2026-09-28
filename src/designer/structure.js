@@ -83,8 +83,7 @@ function bandList(layout) {
 
 
 /**
- * How many tables the report has. The engine binds one (see validateOneTable in
- * validate.js), so this is what says whether another may be added.
+ * How many tables the report has.
  *
  * @param {object} layout
  * @returns {number}
@@ -97,9 +96,60 @@ export function tableCount(layout) {
 }
 
 
-/** whether this report can take a table - one, for now */
+/**
+ * Whether this report can take another table. Always, now that each table
+ * binds a dataset of its own; kept as the one place to say otherwise, should a
+ * limit ever come back, rather than a check at every call site.
+ *
+ * @param {object} layout
+ * @returns {boolean}
+ */
 export function canAddTable(layout) {
-    return tableCount(layout) < 1;
+    return Array.isArray(layout?.bands);
+}
+
+
+/**
+ * The dataset a new table reads.
+ *
+ * The first table reads the report's, as it always did. Every one after it
+ * gets a name of its own - `items2`, `items3` - because a second table on
+ * the same rows is rarely what anyone draws a second table for, and a name
+ * that is already distinct is one the sample data can fill with its own rows.
+ *
+ * @param {object} layout
+ * @returns {string|null}
+ */
+function datasetForNewTable(layout) {
+    const count = tableCount(layout);
+    if (count === 0) return layout.dataset ?? null;
+
+    const base = layout.dataset || 'rows';
+    const taken = new Set(bandList(layout)
+        .flatMap(b => b.items || [])
+        .filter(i => i?.type === 'table')
+        .map(i => i.dataset ?? layout.dataset));
+
+    for (let n = count + 1; ; n++) {
+        if (!taken.has(`${base}${n}`)) return `${base}${n}`;
+    }
+}
+
+
+/**
+ * A copied table, made fit to sit beside its original.
+ *
+ * Tables are stacked rather than overlapped - validate.js refuses two that
+ * share any height of a band - so the copy goes below everything on the band
+ * rather than a step down and across. And it is not grouped by a field of its
+ * own, since a report groups one table and the original is already that one.
+ *
+ * @param {object} copy mutated in place
+ * @param {object} band the band it is going onto, before the copy is added
+ */
+function settleTable(copy, band) {
+    copy.y = nextY(band);
+    delete copy.groupBy;
 }
 
 
@@ -294,6 +344,34 @@ export function createBox(layout, band) {
 }
 
 
+/**
+ * A new image, below whatever is already on the band.
+ *
+ * Empty: no picture and no field. The canvas draws it as a dashed frame to be
+ * filled from the rail - either a picture uploaded into the layout, or a data
+ * field the host supplies a URL in. Logo-sized, because a logo is what goes in
+ * a report more often than anything else.
+ *
+ * @param {object} layout
+ * @param {object} band the band it is going onto, for its vertical place
+ * @returns {object} the item; it has not been added to anything yet
+ */
+export function createImage(layout, band) {
+    return {
+        id: nextItemId(layout, 'image'),
+        type: 'image',
+        x: 0,
+        y: nextY(band),
+        w: 160,
+        h: 80,
+        src: null,
+        field: null,
+        fit: 'contain',
+        alt: ''
+    };
+}
+
+
 /** a column at its default width, numbered by where it sits */
 export function makeColumn(n) {
     return {
@@ -326,7 +404,7 @@ export function createTable(layout, band, columns = DEFAULT_COLUMNS) {
         x: 0,
         y: nextY(band),
         w: contentWidth(layout),
-        dataset: layout.dataset ?? null,
+        dataset: datasetForNewTable(layout),
         rowHeight: 24,
         headerHeight: 28,
         showHeader: true,
@@ -419,7 +497,6 @@ export function duplicateItem(layout, bandType, id) {
     const original = (band.items || []).find(i => i.id === id);
     if (!original) return null;
 
-    /** a copy of the table would be the second one, which the engine cannot bind */
     if (original.type === 'table' && !canAddTable(layout)) return null;
 
     const copy = structuredClone(original);
@@ -427,6 +504,8 @@ export function duplicateItem(layout, bandType, id) {
     copy.id = nextItemId(layout, idPrefix(original));
     copy.x = clampX(layout, (original.x ?? 0) + DUPLICATE_OFFSET, copy.w);
     copy.y = Math.max(0, (original.y ?? 0) + DUPLICATE_OFFSET);
+
+    if (copy.type === 'table') settleTable(copy, band);
 
     band.items ??= [];
     band.items.push(copy);
@@ -496,6 +575,8 @@ export function pasteItems(layout, bandType, entries) {
         copy.id = nextItemId(layout, idPrefix(item));
         copy.x = clampX(layout, (item.x ?? 0) + DUPLICATE_OFFSET, copy.w);
         copy.y = from === bandType ? y : clampY(layout, bandType, y, copy);
+
+        if (copy.type === 'table') settleTable(copy, band);
 
         band.items.push(copy);
         made.push(copy);

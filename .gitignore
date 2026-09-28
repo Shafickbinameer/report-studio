@@ -150,8 +150,12 @@ vite.config.ts.timestamp-*
 # lines keep them out of the history as well.
 # ---------------------------------------------------------------------------
 
-# the original build spec - a design document, not the README
-docs/
+# the original build spec - a design document, not the README.
+#
+# Anchored with a leading slash: an unanchored `docs/` matches a directory of
+# that name at any depth, which silently swallowed site/docs/ - the generated
+# documentation pages - and would have published an empty site.
+/docs/
 
 # development data for `npm run dev`; the CLI never serves it
 fixtures/
@@ -161,3 +165,10 @@ package-test/
 
 # whatever reports happen to be saved while working on the designer
 reports/
+
+# the documentation site
+#
+# Anchored, so it matches the site/ at the root and nothing named site deeper
+# in. This ignores the whole thing - the generated pages and the sources under
+# site/build/ that produce them.
+/site/

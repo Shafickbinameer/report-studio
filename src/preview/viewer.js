@@ -297,6 +297,24 @@ export function createViewer({ mount, paginated, title } = {}) {
      * Search highlights are cleared first so they do not end up in the file.
      */
     function printReport() {
+        /**
+         * A picture still loading prints as a blank frame, and the print dialog
+         * snapshots the page the moment it opens. So a report with pictures on
+         * the way waits for them - loaded or failed, either way settled - and a
+         * report with none, which is most, prints at once as it always has.
+         */
+        const pending = [...viewport.querySelectorAll('img')].filter(img => !img.complete);
+
+        if (pending.length > 0) {
+            Promise.all(pending.map(img => img.decode().catch(() => { })))
+                .then(printNow);
+            return;
+        }
+
+        printNow();
+    }
+
+    function printNow() {
         clearMarks();
 
         /** the window the report is in, which is not always the one this ran from */

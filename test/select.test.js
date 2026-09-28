@@ -869,11 +869,11 @@ describe('alt drags a copy', () => {
         expect(detailIds(d)).toHaveLength(4);
     });
 
-    it('will not alt-drag a copy of the table off the one the report binds', () => {
+    it('alt-drags a copy of a table, as it does anything else', () => {
         const d = mount();
         altDrag(drawn('tbl'), 60, 40);
 
-        expect(detailIds(d)).toEqual(['t1', 'tbl']);
+        expect(detailIds(d)).toHaveLength(3);
     });
 
     it('leaves shift-alt extending the selection, not copying', () => {
