@@ -55,12 +55,33 @@ function treeUnder(dir) {
 }
 
 
+/** every file an exports entry points at, whether a string or a set of conditions */
+function targetsOf(entry) {
+    return typeof entry === 'string' ? [entry] : Object.values(entry).flatMap(targetsOf);
+}
+
+
 describe('the entry points it advertises', () => {
     it('ships every file the exports map points at', () => {
-        for (const target of Object.values(pkg.exports)) {
+        for (const target of Object.values(pkg.exports).flatMap(targetsOf)) {
             const path = target.replace(/^\.\//, '');
             expect(shipped.has(path), `${path} is exported but not shipped`).toBe(true);
         }
+    });
+
+    it('gives every module entry its type declarations', () => {
+        /** stylesheets and package.json have no types to give */
+        const modules = Object.entries(pkg.exports)
+            .filter(([key]) => !key.endsWith('.css') && key !== './package.json');
+
+        for (const [key, entry] of modules) {
+            expect(entry.types, `${key} has no types condition`).toMatch(/\.d\.ts$/);
+
+            /** TypeScript reads conditions in order and stops at the first match */
+            expect(Object.keys(entry)[0], `${key} must list types first`).toBe('types');
+        }
+
+        expect(shipped.has(pkg.types.replace(/^\.\//, ''))).toBe(true);
     });
 
     it('ships the command it registers', () => {

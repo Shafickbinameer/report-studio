@@ -1,14 +1,22 @@
 # Report Studio
 
-Design paginated reports in the browser, then render them inside your own app.
+**Design paginated reports visually. Zero runtime dependencies. Works in plain
+JS or React.**
+
+![Adding a text box in the designer, saving, and running the report](https://raw.githubusercontent.com/Shafickbinameer/report-studio/main/.github/demo.gif)
 
 You draw the report once in a visual designer — headers, footers, groups,
-tables, text — and it is saved as a plain JSON file. At runtime your app feeds
-that layout its own data and gets back a page-by-page report viewer, with
-navigation, zoom, search, print and CSV export.
+tables, text, images — and it is saved as a plain JSON file. At runtime your
+app feeds that layout its own data and gets back a page-by-page report viewer,
+with navigation, zoom, search, print and CSV export.
 
-No framework, no runtime dependencies. The renderer is plain DOM, so it works
-in any project: plain JS, or React through the included components.
+* **Zero runtime dependencies.** The renderer is plain DOM. No server to run,
+  no framework required.
+* **Layouts are plain JSON.** Commit them, diff them, load them with `fetch`.
+* **React components included**, for both the viewer and the designer.
+* **Vite plugin.** One line in `vite.config.js` and your existing dev server
+  hosts the designer's save routes.
+* **TypeScript types included.**
 
 ## Installation
 
@@ -62,6 +70,24 @@ file; it passes its own data to `buildPages`.
 
 The designer is a design-time tool. It reads and writes files inside `--dir`
 and nowhere else — keep it on localhost and do not run it in production.
+
+### Already using Vite?
+
+Skip the separate command. The plugin mounts the same read-and-write routes in
+the dev server you already run:
+
+```js
+import { defineConfig } from 'vite';
+import { reportStudio } from 'report-studio/vite';
+
+export default defineConfig({
+    plugins: [reportStudio({ dir: 'reports' })]
+});
+```
+
+Dev only, deliberately: it writes files, and mounting that in front of a
+production build would be a hole rather than a feature. The CLI stays the
+default because it works in any project, Vite or not.
 
 ## Preview setup
 
@@ -340,23 +366,21 @@ file yet: that is an ordinary state, not a failure.
 `destroy()`. `openDesignerWindow(options)` opens the same designer in a window
 of its own, for the same reason `openViewerWindow` does.
 
-## Reports in a project that already runs Vite
+## TypeScript
 
-The CLI is the primary way in because it works for any project. If yours is
-already a Vite one, the same read-and-write routes can be mounted in the dev
-server you have:
+Type declarations ship with the package, for every entry point. Nothing to
+install. The layout file has types of its own, so a layout loaded from JSON can
+be checked:
 
-```js
-import { defineConfig } from 'vite';
-import { reportStudio } from 'report-studio/vite';
+```ts
+import { buildPages, createViewer, type Layout } from 'report-studio';
 
-export default defineConfig({
-    plugins: [reportStudio({ dir: 'reports' })]
-});
+const layout: Layout = await fetch('./reports/sales-summary.json')
+    .then(r => r.json());
 ```
 
-Dev only, deliberately: it writes files, and mounting that in front of a
-production build would be a hole rather than a feature.
+`Layout`, `ReportItem`, `PaginatedReport`, `ViewerHandle`, `ReportStore`,
+`DesignerHandle` and the component props are all exported as types.
 
 ## Licence
 

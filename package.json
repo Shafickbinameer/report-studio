@@ -1,25 +1,35 @@
 {
   "name": "report-studio",
-  "version": "1.1.0",
-  "description": "Design and preview paginated reports in the browser. Zero runtime dependencies; optional React components.",
+  "version": "1.2.0",
+  "description": "Visual report designer and paginated report viewer for the browser. Zero runtime dependencies; plain JS, React components and a Vite plugin.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Shafickbinameer/report-studio.git"
   },
   "keywords": [
     "report",
+    "report-designer",
+    "report-builder",
+    "report-viewer",
     "designer",
+    "paginated",
     "pagination",
     "pdf",
     "print",
     "layout",
-    "react"
+    "viewer",
+    "zero-dependency",
+    "react",
+    "vite-plugin",
+    "typescript"
   ],
   "author": "Mohammed Shafick <shafickbinameer@gmail.com>",
   "license": "MIT",
   "type": "module",
+  "types": "./types/index.d.ts",
   "files": [
     "dist",
+    "types",
     "src/asset",
     "src/cli",
     "src/designer",
@@ -34,11 +44,26 @@
     "src/index.js"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./designer": "./dist/designer.js",
-    "./react": "./dist/react.js",
-    "./react/designer": "./dist/react-designer.js",
-    "./vite": "./src/vite/index.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./designer": {
+      "types": "./types/designer.d.ts",
+      "default": "./dist/designer.js"
+    },
+    "./react": {
+      "types": "./types/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./react/designer": {
+      "types": "./types/react-designer.d.ts",
+      "default": "./dist/react-designer.js"
+    },
+    "./vite": {
+      "types": "./types/vite.d.ts",
+      "default": "./src/vite/index.js"
+    },
     "./report.css": "./src/render/report.css",
     "./viewer.css": "./src/preview/styles.css",
     "./designer.css": "./src/designer/styles.css",
