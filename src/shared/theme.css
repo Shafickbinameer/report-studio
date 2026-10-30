@@ -18,7 +18,15 @@
  */
 @import "./brand.css";
 
-:root {
+/**
+ * Everything below is scoped to what Report Studio owns: the two screens' mounts,
+ * and .report-studio-page, the class its own standalone pages put on <html>.
+ * On :root and body these reached the host's whole page - its font became
+ * Courier, its margins went, and a host --border or --accent fought ours.
+ */
+.report-viewer,
+.report-designer,
+.report-studio-page {
   /* the palette */
   --surface: #fdfdfe;
   --accent: #ff9c4b;
@@ -53,13 +61,17 @@
   --pager-offset: 20px;
 }
 
-* {
+/* :where() keeps the reset at the zero specificity * had, so no rule loses to it */
+:where(.report-viewer, .report-designer, .report-studio-page),
+:where(.report-viewer, .report-designer, .report-studio-page) * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body {
+.report-viewer,
+.report-designer,
+.report-studio-page {
   font-family: "Courier Prime", monospace;
   font-weight: 400;
   font-style: normal;

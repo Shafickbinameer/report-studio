@@ -48,6 +48,11 @@
   background: var(--backdrop);
 }
 
+/* display: flex above outranks the browser's [hidden], so a hidden viewer would stay up */
+.report-viewer[hidden] {
+  display: none;
+}
+
 /* the standalone page gives it the window; an application gives it a panel */
 .report-fills-window {
   height: 100vh;
@@ -170,20 +175,15 @@
 
 /* ---------------- viewer chrome ---------------- */
 
+/**
+ * The bar measures its own width, so a viewer in a narrow panel rearranges the
+ * same as one on a phone. The bar rather than .report-viewer: a container's
+ * width cannot come from its content, and the bar is stretched to the viewer
+ * anyway - on the viewer it would collapse a host's shrink-to-fit mount.
+ */
 .report-viewer .toolbar {
   flex: none;
-  height: var(--bar-height);
-
-  /**
-   * Three columns, not a flex row: the outer two share the slack equally, so
-   * the search sits on the centre of the window rather than on the centre of
-   * whatever the zoom and export controls left over.
-   */
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 16px;
-  padding: 0 16px;
+  container-type: inline-size;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   font-family: "Instrument Sans", system-ui, sans-serif;
@@ -192,18 +192,40 @@
   z-index: 10;
 }
 
+.report-viewer .toolbar-row {
+  height: var(--bar-height);
+
+  /**
+   * Three columns, not a flex row: the outer two share the slack equally, so
+   * the search sits on the centre of the window rather than on the centre of
+   * whatever the zoom and export controls left over.
+   */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+}
+
 .report-viewer .toolbar-group {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* the wordmark holds the left column, so the centre column stays centred */
+/**
+ * The name holds the left column, so the centre column stays centred. It is
+ * the report's own name and can be any length, so it ends in an ellipsis
+ * rather than pushing the controls off the bar: block, because an ellipsis
+ * needs a block box, and max-width, because start-aligned it is otherwise as
+ * wide as its text.
+ */
 .report-viewer .toolbar-brand {
   justify-self: start;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -408,6 +430,48 @@
   outline: 1px solid var(--accent-ink);
 }
 
+/**
+ * Too narrow for one row: the name and Print/Export share the top line, and
+ * search and zoom take the whole line under it, the search field stretching to
+ * whatever zoom leaves. Below this the three-column row ran off the right edge
+ * and dragged the host page sideways with it.
+ */
+@container (max-width: 900px) {
+  .report-viewer .toolbar-row {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand save"
+      "centre centre";
+    gap: 8px 12px;
+    padding: 8px 12px;
+  }
+
+  .report-viewer .toolbar-brand {
+    grid-area: brand;
+  }
+
+  .report-viewer .toolbar-save {
+    grid-area: save;
+  }
+
+  .report-viewer .toolbar-centre {
+    grid-area: centre;
+    justify-self: stretch;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .report-viewer .toolbar-search {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .report-viewer .search-field {
+    width: 100%;
+  }
+}
+
 @media print {
   .report-viewer .toolbar,
   .report-viewer .pager { display: none; }
@@ -417,7 +481,6 @@
   .report-viewer #main-page { width: auto !important; height: auto !important; margin: 0; }
 
   /* the sheet's own background must not print over the report */
-  body,
   .graph-paper { background: none; }
 
   .report-viewer .page {

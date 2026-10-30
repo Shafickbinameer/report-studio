@@ -254,6 +254,10 @@ import 'report-studio/viewer.css';
 | `report-studio/designer.css` | the designer's styles, likewise |
 | `report-studio/report.css` | the report alone, for drawing pages with no chrome |
 
+The stylesheets style only what the viewer and designer draw. Your page's
+fonts, margins and CSS variables are left alone. The toolbar rearranges itself
+when the viewer is narrow, whether it is on a phone or in a side panel.
+
 ## React
 
 React components are included. React itself is not bundled: install it

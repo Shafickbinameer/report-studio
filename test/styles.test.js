@@ -27,6 +27,8 @@ const read = (file) =>
 
 const SHEETS = [
     'src/shared/theme.css',
+    'src/shared/brand.css',
+    'src/shared/dropdown.css',
     'src/shared/modal.css',
     'src/render/report.css',
     'src/designer/styles.css',
@@ -83,6 +85,31 @@ describe.each(SHEETS)('%s', (file) => {
         if (!bare.includes('{')) return;
 
         expect(bare.trim().endsWith('}')).toBe(true);
+    });
+
+    it('styles nothing of the host page it is linked into', () => {
+        /**
+         * `* { margin: 0 }`, `body { font-family: Courier Prime }` and the
+         * palette on :root were all here once, so linking viewer.css set the
+         * host's whole page in Courier and took its margins away - and a host
+         * with its own --border or --accent fought the viewer over them.
+         * Every rule names something the package owns instead.
+         */
+        const global = /^(\*|:root|html|body)(?![\w-])/;
+        const leaks = [];
+
+        for (const chunk of bare.split('}')) {
+            if (!chunk.includes('{')) continue;
+
+            for (const part of chunk.split('{').at(-2).split(',')) {
+                const selector = part.trim();
+                if (selector && !selector.startsWith('@') && global.test(selector)) {
+                    leaks.push(selector);
+                }
+            }
+        }
+
+        expect(leaks, 'a rule that reaches the host page').toEqual([]);
     });
 });
 
@@ -153,9 +180,10 @@ describe('what each sheet is responsible for', () => {
          * beside its own stylesheet gets the same protection.
          *
          * The exceptions are the mount and the two classes a page puts around
-         * it, plus the print rule that stops the backdrop printing.
+         * it. The print rule that stops the backdrop printing names
+         * .graph-paper rather than body, so it leaves a host's page alone.
          */
-        const allowed = /^(\.report-viewer|\.graph-paper|\.report-fills-window|body)(?![\w-])/;
+        const allowed = /^(\.report-viewer|\.graph-paper|\.report-fills-window)(?![\w-])/;
         const chrome = stripNoise(read('src/preview/chrome.css'));
         const leaks = [];
 
@@ -262,6 +290,18 @@ describe('rules that reach further than they mean to', () => {
         expect(bar).not.toMatch(/position:\s*fixed/);
         expect(body).not.toMatch(/100vh/);
         expect(body).toMatch(/flex:\s*1/);
+    });
+
+    it('lets a host hide either screen with the hidden attribute', () => {
+        /**
+         * Both roots are display: flex, and a class outranks the browser's own
+         * [hidden] { display: none } - so a host hiding the designer behind a
+         * tab still had it drawn under the report.
+         */
+        const chrome = stripNoise(read('src/preview/chrome.css'));
+
+        expect(ruleFor('.report-designer[hidden]')).toMatch(/display:\s*none/);
+        expect(chrome).toMatch(/\.report-viewer\[hidden\]\s*\{\s*display:\s*none/);
     });
 
     it('gives the report picker a rule that outranks the field base', () => {

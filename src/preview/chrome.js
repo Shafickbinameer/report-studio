@@ -23,67 +23,73 @@ export function chrome({ title = 'Report Studio' } = {}) {
 <!--
         A header, not role="toolbar": that role promises arrow-key roving focus
         between the controls, and here the arrow keys page the report instead.
+
+        Two boxes: the header is what measures its width, and the row inside
+        it is what rearranges. A container query restyles what is inside the
+        container, never the container, so the grid cannot be the header.
     -->
-    <header class="toolbar" data-role="bar" aria-label="Report tools">
-        <div class="toolbar-brand">${title}</div>
+    <header class="toolbar" aria-label="Report tools">
+        <div class="toolbar-row" data-role="bar">
+            <div class="toolbar-brand">${title}</div>
 
-        <div class="toolbar-centre">
-            <div class="toolbar-group toolbar-search">
-                <!--
-                    Buttons cannot live inside an <input>, so the wrapper draws
-                    the field and the input inside it draws no chrome of its own.
-                -->
-                <div class="search-field">
-                    <input type="search" data-role="query" placeholder="Search the report  (ctrl+K)"
-                        title="Search the report (ctrl+K)"
-                        aria-label="Search the report" spellcheck="false">
-                    <span class="hits" data-role="hits" data-state="idle" aria-live="polite"></span>
-                    <button type="button" data-role="hit-prev" title="Previous match (shift+enter)"
-                        aria-label="Previous match">&#8593;</button>
-                    <button type="button" data-role="hit-next" title="Next match (enter)"
-                        aria-label="Next match">&#8595;</button>
+            <div class="toolbar-centre">
+                <div class="toolbar-group toolbar-search">
+                    <!--
+                        Buttons cannot live inside an <input>, so the wrapper draws
+                        the field and the input inside it draws no chrome of its own.
+                    -->
+                    <div class="search-field">
+                        <input type="search" data-role="query" placeholder="Search the report  (ctrl+K)"
+                            title="Search the report (ctrl+K)"
+                            aria-label="Search the report" spellcheck="false">
+                        <span class="hits" data-role="hits" data-state="idle" aria-live="polite"></span>
+                        <button type="button" data-role="hit-prev" title="Previous match (shift+enter)"
+                            aria-label="Previous match">&#8593;</button>
+                        <button type="button" data-role="hit-next" title="Next match (enter)"
+                            aria-label="Next match">&#8595;</button>
+                    </div>
+                </div>
+
+                <div class="toolbar-group toolbar-zoom">
+                    <button type="button" data-role="zoom-out" title="Zoom out (ctrl+-)"
+                        aria-label="Zoom out">&#8722;</button>
+
+                    <!--
+                        A listbox rather than a <select>: option items are drawn by
+                        the operating system, so they cannot take the palette.
+                    -->
+                    <div class="dropdown" data-role="zoom-dropdown">
+                        <button type="button" class="dropdown-trigger" data-role="zoom"
+                            aria-haspopup="listbox" aria-expanded="false" aria-label="Zoom level">
+                            <span class="dropdown-value">100%</span>
+                            <span class="dropdown-caret" aria-hidden="true"></span>
+                        </button>
+
+                        <ul class="dropdown-menu" data-role="zoom-menu" role="listbox"
+                            aria-label="Zoom level" hidden>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="fit">Fit width</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="0.5">50%</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="0.75">75%</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="1"
+                                data-selected="true">100%</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="1.25">125%</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="1.5">150%</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="2">200%</li>
+                            <li class="dropdown-item" role="option" tabindex="-1" data-value="3">300%</li>
+                        </ul>
+                    </div>
+
+                    <button type="button" data-role="zoom-in" title="Zoom in (ctrl++)"
+                        aria-label="Zoom in">&#43;</button>
                 </div>
             </div>
 
-            <div class="toolbar-group toolbar-zoom">
-                <button type="button" data-role="zoom-out" title="Zoom out (ctrl+-)"
-                    aria-label="Zoom out">&#8722;</button>
-
-                <!--
-                    A listbox rather than a <select>: option items are drawn by
-                    the operating system, so they cannot take the palette.
-                -->
-                <div class="dropdown" data-role="zoom-dropdown">
-                    <button type="button" class="dropdown-trigger" data-role="zoom"
-                        aria-haspopup="listbox" aria-expanded="false" aria-label="Zoom level">
-                        <span class="dropdown-value">100%</span>
-                        <span class="dropdown-caret" aria-hidden="true"></span>
-                    </button>
-
-                    <ul class="dropdown-menu" data-role="zoom-menu" role="listbox"
-                        aria-label="Zoom level" hidden>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="fit">Fit width</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="0.5">50%</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="0.75">75%</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="1"
-                            data-selected="true">100%</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="1.25">125%</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="1.5">150%</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="2">200%</li>
-                        <li class="dropdown-item" role="option" tabindex="-1" data-value="3">300%</li>
-                    </ul>
-                </div>
-
-                <button type="button" data-role="zoom-in" title="Zoom in (ctrl++)"
-                    aria-label="Zoom in">&#43;</button>
+            <div class="toolbar-group toolbar-save">
+                <button type="button" data-role="print" title="Print or save as PDF (ctrl+P)">
+                    Print</button>
+                <button type="button" data-role="export" title="Export the report (ctrl+X)">
+                    Export&#8230;</button>
             </div>
-        </div>
-
-        <div class="toolbar-group toolbar-save">
-            <button type="button" data-role="print" title="Print or save as PDF (ctrl+P)">
-                Print</button>
-            <button type="button" data-role="export" title="Export the report (ctrl+X)">
-                Export&#8230;</button>
         </div>
     </header>
 

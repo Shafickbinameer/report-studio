@@ -15,7 +15,7 @@
 @import "../shared/dropdown.css";
 @import "../preview/chrome.css";
 
-:root {
+.report-designer {
   --dz-bar-height: 56px;
   /* wide enough for "reportHeader", the longest band name */
   --dz-gutter: 96px;
@@ -38,6 +38,15 @@
   height: 100%;
   max-height: 100vh;
   background-color: var(--backdrop);
+}
+
+/**
+ * A class outranks the browser's own [hidden] rule, so display: flex above
+ * would keep a designer on screen that its host had hidden - under the report,
+ * in a tabbed page that hides whichever screen is not chosen.
+ */
+.report-designer[hidden] {
+  display: none;
 }
 
 /**
@@ -313,7 +322,7 @@
 
 /* ---------------- rulers and guides ---------------- */
 
-:root {
+.report-designer {
   --dz-ruler: 18px;
 }
 

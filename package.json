@@ -1,6 +1,6 @@
 {
   "name": "report-studio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Visual report designer and paginated report viewer for the browser. Zero runtime dependencies; plain JS, React components and a Vite plugin.",
   "repository": {
     "type": "git",
