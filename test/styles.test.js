@@ -247,6 +247,23 @@ describe('rules that reach further than they mean to', () => {
         expect(narrow).toMatch(/grid-template-columns:.*px/);
     });
 
+    it('keeps the designer inside the element it was mounted in', () => {
+        /**
+         * The bar was position: fixed and the row below it 100vh tall, so a
+         * designer mounted under a host's own header sat over that header -
+         * and over the tabs the user would have left by. The README says the
+         * designer mounts like the viewer, in any element; this holds it to it.
+         */
+        const root = ruleFor('.report-designer');
+        const bar = ruleFor('.dz-bar');
+        const body = ruleFor('.dz-body');
+
+        expect(root).toMatch(/height:\s*100%/);
+        expect(bar).not.toMatch(/position:\s*fixed/);
+        expect(body).not.toMatch(/100vh/);
+        expect(body).toMatch(/flex:\s*1/);
+    });
+
     it('gives the report picker a rule that outranks the field base', () => {
         /**
          * Both are class selectors, so a `.dz-field-picker` rule loses to a

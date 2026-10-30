@@ -166,6 +166,9 @@ package-test/
 # whatever reports happen to be saved while working on the designer
 reports/
 
+# except the demo's, which is the layout the demo opens
+!/examples/demo/reports/
+
 # the documentation site
 #
 # Anchored, so it matches the site/ at the root and nothing named site deeper

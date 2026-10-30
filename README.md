@@ -5,6 +5,8 @@ JS or React.**
 
 ![Adding a text box in the designer, saving, and running the report](https://raw.githubusercontent.com/Shafickbinameer/report-studio/main/.github/demo.gif)
 
+**[Try it live on StackBlitz](https://stackblitz.com/github/Shafickbinameer/report-studio/tree/main/examples/demo?file=src%2Fmain.js)**: the viewer and the designer in a Vite app, nothing to install.
+
 You draw the report once in a visual designer — headers, footers, groups,
 tables, text, images — and it is saved as a plain JSON file. At runtime your
 app feeds that layout its own data and gets back a page-by-page report viewer,
@@ -361,6 +363,10 @@ const store = {
 `list` returns `{ id, name }` objects — the picker shows the name and opens the
 id. `loadData` must resolve to `null`, not throw, when a report has no data
 file yet: that is an ordinary state, not a failure.
+
+Give the mount element a height, as you do for the viewer. The designer fills
+it, so your own header or tabs can sit above it. An element with no height
+gets the full window.
 
 `createDesigner` returns a handle with the current `layout`, `redraw()` and
 `destroy()`. `openDesignerWindow(options)` opens the same designer in a window

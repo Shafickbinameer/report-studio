@@ -25,8 +25,18 @@
   --dz-foot-offset: 20px;
 }
 
+/**
+ * The designer fills the element it was given - a column of the bar and the
+ * row below it - so a host can put its own header above it. A mount with no
+ * height of its own (the CLI's page, a host that never set one) gets the
+ * window's instead: height: 100% has nothing to resolve against there, so the
+ * cap is what stops the designer growing to the length of the page.
+ */
 .report-designer {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100vh;
   background-color: var(--backdrop);
 }
 
@@ -41,10 +51,14 @@
 
 /* ---------------- the bar ---------------- */
 
+/**
+ * In the column, not fixed to the window: fixed, it sat over whatever the host
+ * had at the top of its page - its own header, and the tabs to leave by.
+ */
 .dz-bar {
-  position: fixed;
-  inset: 0 0 auto 0;
+  position: relative;
   z-index: 10;
+  flex: none;
 
   display: flex;
   align-items: center;
@@ -98,12 +112,12 @@
 
 /* ---------------- the canvas ---------------- */
 
-/* the bar is fixed, so the row below it starts where the bar ends */
+/* whatever height the bar leaves; the canvas and the rail scroll inside it */
 .dz-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: stretch;
-  margin-top: var(--dz-bar-height);
-  height: calc(100vh - var(--dz-bar-height));
 }
 
 /**

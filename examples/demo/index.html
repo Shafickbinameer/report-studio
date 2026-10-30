@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Studio demo</title>
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <nav class="demo-bar">
+        <strong>Report Studio demo</strong>
+        <div class="demo-tabs" role="tablist">
+            <button type="button" role="tab" data-tab="report" aria-selected="true">Report</button>
+            <button type="button" role="tab" data-tab="designer" aria-selected="false">Designer</button>
+        </div>
+        <span class="demo-hint" data-role="hint"></span>
+        <a href="https://github.com/Shafickbinameer/report-studio" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+
+    <!-- one empty element each; the viewer and the designer build the rest -->
+    <main>
+        <div id="report" class="demo-screen"></div>
+        <div id="designer" class="demo-screen" hidden></div>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
