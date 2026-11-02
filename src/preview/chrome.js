@@ -139,6 +139,14 @@ export function chrome({ title = 'Report Studio' } = {}) {
                         <span class="format-note">Every text line and table row, in report order</span>
                     </span>
                 </label>
+
+                <label class="format">
+                    <input type="radio" name="export-format" value="xlsx">
+                    <span class="format-body">
+                        <span class="format-name">Excel</span>
+                        <span class="format-note">The report as it reads, plus a sheet per table</span>
+                    </span>
+                </label>
             </div>
 
             <p class="modal-summary" data-role="export-summary" aria-live="polite"></p>

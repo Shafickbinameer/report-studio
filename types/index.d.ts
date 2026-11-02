@@ -101,6 +101,54 @@ export function toCSV(pages: Page[], options?: CSVOptions): string;
 /** the whole report as CSV, one row per line in the order it is read */
 export function toReportCSV(pages: Page[], options?: ReportCSVOptions): string;
 
+export interface XLSXOptions {
+    /** include the "Report" sheet, the report as it reads; default true */
+    report?: boolean;
+    /** include one sheet per table; default true */
+    tables?: boolean;
+    /**
+     * carry the report's look: fonts, colours, alignment, table grid, row
+     * heights and column widths, text placed where it sits on the page, and
+     * pictures, lines and boxes drawn. False writes plain data with bold
+     * headers. Default true
+     */
+    styled?: boolean;
+    /**
+     * the bytes of pictures given as URLs, keyed by their src; `data:` URIs
+     * need none. A picture with no bytes is left out. toXLSXAsync fills this in
+     */
+    images?: Record<string, Uint8Array | ArrayBuffer> | Map<string, Uint8Array | ArrayBuffer>;
+    /** default `'Report'` */
+    reportSheetName?: string;
+    /** prepend the group key on a grouped table's sheet; default true */
+    groupColumn?: boolean;
+    /** default `'Group'` */
+    groupLabel?: string;
+}
+
+/**
+ * the report as an .xlsx workbook; empty when the report writes nothing.
+ * Throws a RangeError when a sheet would pass Excel's row or column limit
+ */
+export function toXLSX(pages: Page[], options?: XLSXOptions): Uint8Array;
+
+export interface XLSXAsyncOptions extends XLSXOptions {
+    /** what fetches a picture's URL; the global fetch by default */
+    fetch?: (url: string) => Promise<{ ok: boolean; arrayBuffer(): Promise<ArrayBuffer> }>;
+}
+
+/**
+ * toXLSX with the report's URL pictures fetched first; a picture that cannot
+ * be fetched is left out rather than failing the workbook
+ */
+export function toXLSXAsync(pages: Page[], options?: XLSXAsyncOptions): Promise<Uint8Array>;
+
+/** the picture URLs a report shows that need fetching to be embedded */
+export function reportImageSources(pages: Page[]): string[];
+
+/** the MIME type to give a Blob of toXLSX's bytes */
+export const XLSX_MIME: string;
+
 /** a download filename from the report's name */
 export function reportFilename(paginated: { name?: string }, extension?: string): string;
 
@@ -155,6 +203,11 @@ export interface ViewerHandle {
     print(): void;
     /** false when the report has nothing to write */
     downloadCSV(): boolean;
+    /**
+     * false when the report has nothing to write. A report with pictures
+     * from URLs fetches them first, so its download starts a moment later
+     */
+    downloadXLSX(): boolean;
     openExport(): void;
     closeExport(): void;
     confirmExport(): void;

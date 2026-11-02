@@ -26,6 +26,10 @@ export {
     toReportCSV,
     reportFilename,
     reportTables,
+    toXLSX,
+    toXLSXAsync,
+    reportImageSources,
+    XLSX_MIME,
     measureText,
     wrapLines,
     textHeight,
@@ -35,7 +39,7 @@ export {
 export { render } from './render/render.js';
 
 /**
- * The viewer: paging, zoom, search, print and CSV over a page list.
+ * The viewer: paging, zoom, search, print, CSV and Excel over a page list.
  *
  * It takes one empty element and builds the rest, the same way createDesigner
  * does. Link `report-studio/viewer.css` beside it - the report's own stylesheet

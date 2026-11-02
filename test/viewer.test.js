@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { createViewer } from '../src/preview/viewer.js';
 import { render } from '../src/render/render.js';
-import { layout, text, line, box, table, band, rows, groupedRows, run } from './helpers/layout.js';
+import { layout, text, line, box, image, table, band, rows, groupedRows, run } from './helpers/layout.js';
 
 /**
  * The preview page's own body, minus its module script, so the specs drive the
@@ -183,7 +183,7 @@ describe('viewer - control layout', () => {
         for (const role of ['prev', 'next', 'current', 'export', 'query', 'export-confirm']) {
             expect(document.querySelectorAll(`[data-role="${role}"]`), role).toHaveLength(1);
         }
-        expect(document.querySelectorAll('input[name="export-format"]')).toHaveLength(2);
+        expect(document.querySelectorAll('input[name="export-format"]')).toHaveLength(3);
     });
 });
 
@@ -319,13 +319,13 @@ describe('viewer - export dialog', () => {
         expect(clicked).toHaveLength(0);
     });
 
-    it('offers PDF and CSV', () => {
+    it('offers PDF, CSV and Excel', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
         el('export').click();
 
         const values = [...document.querySelectorAll('input[name="export-format"]')]
             .map(i => i.value);
-        expect(values).toEqual(['pdf', 'csv']);
+        expect(values).toEqual(['pdf', 'csv', 'xlsx']);
     });
 
     it('starts on PDF', () => {
@@ -346,6 +346,9 @@ describe('viewer - export dialog', () => {
 
         pick('csv');
         expect(el('export-summary').textContent).toContain('spec.csv');
+
+        pick('xlsx');
+        expect(el('export-summary').textContent).toContain('spec.xlsx');
     });
 
     it('prints when PDF is confirmed', () => {
@@ -369,6 +372,56 @@ describe('viewer - export dialog', () => {
         expect(clicked).toHaveLength(1);
         expect(clicked[0].download).toBe('spec.csv');
         expect(window.print).not.toHaveBeenCalled();
+    });
+
+    it('downloads a workbook when Excel is confirmed', () => {
+        mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        el('export').click();
+        pick('xlsx');
+        el('export-confirm').click();
+
+        expect(clicked).toHaveLength(1);
+        expect(clicked[0].download).toBe('spec.xlsx');
+        expect(window.print).not.toHaveBeenCalled();
+
+        const blob = URL.createObjectURL.mock.calls[0][0];
+        expect(blob.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        expect(blob.size).toBeGreaterThan(0);
+    });
+
+    it('downloads a workbook from code', () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        expect(viewer.downloadXLSX()).toBe(true);
+        expect(clicked[0].download).toBe('spec.xlsx');
+    });
+
+    it('fetches URL pictures before downloading a workbook', async () => {
+        const png = new Uint8Array(33);
+        png.set([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+        new DataView(png.buffer).setUint32(16, 10);
+        new DataView(png.buffer).setUint32(20, 10);
+
+        const fetch = vi.fn(async () => ({ ok: true, arrayBuffer: async () => png.buffer }));
+        vi.stubGlobal('fetch', fetch);
+
+        try {
+            const { viewer } = mountReport({ items: rows(3), customer: { name: 'Anand' } }, layout({
+                bands: [
+                    band('reportHeader', [image('logo', { src: 'https://example.test/logo.png' })]),
+                    band('detail', [table()])
+                ]
+            }));
+
+            expect(viewer.downloadXLSX()).toBe(true);
+            await vi.waitFor(() => expect(clicked).toHaveLength(1));
+
+            expect(fetch).toHaveBeenCalledWith('https://example.test/logo.png');
+            expect(clicked[0].download).toBe('spec.xlsx');
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('closes after exporting', () => {

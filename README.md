@@ -10,7 +10,7 @@ JS or React.**
 You draw the report once in a visual designer — headers, footers, groups,
 tables, text, images — and it is saved as a plain JSON file. At runtime your
 app feeds that layout its own data and gets back a page-by-page report viewer,
-with navigation, zoom, search, print and CSV export.
+with navigation, zoom, search, print, CSV and Excel export.
 
 * **Zero runtime dependencies.** The renderer is plain DOM. No server to run,
   no framework required.
@@ -209,6 +209,32 @@ For CSV, the viewer's export writes every table in the order they print. From
 code, `toCSV(pages, { table: 'refunds' })` writes one table, and
 `reportTables(pages)` lists the tables a report has.
 
+For Excel, the export writes an `.xlsx` workbook with no extra dependency. It
+has a *Report* sheet that reads like the report, plus one sheet per table with
+a frozen, filterable header row. Numbers, booleans and dates in your data stay
+numbers, booleans and dates.
+
+The workbook keeps the report's look: fonts, sizes, colours, alignment, cell
+padding, the table grid and header colours, row heights and column widths. On
+the *Report* sheet each text item goes in the column under where it sits on the
+page (the table columns are the grid), rows are spaced like the page, and
+pictures, lines and boxes are drawn where the page has them, rounded corners
+included. A box with text on it paints its fill into the cells underneath,
+because Excel draws shapes above cells and a filled shape would hide the text.
+A text item that prints only a placeholder's number, such as `{sum(amount)}`,
+becomes a real number you can add up.
+
+Pictures stored in the layout as `data:` URIs are embedded straight away.
+Pictures loaded from URLs have to be fetched first, so the viewer's Excel
+download starts a moment later for those reports. PNG, JPEG, GIF and BMP are
+embedded; WebP and AVIF are left out.
+
+From code, `toXLSX(pages)` returns the file's bytes (empty when there is
+nothing to write); it embeds `data:` pictures only. `await toXLSXAsync(pages)`
+fetches URL pictures first, and `reportImageSources(pages)` lists the URLs it
+would fetch. Pass `{ report: false }` or `{ tables: false }` to leave a kind of
+sheet out, or `{ styled: false }` for plain data with bold headers.
+
 ### Images
 
 An image item can get its picture in two ways:
@@ -289,7 +315,7 @@ function SalesReport({ layout, sales }) {
 * A layout or data the engine can't use throws a `ReportError` while
   rendering. Wrap the component in an error boundary to show it.
 * A `ref` gives you the viewer's controls: `next()`, `prev()`, `show(index)`,
-  `find(text)`, `print()`, `downloadCSV()`, `setZoom(n)`, `fitWidth()`, and
+  `find(text)`, `print()`, `downloadCSV()`, `downloadXLSX()`, `setZoom(n)`, `fitWidth()`, and
   `page`, `pageCount` and `zoom`.
 
 The designer is a separate import, like the plain-JS one:

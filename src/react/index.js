@@ -24,14 +24,14 @@ import { createViewer } from '../preview/viewer.js';
 
 /** the viewer's methods, forwarded from the ref to whichever viewer is mounted */
 const VIEWER_METHODS = [
-    'show', 'next', 'prev', 'find', 'print', 'downloadCSV',
+    'show', 'next', 'prev', 'find', 'print', 'downloadCSV', 'downloadXLSX',
     'openExport', 'closeExport', 'confirmExport',
     'setZoom', 'zoomIn', 'zoomOut', 'fitWidth'
 ];
 
 
 /**
- * The report viewer: paging, zoom, search, print and CSV.
+ * The report viewer: paging, zoom, search, print, CSV and Excel.
  *
  * Give it a layout and data, or pages already built with buildPages. New data
  * builds new pages and remounts the viewer inside the same element, keeping the
@@ -52,7 +52,7 @@ const VIEWER_METHODS = [
  * @param {string} [props.className]
  * @param {object} [props.style]
  * @param {object} ref receives the viewer's controls: show, next, prev, find,
- *   print, downloadCSV, setZoom, zoomIn, zoomOut, fitWidth, and page, pageCount
+ *   print, downloadCSV, downloadXLSX, setZoom, zoomIn, zoomOut, fitWidth, and page, pageCount
  *   and zoom
  */
 export const ReportViewer = forwardRef(function ReportViewer(

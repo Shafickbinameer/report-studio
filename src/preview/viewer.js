@@ -1,6 +1,6 @@
 /**
  * viewer.js turns a page list into a page-at-a-time viewer: navigation, zoom,
- * search, print and CSV.
+ * search, print, CSV and Excel.
  *
  * It takes one empty element and builds everything inside it - the chrome is
  * chrome.js and the report is render.js - so an application mounts it the same
@@ -14,6 +14,8 @@
 
 import { search, searchPages } from '../engine/search.js';
 import { toReportCSV, reportFilename } from '../engine/csv.js';
+import { reportTables } from '../engine/rows.js';
+import { toXLSX, toXLSXAsync, reportImageSources, XLSX_MIME } from '../engine/xlsx.js';
 import { openWindow, closeWithOpener } from '../shared/window.js';
 import { createDropdown } from '../shared/dropdown.js';
 import { render } from '../render/render.js';
@@ -286,6 +288,14 @@ export function createViewer({ mount, paginated, title } = {}) {
                 ? `Downloads ${reportFilename(paginated, 'csv')}.`
                 : 'This report has nothing to write out.',
             run: () => downloadCSV()
+        },
+        xlsx: {
+            /** a report with any text line or any table has a sheet to give */
+            available: () => FORMATS.csv.available() || reportTables(paginated.pages).length > 0,
+            summary: () => FORMATS.xlsx.available()
+                ? `Downloads ${reportFilename(paginated, 'xlsx')}.`
+                : 'This report has nothing to write out.',
+            run: () => downloadXLSX()
         }
     };
 
@@ -374,6 +384,36 @@ export function createViewer({ mount, paginated, title } = {}) {
             reportFilename(paginated, 'csv')
         );
 
+        return true;
+    }
+
+    /**
+     * The report as an Excel workbook: a sheet that reads like the report, and
+     * a sheet per table with typed, sortable cells.
+     *
+     * A report whose pictures come from URLs has to fetch them before they can
+     * be embedded, so its download starts a moment later; true still means a
+     * file is on its way. Should building with the fetched pictures fail, the
+     * workbook goes without them rather than not at all.
+     */
+    function downloadXLSX() {
+        if (!FORMATS.xlsx.available()) return false;
+
+        const save = (bytes) => {
+            if (bytes.length > 0) {
+                download(new Blob([bytes], { type: XLSX_MIME }), reportFilename(paginated, 'xlsx'));
+            }
+        };
+
+        if (reportImageSources(paginated.pages).length > 0) {
+            toXLSXAsync(paginated.pages).then(save, () => save(toXLSX(paginated.pages)));
+            return true;
+        }
+
+        const bytes = toXLSX(paginated.pages);
+        if (bytes.length === 0) return false;
+
+        save(bytes);
         return true;
     }
 
@@ -747,6 +787,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         find: (q) => { ui.query.value = q; runSearch(); },
         print: printReport,
         downloadCSV,
+        downloadXLSX,
         openExport,
         closeExport,
         confirmExport,

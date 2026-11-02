@@ -19,6 +19,7 @@ export { validateLayout, ReportError } from './validate.js';
 export { search, searchPages } from './search.js';
 export { pageRegions, bandZoneHeight, resolveHeight, DEFAULT_BAND_HEIGHTS } from './regions.js';
 export { toCSV, toReportCSV, reportFilename, reportTables } from './csv.js';
+export { toXLSX, toXLSXAsync, reportImageSources, XLSX_MIME } from './xlsx.js';
 export { tablesOf, datasetOf, groupingOf } from './tables.js';
 export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
 
