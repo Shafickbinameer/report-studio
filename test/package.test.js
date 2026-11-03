@@ -36,7 +36,14 @@ beforeAll(() => {
         shell: process.platform === 'win32'
     });
 
-    shipped = new Set(JSON.parse(out)[0].files.map(f => f.path.split(sep).join('/')));
+    /**
+     * And the JSON has changed shape too: npm 11 and earlier print an array of
+     * packs, npm 12 an object keyed by package name.
+     */
+    const parsed = JSON.parse(out);
+    const packed = Array.isArray(parsed) ? parsed[0] : parsed[pkg.name] ?? Object.values(parsed)[0];
+
+    shipped = new Set(packed.files.map(f => f.path.split(sep).join('/')));
 }, 120_000);
 
 

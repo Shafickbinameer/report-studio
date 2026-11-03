@@ -29,8 +29,11 @@ jobs:
           cache: npm
 
       # Trusted publishing needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      # Pinned to the 11 line rather than @latest: npm 12 changed the shape of
+      # `npm pack --json`, and a new npm major should not land in the middle
+      # of a release unannounced.
       - name: Upgrade npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Check the tag matches package.json
         run: |
