@@ -1,0 +1,62 @@
+name: Release
+
+# Release routine:
+#   npm version patch|minor|major   (bumps package.json, commits, tags vX.Y.Z)
+#   git push --follow-tags
+on:
+  push:
+    tags: ['v*']
+
+# One release at a time; never cancel a publish half-way.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm provenance and trusted publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      # Trusted publishing needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Check the tag matches package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # prepublishOnly runs `npm test` and `npm run build` again before the
+      # upload; running them here as well makes a failure show up as its own
+      # step instead of inside the publish log.
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          # With trusted publishing set up on npmjs.com this secret can be left
+          # unset. Otherwise add an npm Automation token as NPM_TOKEN.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
