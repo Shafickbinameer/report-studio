@@ -20,9 +20,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
@@ -42,12 +42,13 @@ jobs:
 
       - run: npm ci
 
-      # prepublishOnly runs `npm test` and `npm run build` again before the
-      # upload; running them here as well makes a failure show up as its own
-      # step instead of inside the publish log.
-      - run: npm test
-
+      # Build before test: dist/ is gitignored, and test/package.test.js checks
+      # that the dist/ entry points are in the tarball. prepublishOnly runs both
+      # again before the upload; running them here as well makes a failure show
+      # up as its own step instead of inside the publish log.
       - run: npm run build
+
+      - run: npm test
 
       - name: Publish to npm
         run: npm publish --provenance --access public
