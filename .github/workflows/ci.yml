@@ -50,3 +50,54 @@ jobs:
       # Lists what would go into the tarball without writing it.
       - name: Check package contents
         run: npm pack --dry-run
+
+  # package.json promises Node >=18.3 (the CLI needs node:util parseArgs), but
+  # the dev toolchain cannot run there - vite 8 and vitest 4 need Node 20+. So
+  # this builds and packs on Node 22, then installs the tarball the way a user
+  # would and exercises it on the oldest Node the package claims to support.
+  node18-smoke:
+    name: Installed package on Node 18
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Pack the tarball
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '18.x'
+
+      - name: Install the tarball into a fresh project
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir consumer
+          cd consumer
+          npm init -y > /dev/null
+          npm install ../report-studio-*.tgz
+
+      - name: Import the entry points
+        working-directory: ${{ runner.temp }}/consumer
+        run: |
+          node --version
+          cat > smoke.mjs <<'EOF'
+          // The React entries need the optional react peer, so they are left out.
+          for (const entry of ['report-studio', 'report-studio/designer', 'report-studio/vite']) {
+            const mod = await import(entry);
+            console.log(`${entry}: ${Object.keys(mod).length} exports`);
+          }
+          EOF
+          node smoke.mjs
+
+      - name: Run the CLI
+        working-directory: ${{ runner.temp }}/consumer
+        run: npx --no-install report-studio --help

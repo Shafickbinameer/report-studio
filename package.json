@@ -75,7 +75,7 @@
     "build": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run test && npm run build"
+    "prepublishOnly": "npm run build && npm run test"
   },
   "bugs": {
     "url": "https://report-studio-docs.vercel.app/report.html"
