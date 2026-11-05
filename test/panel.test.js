@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDesigner } from '../src/designer/designer.js';
 import { syncPanel } from '../src/designer/panel.js';
-import { layout, text, table, band } from './helpers/layout.js';
+import { layout, text, table, band, box } from './helpers/layout.js';
 
 beforeEach(() => {
     vi.spyOn(console, 'debug').mockImplementation(() => { });
@@ -424,5 +424,80 @@ describe('the paper size', () => {
         }));
 
         expect(page(d)).toBe('794x1123');
+    });
+});
+
+
+describe('a colour that is not set', () => {
+    const swatch = (key) => control(key).closest('.dz-swatch');
+    const clear = (key) => panel().querySelector(`[data-action="clear-color"][data-for="${key}"]`);
+
+    /** a box with an outline and no fill */
+    const withBox = () => {
+        const l = json();
+        l.bands[0].items.push(box('b1', { x: 100, y: 300, w: 120, h: 60 }));
+        return l;
+    };
+
+    it('shows as none, not as the black a colour input falls back to', () => {
+        const d = mount(withBox());
+        select('b1');
+
+        expect(item(d, 'b1').style.background).toBeNull();
+        expect(swatch('style.background').classList.contains('is-none')).toBe(true);
+        expect(clear('style.background')).not.toBeNull();
+    });
+
+    it('shows a colour that is set as itself', () => {
+        mount();
+        select('t1');
+
+        expect(swatch('style.color').classList.contains('is-none')).toBe(false);
+        expect(control('style.color').value).toBe('#000000');
+    });
+
+    it('stops being none once one is picked', () => {
+        const d = mount(withBox());
+        select('b1');
+
+        type('style.background', '#ff0000');
+
+        expect(item(d, 'b1').style.background).toBe('#ff0000');
+        expect(swatch('style.background').classList.contains('is-none')).toBe(false);
+    });
+
+    it('takes a colour off with its clear button, back to none', () => {
+        const d = mount();
+        select('t1');
+
+        clear('style.color').click();
+
+        expect(item(d, 't1').style).not.toHaveProperty('color');
+        expect(swatch('style.color').classList.contains('is-none')).toBe(true);
+    });
+
+    it('can be undone', () => {
+        const d = mount();
+        select('t1');
+
+        clear('style.color').click();
+        root().querySelector('[data-action="undo"]').click();
+
+        expect(item(d, 't1').style.color).toBe('#000000');
+    });
+
+    it('follows the item when it changes from elsewhere, as an undo does', () => {
+        const d = mount();
+        select('t1');
+        const t1 = item(d, 't1');
+
+        delete t1.style.color;
+        syncPanel(panel(), t1, d.layout);
+        expect(swatch('style.color').classList.contains('is-none')).toBe(true);
+
+        t1.style.color = '#00ff00';
+        syncPanel(panel(), t1, d.layout);
+        expect(swatch('style.color').classList.contains('is-none')).toBe(false);
+        expect(control('style.color').value).toBe('#00ff00');
     });
 });

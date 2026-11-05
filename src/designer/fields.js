@@ -586,6 +586,37 @@ export function readField(item, field) {
 
 
 /**
+ * Takes a value off an item, so it is as if it had never been set - which for
+ * a colour is "none": a box with no fill, text in the stylesheet's colour.
+ *
+ * Removed rather than written as null, because absent is what an item that was
+ * never given one says, and the engine and the renderer read the two alike.
+ *
+ * @param {object} item mutated in place
+ * @param {object} field
+ * @returns {boolean} true when there was a value to take off
+ */
+export function clearField(item, field) {
+    if (field.read || field.write) return false;
+
+    const path = pathOf(field.key);
+    const last = path.pop();
+
+    let node = item;
+    for (const step of path) {
+        if (node?.[step] == null || typeof node[step] !== 'object') return false;
+        node = node[step];
+    }
+
+    /** a null standing in the file is already none */
+    if (node[last] == null) return false;
+
+    delete node[last];
+    return true;
+}
+
+
+/**
  * Puts a typed value onto an item, and says whether anything changed.
  *
  * Refusing a value rather than storing a bad one is deliberate: these controls

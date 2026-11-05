@@ -19,7 +19,7 @@
 
 import {
     fieldsFor, allFields, reportFields, allReportFields,
-    COLUMN_FIELDS, readField, writeField
+    COLUMN_FIELDS, readField, writeField, clearField
 } from './fields.js';
 import { BAND_NOTES, hasBand, findBand, railBands } from './structure.js';
 import {
@@ -113,27 +113,28 @@ function grouping(table, layout) {
  * @returns {string} markup
  */
 function groupLevel(scope, table, level, n, depth) {
-    const keys = GROUP_KINDS.map(kind => groupBandKey(kind, table.id, n));
-    if (depth === 1) {
-        return `${levelOptions(level, n)}${keys.map(key => bandRow(scope, key)).join('')}`;
-    }
+    const by = typeof level?.by === 'string' ? level.by : '';
+    const bands = levelBands(scope, table, by, n);
+
+    if (depth === 1) return `${levelOptions(level, n)}${bands}`;
 
     const id = `dz-f-group-level-${n}`;
-    const by = typeof level?.by === 'string' ? level.by : '';
 
     return `
     <div class="dz-group-level" data-level="${n}">
-        <div class="dz-column-head">
-            <span>Level ${n + 1}</span>
-            ${n > 0 ? `
-                <button type="button" class="dz-icon" data-action="move-group-level-out"
+        <div class="dz-group-level-head">
+            <span class="dz-group-level-name">Level ${n + 1}${by ? ` · <b>${esc(by)}</b>` : ''}</span>
+            <span class="dz-group-level-actions">
+                ${n > 0 ? `
+                    <button type="button" class="dz-icon" data-action="move-group-level-out"
+                            data-level="${n}"
+                            title="Group by this before the level above it"
+                            aria-label="Move level ${n + 1} out">&uarr;</button>` : ''}
+                <button type="button" class="dz-icon" data-action="remove-group-level"
                         data-level="${n}"
-                        title="Group by this before the level above it"
-                        aria-label="Move level ${n + 1} out">&uarr;</button>` : ''}
-            <button type="button" class="dz-icon" data-action="remove-group-level"
-                    data-level="${n}"
-                    title="Stop grouping by this, and remove its header and footer"
-                    aria-label="Remove level ${n + 1}">&times;</button>
+                        title="Stop grouping by this, and remove its header and footer"
+                        aria-label="Remove level ${n + 1}">&times;</button>
+            </span>
         </div>
         ${n > 0 ? `
             <div class="dz-field dz-field-text">
@@ -143,8 +144,23 @@ function groupLevel(scope, table, level, n, depth) {
                 <p class="dz-hint">A field to group each group above by</p>
             </div>` : ''}
         ${levelOptions(level, n)}
-        ${keys.map(key => bandRow(scope, key)).join('')}
+        ${bands}
     </div>`;
+}
+
+
+/**
+ * A level's header and footer switches, named for what they are inside the
+ * table's own section - "Header, before each region" - rather than by the key
+ * the report's band list needs.
+ */
+function levelBands(scope, table, by, n) {
+    const what = by || 'group';
+
+    return GROUP_KINDS.map(kind => bandRow(scope, groupBandKey(kind, table.id, n),
+        kind === 'groupHeader'
+            ? { label: 'Group header', note: `Before each ${what}` }
+            : { label: 'Group footer', note: `After each ${what}` })).join('');
 }
 
 
@@ -298,13 +314,7 @@ function input(id, bind, field, value) {
                     >${esc(o.label)}</option>`).join('')}</select>`;
 
         case 'color':
-            /**
-             * A colour input cannot hold null, and several style fields are
-             * legitimately absent - so the swatch falls back to black and the
-             * value is only written once someone actually picks one.
-             */
-            return `<input type="color" id="${id}" ${bind}
-                value="${esc(value ?? '#000000')}">`;
+            return colorInput(id, bind, field, value);
 
         case 'toggle':
             return `<input type="checkbox" id="${id}" ${bind}
@@ -340,6 +350,41 @@ function input(id, bind, field, value) {
                 ${field.min != null ? `min="${field.min}"` : ''}
                 ${field.max != null ? `max="${field.max}"` : ''} step="1">`;
     }
+}
+
+
+/**
+ * A colour, or none.
+ *
+ * A colour input cannot hold null, and several style fields are legitimately
+ * absent - a box with no fill, text in the stylesheet's colour. Drawn as the
+ * input's black, an absent colour looked like a chosen one. So the input sits
+ * under a "none" swatch while there is no colour, and still opens the picker
+ * when clicked; the value is only written once someone actually picks one.
+ * A chosen colour gets a button that takes it off again.
+ *
+ * Whether it is none is a class on the wrapper, which the input and syncPanel
+ * keep up to date - rebuilding the rail while the picker is open would close it.
+ */
+function colorInput(id, bind, field, value) {
+    const none = value == null || value === '';
+
+    return `
+    <span class="dz-swatch${none ? ' is-none' : ''}">
+        <span class="dz-swatch-well">
+            <input type="color" id="${id}" ${bind} value="${esc(none ? '#000000' : value)}">
+        </span>
+        <span class="dz-swatch-none" aria-hidden="true">None</span>
+        <button type="button" class="dz-icon dz-swatch-clear" data-action="clear-color"
+                data-for="${esc(field.key)}"
+                title="No colour" aria-label="Remove ${esc(field.label)} colour">&times;</button>
+    </span>`;
+}
+
+
+/** shows a colour control as none, or as its colour */
+function markSwatch(node, none) {
+    node.closest?.('.dz-swatch')?.classList.toggle('is-none', none);
 }
 
 
@@ -404,14 +449,22 @@ function bandNote(type) {
 
 /**
  * One band's switch and height, by key.
+ *
+ * The report's band list names a table's group band in full - whose it is and
+ * which level - because it sits among every other band. Inside the table's own
+ * grouping section both are already said by where it is, so that section
+ * passes a shorter name and note of its own.
+ *
  * @param {object} layout
  * @param {string} type a band type, or a table's group band key
+ * @param {{label?: string, note?: string}} [names]
  * @returns {string} markup
  */
-function bandRow(layout, type) {
+function bandRow(layout, type, names = {}) {
     const band = findBand(layout, type);
     const on = hasBand(layout, type);
-    const label = bandLabel(type);
+    const label = names.label ?? bandLabel(type);
+    const note = names.note ?? bandNote(type);
 
     return `
     <div class="dz-band-row${on ? ' is-on' : ''}">
@@ -427,7 +480,7 @@ function bandRow(layout, type) {
                      aria-label="${esc(label)} height">`
             : `<span class="dz-band-height-none">${
                 type === 'detail' ? 'what is left' : ''}</span>`}
-        <p class="dz-hint">${esc(bandNote(type))}</p>
+        ${note ? `<p class="dz-hint">${esc(note)}</p>` : ''}
     </div>`;
 }
 
@@ -524,6 +577,9 @@ export function attachPanel({
 
         const raw = field.type === 'toggle' ? node.checked : node.value;
 
+        /** a colour picked is no longer none, even one picked as black */
+        if (field.type === 'color') markSwatch(node, false);
+
         /**
          * A field may say which reading of its object decides the rail's
          * shape, rather than that every edit to it does - *Group by* changes
@@ -560,6 +616,18 @@ export function attachPanel({
         if (node.dataset.action === 'insert-brace') {
             const box = node.closest('.dz-field')?.querySelector('textarea');
             if (box) insertBraces(box);
+            return;
+        }
+
+        /** handled here too: it is bound to a field, as the colour beside it is */
+        if (node.dataset.action === 'clear-color') {
+            const bound = getTarget();
+            const field = bound?.fields.find(f => f.key === node.dataset.for);
+
+            if (field && clearField(bound.target, field)) {
+                markSwatch(node, true);
+                changed(`field:${field.key}`);
+            }
             return;
         }
 
@@ -627,6 +695,9 @@ export function syncPanel(panel, item, layout) {
         if (!field) continue;
 
         const value = readField(source, field);
+
+        /** an undo can take a colour off, or put one back */
+        if (field.type === 'color') markSwatch(node, value == null || value === '');
 
         if (field.type === 'toggle') {
             node.checked = Boolean(value);
