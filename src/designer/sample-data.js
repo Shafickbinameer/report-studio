@@ -20,6 +20,7 @@
 
 import { PLACEHOLDER, isEngineKey, isRowScoped } from '../engine/resolve.js';
 import { groupingsOf, datasetOf, tablesOf, levelsOf } from '../engine/tables.js';
+import { isCalculated, expressionFields } from '../engine/calculate.js';
 
 
 /** enough rows to show a group break, few enough to read at a glance */
@@ -171,7 +172,15 @@ export function datasets(layout) {
 
             const fields = fieldsOf(item.dataset || fallback);
             for (const column of (item.columns || [])) {
-                if (column?.field) fields.add(column.field);
+                /**
+                 * A calculated column's own field is worked out, not read: the
+                 * data needs the fields its calculation reads instead.
+                 */
+                if (isCalculated(column)) {
+                    for (const name of expressionFields(column.expression)) fields.add(name);
+                } else if (column?.field) {
+                    fields.add(column.field);
+                }
             }
         }
     }

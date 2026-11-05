@@ -26,6 +26,7 @@ import { tablesOf, datasetOf, groupingsOf, normalizeGrouping } from './tables.js
 import { formatValue, percentFormat, toNumber } from './format.js';
 import { soleKey } from './resolve.js';
 import { highlightFor } from './highlight.js';
+import { calculatedRows } from './calculate.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -52,7 +53,12 @@ export function group(resolvedJson, data) {
 
     /** the rows each table reads, bound as they are found */
     const bound = tables.map(table => {
-        const rows = datasetFor(table, json, data);
+        /**
+         * Calculated columns first: from here on a calculated value is a field
+         * of the row like any other - grouped and sorted by, totalled by
+         * {sum(amount)} in any band, formatted, highlighted and exported.
+         */
+        const rows = calculatedRows(table, datasetFor(table, json, data));
         named.set(datasetOf(table, json), rows);
         return { table, rows };
     });

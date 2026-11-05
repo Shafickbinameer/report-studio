@@ -141,6 +141,12 @@ export interface TableColumn {
     label?: string;
     width?: number;
     align?: Align;
+    /**
+     * Makes this a calculated column: worked out for each row and stored under
+     * `field`, e.g. `{qty} * {price}`, `round({amount} * 0.18, 2)` or
+     * `percentage({amount}, group)`.
+     */
+    expression?: string | null;
     /** how this column's values print; the workbook keeps them as numbers and dates */
     format?: ValueFormat | null;
     /** styles each cell by its value, or by another field of its row */

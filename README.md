@@ -374,6 +374,41 @@ What it applies to:
 `formatValue(value, format, defaults)` and `excelNumberFormat(format, defaults)`
 are exported for hosts that need the same rules.
 
+### Calculated columns
+
+A column can show a calculation instead of a field: type it into the
+**Calculation** box on the column's card. The result is worked out for each row
+and stored under the column's field, so from then on it behaves like any other
+field. It's formatted and highlighted, totalled by `{sum(amount)}` in any band,
+grouped and sorted by, and exported to Excel and CSV.
+
+```json
+{ "field": "amount", "label": "Amount", "expression": "{qty} * {price}", "format": { "type": "currency" } }
+```
+
+| Calculation | Gives |
+|---|---|
+| `{qty} * {price}` | arithmetic on fields: `+ - * / %` and brackets |
+| `round({amount} * 0.18, 2)` | GST at 18%, to 2 places |
+| `{amount} + {tax}` | a column can use an earlier column's result |
+| `{amount} - avg({amount})` | how far each row is from the average |
+| `percentage({amount})` | each row's share of the table total |
+| `percentage({amount}, group)` | each row's share of its own group |
+| `percentage({qty}, 500)` | each row as a share of a target |
+| `max({qty}, 1)` / `abs({diff})` | the larger of two values / without the sign |
+
+- **Totals over the table:** `sum()`, `avg()`, `min()`, `max()` and `count()`
+  work over every row of the table, and can take a calculation themselves:
+  `sum({qty} * {price})`.
+- **Missing inputs:** if an input isn't a number (a blank, a name), or a value
+  is divided by zero, the result is blank rather than an error.
+- **Errors:** a calculation that can't be read is reported with what's wrong
+  and where, for example `expression ends where a value is expected`.
+- **Shares:** a column whose calculation is a `percentage()` prints as a
+  percentage unless it has a format of its own.
+- **Your data:** the rows you pass in are never changed; calculated values go
+  onto copies.
+
 ### Percentages
 
 `{percentage(...)}` gives a value as a share of another, such as each

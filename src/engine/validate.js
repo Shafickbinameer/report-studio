@@ -12,6 +12,7 @@ import {
     FORMAT_TYPES, GROUPINGS, NEGATIVES, ZEROS, SYMBOL_POSITIONS, MAX_DECIMALS
 } from './format.js';
 import { HIGHLIGHT_OPS, HIGHLIGHT_STYLE_KEYS } from './highlight.js';
+import { parseExpression } from './calculate.js';
 import { designHeight } from './measure.js';
 
 
@@ -419,6 +420,13 @@ function validateItem(item, where, issues) {
             issues.push(`${where}.columns[${k}].field must be a non-empty string`);
         }
         validateFormat(col?.format, `${where}.columns[${k}].format`, issues, true);
+
+        if (col?.expression != null && col.expression !== '') {
+            const parsed = typeof col.expression === 'string'
+                ? parseExpression(col.expression)
+                : { error: 'must be text' };
+            if (parsed.error) issues.push(`${where}.columns[${k}].expression ${parsed.error}`);
+        }
         validateHighlight(col?.highlight, `${where}.columns[${k}].highlight`, issues, false);
     });
 

@@ -111,7 +111,13 @@ export const COLUMN_FIELDS = [
     { key: 'field', label: 'Field', type: 'text' },
     { key: 'label', label: 'Label', type: 'text' },
     { key: 'width', label: 'Width', type: 'number', min: 1 },
-    { key: 'align', label: 'Align', type: 'choice', options: ALIGNMENTS }
+    { key: 'align', label: 'Align', type: 'choice', options: ALIGNMENTS },
+    {
+        key: 'expression', label: 'Calculation', type: 'text',
+        hint: 'Blank shows the field as it is. A calculation - {qty} * {price}, ' +
+            'round({amount} * 0.18, 2), percentage({amount}) - is worked out for ' +
+            "each row and saved under this column's field"
+    }
 ];
 
 

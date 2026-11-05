@@ -107,7 +107,16 @@ function settleFormats(layout) {
     for (const band of layout.bands) textIn(band).forEach(settle);
 
     for (const table of tablesOf(layout)) {
-        (Array.isArray(table.columns) ? table.columns : []).forEach(settle);
+        for (const column of (Array.isArray(table.columns) ? table.columns : [])) {
+            /**
+             * A column whose calculation is a share holds 0.25 for a quarter;
+             * printed as it comes that reads as a number, not a share.
+             */
+            if (column && !column.format && /^\s*percentage\s*\(/.test(column.expression ?? '')) {
+                column.format = { type: 'percent' };
+            }
+            settle(column);
+        }
 
         for (const level of levelsOf(table)) {
             textIn(level?.header).forEach(settle);
