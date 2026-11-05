@@ -8,6 +8,10 @@
 
 
 import { tablesOf, hasOwnGrouping, levelsOf, MAX_GROUP_LEVELS, GROUP_SORTS } from './tables.js';
+import {
+    FORMAT_TYPES, GROUPINGS, NEGATIVES, ZEROS, SYMBOL_POSITIONS, MAX_DECIMALS
+} from './format.js';
+import { HIGHLIGHT_OPS, HIGHLIGHT_STYLE_KEYS } from './highlight.js';
 import { designHeight } from './measure.js';
 
 
@@ -73,6 +77,8 @@ export function validateLayout(json) {
     if (json.groupBy != null && typeof json.groupBy !== 'string') {
         issues.push('layout.groupBy must be a field name or null');
     }
+
+    validateFormat(json.format, 'layout.format', issues, false);
 
     const seenTypes = new Set();
 
@@ -297,6 +303,10 @@ function validateGroupBand(band, where, issues) {
         issues.push(`${where}.height must be a number of pixels`);
     }
 
+    if (band.background != null && (typeof band.background !== 'string' || band.background === '')) {
+        issues.push(`${where}.background must be a colour, or null`);
+    }
+
     if (!Array.isArray(band.items)) {
         issues.push(`${where}.items must be an array`);
         return;
@@ -362,6 +372,8 @@ function validateItem(item, where, issues) {
         if (typeof item.value !== 'string') {
             issues.push(`${where}.value must be a string`);
         }
+        validateFormat(item.format, `${where}.format`, issues, true);
+        validateHighlight(item.highlight, `${where}.highlight`, issues, false);
         return;
     }
 
@@ -406,7 +418,113 @@ function validateItem(item, where, issues) {
         if (col == null || typeof col.field !== 'string' || col.field === '') {
             issues.push(`${where}.columns[${k}].field must be a non-empty string`);
         }
+        validateFormat(col?.format, `${where}.columns[${k}].format`, issues, true);
+        validateHighlight(col?.highlight, `${where}.columns[${k}].highlight`, issues, false);
     });
+
+    validateHighlight(item.rowHighlight, `${where}.rowHighlight`, issues, true);
+}
+
+
+/**
+ * A list of highlight rules: each a condition and the style it gives.
+ *
+ * @param {*} rules
+ * @param {string} where
+ * @param {string[]} issues
+ * @param {boolean} needsField whether every rule must name a field - a row's
+ *   rules do, a row having no one value of its own to test
+ */
+function validateHighlight(rules, where, issues, needsField) {
+    if (rules == null) return;
+
+    if (!Array.isArray(rules)) {
+        issues.push(`${where} must be a list of rules, or null`);
+        return;
+    }
+
+    rules.forEach((rule, n) => {
+        const at = `${where}[${n}]`;
+        const when = rule?.when;
+
+        if (when == null || typeof when !== 'object') {
+            issues.push(`${at}.when must say what to test`);
+            return;
+        }
+
+        if (!HIGHLIGHT_OPS.includes(when.op)) {
+            issues.push(`${at}.when.op "${when.op}" is not one of: ${HIGHLIGHT_OPS.join(', ')}`);
+        }
+
+        if (when.field != null && (typeof when.field !== 'string' || when.field === '')) {
+            issues.push(`${at}.when.field must be the name of a field`);
+        } else if (needsField && when.field == null) {
+            issues.push(`${at}.when.field must name the field of the row to test`);
+        }
+
+        if (when.op === 'between' && (when.value == null || when.to == null)) {
+            issues.push(`${at}.when needs both value and to for between`);
+        }
+
+        const style = rule.style;
+        if (style == null || typeof style !== 'object' || Array.isArray(style)) {
+            issues.push(`${at}.style must be an object`);
+            return;
+        }
+
+        for (const key of Object.keys(style)) {
+            if (!HIGHLIGHT_STYLE_KEYS.includes(key)) {
+                issues.push(`${at}.style.${key} is not one of: ${HIGHLIGHT_STYLE_KEYS.join(', ')}`);
+            }
+        }
+    });
+}
+
+
+/**
+ * A number or date format - a text item's, a column's, or the report's own
+ * defaults, which have every key but `type`. Every key is optional; what is
+ * there has to be one of the things format.js knows.
+ *
+ * @param {*} format
+ * @param {string} where
+ * @param {string[]} issues
+ * @param {boolean} typed whether it may say a `type` - the report's defaults may not
+ */
+function validateFormat(format, where, issues, typed) {
+    if (format == null) return;
+
+    if (typeof format !== 'object' || Array.isArray(format)) {
+        issues.push(`${where} must be an object, or null`);
+        return;
+    }
+
+    const oneOf = (key, list) => {
+        if (format[key] != null && !list.includes(format[key])) {
+            issues.push(`${where}.${key} "${format[key]}" is not one of: ${list.join(', ')}`);
+        }
+    };
+
+    if (typed) oneOf('type', FORMAT_TYPES);
+    else if (format.type != null) {
+        issues.push(`${where}.type is an item's or a column's to say, not the report's`);
+    }
+
+    oneOf('grouping', GROUPINGS);
+    oneOf('negative', NEGATIVES);
+    oneOf('zero', ZEROS);
+    oneOf('symbolPosition', SYMBOL_POSITIONS);
+
+    if (format.decimals != null && !(Number.isInteger(format.decimals)
+        && format.decimals >= 0 && format.decimals <= MAX_DECIMALS)) {
+        issues.push(`${where}.decimals must be a whole number from 0 to ${MAX_DECIMALS}`);
+    }
+
+    for (const key of ['symbol', 'pattern']) {
+        if (format[key] != null && typeof format[key] !== 'string') {
+            issues.push(`${where}.${key} must be text`);
+        }
+    }
 }
 
 

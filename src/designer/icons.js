@@ -107,6 +107,15 @@ export const ICONS = {
                           a.75.75 0 0 0-.75-.75H9.75"/>
                  <rect x="6.25" y="1.75" width="3.5" height="2.75" rx=".85"/>`),
 
+    /** a percent sign: how a value prints, number, money or date */
+    format: wrap(`<path d="M12.25 3.75 3.75 12.25"/>
+                  <circle cx="4.75" cy="4.75" r="1.75"/>
+                  <circle cx="11.25" cy="11.25" r="1.75"/>`),
+
+    /** a highlighter pen over the stroke it leaves */
+    highlight: wrap(`<path d="M9.75 2.75 13.25 6.25 8 11.5H4.5V8z"/>
+                     <path d="M2.25 13.75h11.5"/>`),
+
     /** a disk: the shutter above, the label below */
     save: wrap(`<path d="M2.75 3.25h8.5l2.5 2.5v7a.5.5 0 0 1-.5.5h-11
                          a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5z"/>

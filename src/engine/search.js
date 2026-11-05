@@ -8,6 +8,7 @@
  */
 
 import { fragmentBandsOf } from './tables.js';
+import { formatValue } from './format.js';
 
 
 /**
@@ -98,7 +99,8 @@ function collectTable(item, pageNO, bandType, needle, caseSensitive, matches) {
 function collectRows(rows, columns, itemId, pageNO, bandType, needle, caseSensitive, matches) {
     for (const row of (rows ?? [])) {
         for (const column of columns) {
-            push(matches, row?.[column.field], {
+            /** what the page shows, so ₹1,00,000 is found as it is read */
+            push(matches, formatValue(row?.[column.field], column.format), {
                 pageNO, bandType, itemId, field: column.field
             }, needle, caseSensitive);
         }

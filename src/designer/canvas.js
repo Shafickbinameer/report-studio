@@ -82,7 +82,11 @@ function designItem(item) {
          * over its row as a zone of its own, so what is on it can be selected
          * and dragged like anything on any other band.
          */
-        const room = (strip) => ({ height: strip.h, level: strip.level, items: [] });
+        const room = (strip) => ({
+            height: strip.h, level: strip.level, items: [],
+            /** shaded as it will print, so the design shows where groups start */
+            background: strip.band?.background ?? null
+        });
         const of = (kind) => strips.filter(s => s.kind === kind).map(room);
 
         return {

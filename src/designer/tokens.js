@@ -103,6 +103,16 @@ export const TOKENS = [
         value: `{max(${FIELD})}`,
         field: true,
         aggregate: true
+    },
+    {
+        id: 'percentage',
+        prefer: ['groupFooter', 'groupHeader', 'reportFooter'],
+        label: 'Percentage of total',
+        value: `{percentage(sum(${FIELD}))}`,
+        note: "This group's sum as a share of the whole table's - add , parent " +
+            'for a share of the group outside, or , 50000 for a share of a target',
+        field: true,
+        aggregate: true
     }
 ];
 

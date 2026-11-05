@@ -9,6 +9,8 @@
 
 import { textHeight } from './text-metrics.js';
 import { levelsOf, groupFrame } from './tables.js';
+import { formatValue } from './format.js';
+import { cellHighlight } from './highlight.js';
 
 
 /**
@@ -152,10 +154,17 @@ export function rowHeightsFor(item, rows) {
             const width = widths[index];
             if (!(width > 0)) continue;
 
-            const value = row?.[column.field];
-            if (value === null || value === undefined || value === '') continue;
+            /** measured as printed: ₹1,00,000.00 wraps where 100000 would not */
+            const value = formatValue(row?.[column.field], column.format);
+            if (value === '') continue;
 
-            tallest = Math.max(tallest, textHeight(String(value), width, font));
+            /** a bold highlight is wider, and may wrap where the plain text did not */
+            const lit = cellHighlight(item, column, row);
+            const drawn = lit?.fontWeight || lit?.fontStyle
+                ? { ...font, fontWeight: lit.fontWeight ?? font.fontWeight, fontStyle: lit.fontStyle ?? font.fontStyle }
+                : font;
+
+            tallest = Math.max(tallest, textHeight(String(value), width, drawn));
         }
 
         return tallest;
@@ -290,7 +299,8 @@ function measureItem(item, json) {
  */
 function measureTextItem(item) {
     const declared = item.h ?? 0;
-    const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0, item.style);
+    const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0,
+        item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : item.style);
     return Math.max(declared, wrapped);
 }
 

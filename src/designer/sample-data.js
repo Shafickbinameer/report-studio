@@ -30,7 +30,11 @@ const GROUPS = ['North', 'South'];
 const NUMERIC = /(amount|amt|price|qty|quantity|total|subtotal|cost|rate|balance|discount|tax)$/i;
 
 /** an aggregate expression, for the fields the layout takes a sum of */
-const AGGREGATE = /\{\s*(\w+)\(([^)]*)\)\s*\}/g;
+/**
+ * An aggregate and its field, wherever it stands - on its own, `{sum(amount)}`,
+ * or inside another, `{percentage(sum(amount), 50000)}`.
+ */
+const AGGREGATE = /\b(count|sum|avg|min|max)\(([^()]*)\)/g;
 
 /** and ones that want a date */
 const DATEISH = /(date|day|when)$/i;

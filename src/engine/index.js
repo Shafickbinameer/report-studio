@@ -25,6 +25,10 @@ export {
     fragmentBandsOf, MAX_GROUP_LEVELS
 } from './tables.js';
 export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
+export {
+    formatValue, describeFormat, excelNumberFormat, DEFAULT_FORMAT, INDIAN_DEFAULTS
+} from './format.js';
+export { highlightFor, cellHighlight, describeHighlight } from './highlight.js';
 
 
 /**

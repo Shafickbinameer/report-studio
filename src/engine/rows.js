@@ -23,13 +23,15 @@
  * and how tall it is, in pixels from the top of the printable area. CSV ignores
  * all of it. A descriptor is one of
  *
- *   { kind: 'text', style, template, x, y, w, h }   a text item, placed on the page
+ *   { kind: 'text', style, template, format, raw, x, y, w, h }
+ *                                                   a text item, placed on the page
  *   { kind: 'head', column, table }                 a table's column label
  *   { kind: 'cell', column, table }                 a table's data cell
  *
  * where `table` is { style, wrap } - the table's own style block, and whether
  * its cells wrap - and `template` is the text item's value before placeholders
- * were filled. They are the page objects' own values, unresolved: what the
+ * were filled. `format` is the text item's, and `raw` the one value it printed
+ * when it is a single placeholder; a column's format is on the column. They are the page objects' own values, unresolved: what the
  * stylesheet does when they are absent is the exporter's to know.
  *
  * reportLayout adds what reportRows leaves out: the graphics - images, lines
@@ -40,6 +42,7 @@
 
 
 import { levelsOf, fragmentBandsOf } from './tables.js';
+import { cellHighlight } from './highlight.js';
 
 
 /** the items that are drawn rather than written */
@@ -220,7 +223,12 @@ export function reportTables(pages) {
 
 /** what the descriptors of a table's cells share */
 function tableDesign(table) {
-    return { style: table.style ?? {}, wrap: table.wrap !== false };
+    return {
+        style: table.style ?? {},
+        wrap: table.wrap !== false,
+        /** carried for the table sheet, which styles each row by them */
+        rowHighlight: table.rowHighlight ?? null
+    };
 }
 
 /** what items.js draws a header row at: measured if a label wrapped, else declared */
@@ -304,6 +312,10 @@ function collectBand(band, out, context) {
         kind: 'text',
         style: item.style ?? {},
         template: item.value,
+        /** a share is held as a fraction and shown as a percentage, whatever the item's format */
+        format: item.rawFormat ?? item.format,
+        raw: item.raw,
+        highlight: item.highlighted ?? null,
         x: Number(item.x) || 0,
         y: origin + (Number(item.y) || 0),
         w: Number(item.w) || 0,
@@ -475,7 +487,9 @@ function collectTable(table, out, context) {
         out.push({
             cells: table.columns.map(c => row?.[c.field]),
             header: false,
-            design: table.columns.map(column => ({ kind: 'cell', column, table: shared })),
+            design: table.columns.map(column => ({
+                kind: 'cell', column, table: shared, highlight: cellHighlight(table, column, row)
+            })),
             page, top: cursor, height
         });
         cursor += Number(height) || 0;

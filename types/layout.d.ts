@@ -26,6 +26,67 @@ export type RuleStyle = LineStyle | 'none';
 
 export type ImageFit = 'contain' | 'cover' | 'fill';
 
+export type FormatType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime';
+
+/**
+ * How values print, and how a workbook shows them. Every key is optional; what
+ * a format leaves unsaid comes from the report's own `format`, then from the
+ * neutral defaults: international digit groups, no symbol, ISO dates.
+ */
+export interface FormatDefaults {
+    /** places after the point, 0 to 6; default 2 */
+    decimals?: number;
+    /** 1,234,567 | 12,34,567 | 1234567; default 'international' */
+    grouping?: 'international' | 'indian' | 'none';
+    /** -1,234 | (1,234) | 1,234-; default 'minus' */
+    negative?: 'minus' | 'brackets' | 'trailing';
+    /** 0.00 | - | nothing; default 'zero' */
+    zero?: 'zero' | 'dash' | 'blank';
+    /** what a currency format prints with it, such as '₹'; default none */
+    symbol?: string;
+    /** default 'before' */
+    symbolPosition?: 'before' | 'after';
+    /**
+     * a date's layout from yyyy yy MMMM MMM MM M dd d HH H hh h mm ss a;
+     * default 'yyyy-MM-dd'
+     */
+    pattern?: string;
+}
+
+/** what a highlight rule tests for */
+export type HighlightOp =
+    | '=' | '!=' | '<' | '<=' | '>' | '>=' | 'between'
+    | 'contains' | 'startsWith' | 'empty' | 'notEmpty';
+
+/**
+ * One conditional formatting rule. Rules are checked in order and the first
+ * that holds is used. Numbers compare as numbers, dates by their day, and
+ * text without regard to case; a word never orders against a number.
+ */
+export interface HighlightRule {
+    when: {
+        /** a field of the row, or of the data for a text item; the value itself when absent */
+        field?: string;
+        op: HighlightOp;
+        value?: string | number;
+        /** the upper end, for 'between'; both ends are included */
+        to?: string | number;
+    };
+    /** only what is named changes */
+    style: {
+        color?: string;
+        background?: string;
+        fontWeight?: string;
+        fontStyle?: string;
+    };
+}
+
+/** a text item's or a column's format */
+export interface ValueFormat extends FormatDefaults {
+    /** 'text', or none, prints a value as it comes */
+    type: FormatType;
+}
+
 export interface Margin {
     top: number;
     right: number;
@@ -68,6 +129,10 @@ export interface TextItem extends ItemBase {
     /** literal text and `{placeholders}`, such as `Total: {sum(amount)}` */
     value: string;
     style?: TextStyle;
+    /** how the values its placeholders stand for print */
+    format?: ValueFormat | null;
+    /** styles the item by the one value it prints, or by a field of the data */
+    highlight?: HighlightRule[] | null;
 }
 
 export interface TableColumn {
@@ -76,6 +141,10 @@ export interface TableColumn {
     label?: string;
     width?: number;
     align?: Align;
+    /** how this column's values print; the workbook keeps them as numbers and dates */
+    format?: ValueFormat | null;
+    /** styles each cell by its value, or by another field of its row */
+    highlight?: HighlightRule[] | null;
     [key: string]: unknown;
 }
 
@@ -111,6 +180,8 @@ export interface TableItem extends ItemBase {
     groupBy?: string | null;
     /** false keeps each cell to one line with an ellipsis */
     wrap?: boolean;
+    /** styles whole rows by a field of the row; a column's own rules go on top */
+    rowHighlight?: HighlightRule[] | null;
     style?: TableStyle;
 }
 
@@ -155,6 +226,8 @@ export type ReportItem = TextItem | TableItem | LineItem | BoxItem | ImageItem;
  * `{sum(field)}` totals that group alone.
  */
 export interface GroupBand {
+    /** a colour the band is shaded with, across the table's width */
+    background?: string | null;
     /** pixels; grows to fit what is in it */
     height?: number;
     items: Array<TextItem | LineItem | BoxItem | ImageItem>;
@@ -200,6 +273,8 @@ export interface Layout {
      * own `grouping`.
      */
     groupBy?: string | null;
+    /** what every item's and column's format falls back on */
+    format?: FormatDefaults | null;
     bands: Band[];
     [key: string]: unknown;
 }

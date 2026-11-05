@@ -44,6 +44,8 @@ import {
 } from './xlsx-drawing.js';
 import { imageSrc } from '../render/items.js';
 import { zip } from './zip.js';
+import { excelNumberFormat, excelValue } from './format.js';
+import { cellHighlight } from './highlight.js';
 
 
 /** Excel's hard limits; past them it refuses the whole file */
@@ -299,7 +301,9 @@ function reportSheet(pages, name, styled, images) {
         if (isText) return placeText(row, grid, formats);
 
         return [{
-            cells: row.cells.map((value, i) => ({ value, format: formats(row.design?.[i]) })),
+            cells: row.cells.map((value, i) => ({
+                ...typed(value, row.design?.[i]), format: formats(row.design?.[i])
+            })),
             page: row.page, top: row.top, own: row.height
         }];
     });
@@ -355,6 +359,19 @@ function tableSheet(table, styled, groupColumn, groupLabel) {
     const cellFormats = columns.map(column =>
         styled ? cellFormat({ kind: 'cell', column, table: table.table }) : null);
 
+    /** a highlighted cell's format, made once per column and style */
+    const litFormats = new Map();
+    const formatFor = (i, highlight) => {
+        if (!styled || !highlight) return cellFormats[i];
+
+        const key = `${i}|${JSON.stringify(highlight)}`;
+        if (!litFormats.has(key)) {
+            litFormats.set(key, cellFormat({ kind: 'cell', column: columns[i], table: table.table, highlight }));
+        }
+        return litFormats.get(key);
+    };
+    const groupWidth = columns.length - table.columns.length;
+
     const rows = [{
         cells: labels.map((value, i) => ({ value, format: headFormats[i] })),
         height: styled ? table.headerHeight : null
@@ -366,7 +383,13 @@ function tableSheet(table, styled, groupColumn, groupLabel) {
         const cells = [...groups.cells(entry), ...values];
 
         rows.push({
-            cells: cells.map((value, i) => ({ value, format: cellFormats[i] })),
+            cells: cells.map((value, i) => ({
+                ...typed(value, { kind: 'cell', column: columns[i] }),
+                /** the group columns are the report's, not the table's, and take no rules */
+                format: i < groupWidth
+                    ? cellFormats[i]
+                    : formatFor(i, cellHighlight(table.table, columns[i], row))
+            })),
             height: styled ? height : null
         });
     }
@@ -459,7 +482,10 @@ function placeText(row, grid, formats) {
     row.cells.forEach((raw, i) => {
         const design = row.design[i];
         const align = formats(design)?.alignment?.horizontal ?? 'left';
-        const value = numericText(raw, design.template);
+        /** a formatted total is a real number; an unformatted one is guessed at, as ever */
+        const typedValue = typed(raw, design);
+        const value = typedValue.numFmt ? typedValue.value : numericText(raw, design.template);
+        const numFmt = typedValue.numFmt;
 
         const x = Math.max(0, Number(design.x) || 0);
         const w = Math.max(1, Number(design.w) || 1);
@@ -473,14 +499,14 @@ function placeText(row, grid, formats) {
             const across = formats.text(design, { centred: true });
 
             line = lineFor(span);
-            line.cells[first] = { value, format: across };
+            line.cells[first] = { value, format: across, numFmt };
             for (let c = first + 1; c <= last; c++) line.cells[c] = { value: null, format: across };
         } else {
             const c = align === 'right' ? last : first;
             const inset = align === 'right' ? grid.right(c) - (x + w) : x - grid.left(c);
 
             line = lineFor([c]);
-            line.cells[c] = { value, format: formats.text(design, { indent: indentLevels(inset) }) };
+            line.cells[c] = { value, format: formats.text(design, { indent: indentLevels(inset) }), numFmt };
         }
 
         line.top = Math.min(line.top, design.y);
@@ -488,6 +514,35 @@ function placeText(row, grid, formats) {
     });
 
     return lines.map(l => ({ cells: l.cells, page: row.page, top: l.top, own: l.bottom - l.top }));
+}
+
+
+/**
+ * A value as the workbook should hold it, when the report gave it a format:
+ * the real number or date, and the code that shows it as the report printed
+ * it - so 1,00,000.00 on the page is 100000 in the cell, and still adds up.
+ *
+ * A table cell is typed by its column's format. A text item is typed only when
+ * it is one placeholder and nothing else - a grand total - which is when the
+ * engine keeps the value it printed as `raw`; "Total: ₹1,200" stays text.
+ *
+ * @param {*} value what the row or the page holds
+ * @param {object|undefined} design the cell's descriptor, from rows.js
+ * @returns {{value: *, numFmt?: string}}
+ */
+function typed(value, design) {
+    const source = design?.kind === 'cell' ? design.column?.format
+        : design?.kind === 'text' ? design.format
+        : null;
+
+    const code = excelNumberFormat(source);
+    if (!code) return { value };
+
+    const raw = design.kind === 'text' ? design.raw : value;
+    if (raw === undefined) return { value };
+
+    const number = excelValue(raw, source);
+    return number === null ? { value } : { value: number, numFmt: code };
 }
 
 
@@ -809,8 +864,11 @@ function formatCache() {
         const key = design.column ?? design;
         if (!byColumn.has(key)) byColumn.set(key, {});
         const entry = byColumn.get(key);
-        entry[design.kind] ??= cellFormat(design);
-        return entry[design.kind];
+
+        /** a highlighted cell is its column's format and its rule's style - one per pair */
+        const variant = design.highlight ? `${design.kind}|${JSON.stringify(design.highlight)}` : design.kind;
+        entry[variant] ??= cellFormat(design);
+        return entry[variant];
     }
 
     formats.text = (design, { centred = false, indent = 0 } = {}) => {
@@ -818,7 +876,7 @@ function formatCache() {
         if (!byStyle.has(key)) byStyle.set(key, new Map());
         const variants = byStyle.get(key);
 
-        const variant = `${centred}|${indent}`;
+        const variant = `${centred}|${indent}|${design.highlight ? JSON.stringify(design.highlight) : ''}`;
         if (!variants.has(variant)) {
             const base = cellFormat(design);
             variants.set(variant, {
@@ -909,7 +967,7 @@ function worksheet({ name, rows, frozen, gridLines, widths, width, drawing }, st
     rows.forEach((row, r) => {
         let cells = '';
         row.cells.forEach((c, i) => {
-            if (c) cells += cell(`${columnName(i)}${r + 1}`, c.value, c.format, xfFor);
+            if (c) cells += cell(`${columnName(i)}${r + 1}`, c.value, c.format, xfFor, c.numFmt);
         });
 
         const height = Number(row.height) > 0
@@ -945,12 +1003,17 @@ function usedRange(width, height) {
 }
 
 
-/** format object and number format to a cell format index, each pair resolved once */
+/**
+ * format object and number format to a cell format index, each pair resolved
+ * once. The number format is a built-in id, or a custom code from format.js.
+ */
 function xfResolver(styles) {
     const cache = new WeakMap();
     const plain = new Map();
 
-    return (format, numFmt) => {
+    return (format, code) => {
+        const numFmt = typeof code === 'string' ? styles.numFmt(code) : code;
+
         if (!format) {
             if (!plain.has(numFmt)) plain.set(numFmt, styles.xf(null, numFmt));
             return plain.get(numFmt);
@@ -973,8 +1036,10 @@ function xfResolver(styles) {
  * @param {*} value the raw value from the row
  * @param {object|null} format
  * @param {Function} xfFor
+ * @param {string} [code] the number format a typed value is shown with, from
+ *   format.js - a number or a date serial the report formats
  */
-function cell(ref, value, format, xfFor) {
+function cell(ref, value, format, xfFor, code) {
     const empty = value === null || value === undefined || value === '';
     const isDate = value instanceof Date && !Number.isNaN(value.getTime());
 
@@ -984,6 +1049,9 @@ function cell(ref, value, format, xfFor) {
         serial = excelSerial(value);
         numFmt = Number.isInteger(serial) ? NUMFMT_DATE : NUMFMT_DATE_TIME;
     }
+
+    if (code && typeof value === 'number') numFmt = code;
+    if (code && isDate) numFmt = code;
 
     const xf = xfFor(format, numFmt);
     const s = xf ? ` s="${xf}"` : '';

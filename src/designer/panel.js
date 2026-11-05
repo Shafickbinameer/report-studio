@@ -26,6 +26,8 @@ import {
     parseBandKey, bandLabel, groupBandKey, groupedTables, setGroupBy, setGroupOption, GROUP_KINDS
 } from './grouping.js';
 import { levelsOf, MAX_GROUP_LEVELS } from '../engine/tables.js';
+import { describeFormat } from '../engine/format.js';
+import { describeHighlight } from '../engine/highlight.js';
 import { esc, imageSrc } from '../render/items.js';
 
 
@@ -50,8 +52,28 @@ export function drawPanel(item, layout = null) {
         <span class="dz-panel-id">${esc(item.id)}</span>
     </div>
     ${sections(item, fieldsFor(item))}
+    ${item.type === 'text' ? `
+        <section class="dz-section">
+            <h3>Format</h3>
+            <div class="dz-field dz-field-format">
+                <label>Values</label>
+                ${formatButton(item, layout)}
+            </div>
+            <div class="dz-field dz-field-format">
+                <label>Highlight</label>
+                ${highlightButton(item.highlight, 'edit-highlight')}
+            </div>
+        </section>` : ''}
+    ${item.type === 'table' ? `
+        <section class="dz-section">
+            <h3>Row highlight</h3>
+            <div class="dz-field dz-field-format">
+                <label>Rows</label>
+                ${highlightButton(item.rowHighlight, 'edit-row-highlight')}
+            </div>
+        </section>` : ''}
     ${item.type === 'table' ? grouping(item, layout) : ''}
-    ${item.type === 'table' ? columns(item) : ''}`;
+    ${item.type === 'table' ? columns(item, layout) : ''}`;
 }
 
 
@@ -255,7 +277,57 @@ function sections(target, list) {
         <section class="dz-section">
             <h3>${esc(section.title)}</h3>
             ${section.fields.map(field => control(target, field)).join('')}
+            ${(section.actions ?? []).map(a => `
+                <button type="button" class="dz-add-row dz-section-action"
+                        data-action="${esc(a.action)}" title="${esc(a.title ?? '')}">
+                    ${esc(a.label)}</button>`).join('')}
         </section>`).join('');
+}
+
+
+/**
+ * How a text item's values print: one line saying so, and the button that
+ * opens the Format Editor. The editor is a dialog rather than controls here -
+ * a currency alone is five choices, and the rail has only just got its room
+ * back.
+ *
+ * @param {object} owner a text item, or a column
+ * @param {object|null} layout for the report's defaults the summary shows through
+ * @param {string} [index] the column's place in its table, for a column
+ * @returns {string} markup
+ */
+function formatButton(owner, layout, index) {
+    const summary = describeFormat(owner?.format, layout?.format);
+
+    return `
+    <button type="button" class="dz-format" data-action="edit-format"
+            ${index != null ? `data-index="${esc(index)}"` : ''}
+            title="${esc(summary)} - click to change how values print">
+        <span class="dz-format-summary">${esc(summary)}</span>
+        <span class="dz-format-edit">Edit</span>
+    </button>`;
+}
+
+
+/**
+ * The same summary-and-Edit button for highlight rules: how many there are,
+ * and the editor they are changed in.
+ *
+ * @param {object[]|null|undefined} rules
+ * @param {string} action the designer action that opens the editor
+ * @param {string} [index] a column's place, for a column's rules
+ * @returns {string} markup
+ */
+function highlightButton(rules, action, index) {
+    const summary = describeHighlight(rules);
+
+    return `
+    <button type="button" class="dz-format" data-action="${esc(action)}"
+            ${index != null ? `data-index="${esc(index)}"` : ''}
+            title="${esc(summary)} - click to style values by what they are">
+        <span class="dz-format-summary">${esc(summary)}</span>
+        <span class="dz-format-edit">Edit</span>
+    </button>`;
 }
 
 
@@ -309,7 +381,7 @@ function input(id, bind, field, value) {
             </div>`;
 
         case 'choice':
-            return `<select id="${id}" ${bind}>${field.options.map(o =>
+            return field.custom ? customChoice(id, bind, field, value) : `<select id="${id}" ${bind}>${field.options.map(o =>
                 `<option value="${esc(o.value)}"${o.value === value ? ' selected' : ''}
                     >${esc(o.label)}</option>`).join('')}</select>`;
 
@@ -354,6 +426,56 @@ function input(id, bind, field, value) {
 
 
 /**
+ * A group band's background: the same swatch a colour field has - "none" with
+ * a slash through it until one is picked, and a button to take it off again.
+ */
+function bandFill(type, band, label) {
+    const color = typeof band?.background === 'string' && band.background ? band.background : null;
+
+    return `
+    <span class="dz-swatch dz-band-fill${color ? '' : ' is-none'}"
+          title="${esc(label)} background">
+        <span class="dz-swatch-well">
+            <input type="color" data-band-fill="${esc(type)}" value="${esc(color ?? '#ffffff')}"
+                   aria-label="${esc(label)} background">
+        </span>
+        <button type="button" class="dz-icon dz-swatch-clear" data-action="clear-band-fill"
+                data-fill-for="${esc(type)}" title="No background"
+                aria-label="Remove ${esc(label)} background">&times;</button>
+    </span>`;
+}
+
+
+/** what a choice's Custom… option says, which no real value can */
+const CUSTOM_CHOICE = '__custom__';
+
+
+/**
+ * A choice of the usual values, and Custom… for any other - the currency
+ * symbol, where ₹ and $ cover most reports and CHF still has to be possible.
+ *
+ * The select and the box are both bound to the field. The select writes what
+ * it is set to, except Custom…, which only shows the box; the box writes what
+ * is typed into it. A value that is none of the options shows as Custom…,
+ * with the box holding it.
+ */
+function customChoice(id, bind, field, value) {
+    const listed = field.options.some(o => o.value === (value ?? ''));
+    const selected = listed ? (value ?? '') : CUSTOM_CHOICE;
+
+    return `
+    <span class="dz-choice-custom">
+        <select id="${id}" ${bind}>${[...field.options, { value: CUSTOM_CHOICE, label: 'Custom…' }]
+            .map(o => `<option value="${esc(o.value)}"${o.value === selected ? ' selected' : ''}
+                >${esc(o.label)}</option>`).join('')}</select>
+        <input type="text" ${bind} data-custom="true" value="${esc(listed ? '' : value ?? '')}"
+               spellcheck="false" maxlength="6" aria-label="${esc(field.label)}, custom"
+               placeholder="such as CHF"${listed ? ' hidden' : ''}>
+    </span>`;
+}
+
+
+/**
  * A colour, or none.
  *
  * A colour input cannot hold null, and several style fields are legitimately
@@ -392,7 +514,7 @@ function markSwatch(node, none) {
  * A table's columns, one card each. Four controls on one row would be 60px wide
  * apiece in a rail this narrow, so they stack and the card carries the number.
  */
-function columns(table) {
+function columns(table, layout) {
     const list = table.columns || [];
 
     return `
@@ -410,6 +532,14 @@ function columns(table) {
                 </div>
                 ${COLUMN_FIELDS.map(field =>
                     control(column, field, String(index))).join('')}
+                <div class="dz-field dz-field-format">
+                    <label>Format</label>
+                    ${formatButton(column, layout, String(index))}
+                </div>
+                <div class="dz-field dz-field-format">
+                    <label>Highlight</label>
+                    ${highlightButton(column.highlight, 'edit-highlight', String(index))}
+                </div>
             </div>`).join('')}
         <button type="button" class="dz-add-row" data-action="add-column">
             Add column</button>
@@ -466,12 +596,16 @@ function bandRow(layout, type, names = {}) {
     const label = names.label ?? bandLabel(type);
     const note = names.note ?? bandNote(type);
 
+    /** a table's group band, switched on, can be shaded */
+    const fillable = on && parseBandKey(type) != null;
+
     return `
-    <div class="dz-band-row${on ? ' is-on' : ''}">
+    <div class="dz-band-row${on ? ' is-on' : ''}${fillable ? ' has-fill' : ''}">
         <label class="dz-band-name">
             <input type="checkbox" data-band="${esc(type)}" ${on ? 'checked' : ''}>
             <span>${esc(label)}</span>
         </label>
+        ${fillable ? bandFill(type, band, label) : ''}
         ${on && type !== 'detail'
             ? `<input type="text" class="dz-band-height"
                      data-band-height="${esc(type)}"
@@ -501,10 +635,12 @@ function bandRow(layout, type, names = {}) {
  * @param {(action: string, data: DOMStringMap) => void} options.act a button was pressed
  * @param {(type: string, on: boolean) => void} options.toggleBand
  * @param {(type: string, height: string) => void} options.setBandHeight
+ * @param {(type: string, color: string|null) => void} [options.setBandFill] a
+ *   group band's background, null for none
  * @returns {() => void} detaches
  */
 export function attachPanel({
-    panel, getTarget, getItem, changed, act, toggleBand, setBandHeight
+    panel, getTarget, getItem, changed, act, toggleBand, setBandHeight, setBandFill = () => { }
 }) {
     /** keeps the marking layer under the text it belongs to */
     function repaint(node) {
@@ -517,7 +653,7 @@ export function attachPanel({
 
     function onInput(event) {
         const node = event.target.closest?.(
-            '[data-field], [data-band], [data-band-height], [data-group-level], [data-group-option]');
+            '[data-field], [data-band], [data-band-height], [data-band-fill], [data-group-level], [data-group-option]');
         if (!node) return;
 
         if (node.tagName === 'TEXTAREA') repaint(node);
@@ -556,6 +692,13 @@ export function attachPanel({
             return;
         }
 
+        /** a colour picked is no longer none */
+        if (node.dataset.bandFill != null) {
+            markSwatch(node, false);
+            setBandFill(node.dataset.bandFill, node.value);
+            return;
+        }
+
         /** a column control is bound to the column, not to the item */
         if (node.dataset.column != null) {
             const item = getItem();
@@ -574,6 +717,15 @@ export function attachPanel({
 
         const field = bound.fields.find(f => f.key === node.dataset.field);
         if (!field) return;
+
+        if (node.tagName === 'SELECT' && node.value === CUSTOM_CHOICE) {
+            const box = node.parentElement?.querySelector('[data-custom]');
+            if (box) {
+                box.hidden = false;
+                box.focus();
+            }
+            return;
+        }
 
         const raw = field.type === 'toggle' ? node.checked : node.value;
 
@@ -616,6 +768,13 @@ export function attachPanel({
         if (node.dataset.action === 'insert-brace') {
             const box = node.closest('.dz-field')?.querySelector('textarea');
             if (box) insertBraces(box);
+            return;
+        }
+
+        /** a group band's background, back to none */
+        if (node.dataset.action === 'clear-band-fill') {
+            markSwatch(node, true);
+            setBandFill(node.dataset.fillFor, null);
             return;
         }
 
@@ -698,6 +857,19 @@ export function syncPanel(panel, item, layout) {
 
         /** an undo can take a colour off, or put one back */
         if (field.type === 'color') markSwatch(node, value == null || value === '');
+
+        /** a choice with Custom…: the select says which, the box holds any other */
+        if (field.custom) {
+            const listed = field.options.some(o => o.value === (value ?? ''));
+
+            if (node.dataset.custom) {
+                node.value = listed ? '' : String(value ?? '');
+                node.hidden = listed;
+            } else {
+                node.value = listed ? String(value ?? '') : CUSTOM_CHOICE;
+            }
+            continue;
+        }
 
         if (field.type === 'toggle') {
             node.checked = Boolean(value);

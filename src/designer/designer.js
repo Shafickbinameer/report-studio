@@ -32,7 +32,11 @@ import {
 } from '../preview/viewer.js';
 import { buildPages } from '../engine/index.js';
 import { drawProblems, sameIssues } from './toast.js';
-import { askColumns, askReport, askName, askData, askToken, askDiscard } from './dialog.js';
+import {
+    askColumns, askReport, askName, askData, askToken, askDiscard, askFormat, askHighlight
+} from './dialog.js';
+import { INDIAN_DEFAULTS, effectiveFormat } from '../engine/format.js';
+import { availableFields } from './tokens.js';
 import { sampleData, completeData } from './sample-data.js';
 import { drawPreview } from './preview.js';
 import { createHistory } from './history.js';
@@ -770,8 +774,9 @@ export function createDesigner({
      *
      * @param {number} clientX
      * @param {number} clientY
+     * @param {Element|null} [target] what was right-clicked, for which column
      */
-    function openMenu(clientX, clientY) {
+    function openMenu(clientX, clientY, target = null) {
         closeMenu();
 
         main.insertAdjacentHTML('beforeend', drawMenu(menuActions({
@@ -779,10 +784,12 @@ export function createDesigner({
             canPaste: state.clipboard.length > 0,
             /** should canAddTable ever say no, a copy of a table is what it refuses */
             canDuplicate: canAddTable(state.layout)
-                || !selectedItems().some(item => item.type === 'table')
+                || !selectedItems().some(item => item.type === 'table'),
+            ...aboutTarget(target)
         })));
 
         menu = main.querySelector('[data-role="menu"]');
+        menu.addEventListener('keydown', onMenuArrows);
 
         /**
          * Bound to the pill, not to the page area: a delegated listener out
@@ -831,7 +838,7 @@ export function createDesigner({
             setSelection(null);
         }
 
-        openMenu(event.clientX, event.clientY);
+        openMenu(event.clientX, event.clientY, event.target);
     }
 
 
@@ -844,6 +851,92 @@ export function createDesigner({
         /** closed first: what follows redraws, and a stale pill would outlive it */
         closeMenu();
         act(node.dataset.action, node.dataset);
+    }
+
+
+    /**
+     * What a Format entry in the menu would format: the text item that was
+     * right-clicked, or the column of the table cell under the pointer. One
+     * item only - a format is one item's, and a choice made for six would be
+     * a different edit from the one the editor describes.
+     *
+     * @param {Element|null} target
+     * @returns {{label: string, index?: number}|null}
+     */
+    function formatTarget(target) {
+        if (state.selection.length !== 1) return null;
+
+        const item = selected();
+        if (item?.type === 'text') return { label: 'Format…' };
+        if (item?.type !== 'table') return null;
+
+        const index = columnUnder(target);
+        if (index === null) return null;
+
+        const column = item.columns[index];
+        return { label: `Format "${column.label || column.field}" column…`, index };
+    }
+
+
+    /**
+     * The table column under the pointer: a data cell or a heading, not a
+     * group band's full-width row - or null.
+     * @param {Element|null} target
+     * @returns {number|null}
+     */
+    function columnUnder(target) {
+        const cell = target?.closest?.('td, th');
+        if (!cell || cell.classList.contains('group-band-cell')) return null;
+
+        return selected()?.columns?.[cell.cellIndex] ? cell.cellIndex : null;
+    }
+
+
+    /**
+     * What the menu's entries about the item itself act on: Format and
+     * Highlight for a text item or the column under the pointer, and the
+     * table's rows for a table.
+     * @param {Element|null} target
+     * @returns {{format: object|null, highlight: object|null, rows: boolean}}
+     */
+    function aboutTarget(target) {
+        const format = formatTarget(target);
+        const item = state.selection.length === 1 ? selected() : null;
+
+        let highlight = null;
+        if (item?.type === 'text') highlight = { label: 'Highlight…' };
+        if (format && item?.type === 'table') {
+            const column = item.columns[format.index];
+            highlight = { label: `Highlight "${column.label || column.field}" column…`, index: format.index };
+        }
+
+        return { format, highlight, rows: item?.type === 'table' };
+    }
+
+
+    /**
+     * Up and down move through the menu, as in any other. Stopped here, on the
+     * menu: on their way to the document they would nudge the selection too.
+     */
+    function onMenuArrows(event) {
+        const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const items = [...menu.querySelectorAll('button:not([disabled])')];
+        if (!items.length) return;
+
+        const at = items.indexOf(menu.ownerDocument.activeElement);
+        const next = {
+            ArrowDown: (at + 1) % items.length,
+            ArrowUp: (at - 1 + items.length) % items.length,
+            Home: 0,
+            End: items.length - 1
+        }[event.key];
+
+        items[next].focus();
     }
 
 
@@ -1062,6 +1155,77 @@ export function createDesigner({
                     state.selection = state.selection.filter(one => itemAt(one));
                     restructured(`grouping:copy:${item.id}`);
                 }
+                return;
+
+            case 'edit-format': {
+                /** a text item's own format, or one of a table's columns' */
+                const isColumn = data?.index != null && item?.type === 'table';
+                const owner = isColumn ? item.columns?.[Number(data.index)] : item;
+                if (!owner || (!isColumn && item?.type !== 'text')) return;
+
+                const name = isColumn ? (owner.label || owner.field || 'column') : item.id;
+                const where = primary();
+
+                askFormat(root, owner.format, state.layout.format, { title: `Format: ${name}` })
+                    .then(answer => {
+                        if (!answer) return;
+
+                        /**
+                         * Still the same item, holding the same column - an undo
+                         * while the dialog was up swaps in a different layout.
+                         */
+                        if (itemAt(where) !== item) return;
+                        if (isColumn && !item.columns?.includes(owner)) return;
+
+                        if (answer.format) owner.format = answer.format;
+                        else delete owner.format;
+
+                        restructured(`format:${item.id}${isColumn ? `:${data.index}` : ''}`);
+                    });
+                return;
+            }
+
+            case 'edit-highlight':
+            case 'edit-row-highlight': {
+                const rows = action === 'edit-row-highlight';
+                const isColumn = !rows && data?.index != null && item?.type === 'table';
+                const owner = isColumn ? item.columns?.[Number(data.index)] : item;
+
+                if (!owner) return;
+                if (rows ? item.type !== 'table' : (!isColumn && item.type !== 'text')) return;
+
+                const key = rows ? 'rowHighlight' : 'highlight';
+                const name = rows ? `${item.id} rows`
+                    : isColumn ? (owner.label || owner.field || 'column') : item.id;
+
+                /** what a rule may test: a table's columns, or the data's fields */
+                const fields = item.type === 'table'
+                    ? (item.columns ?? []).map(c => c.field).filter(Boolean)
+                    : availableFields(state.layout);
+
+                const where = primary();
+
+                askHighlight(root, owner[key], {
+                    title: `Highlight: ${name}`,
+                    fields: isColumn ? fields.filter(f => f !== owner.field) : fields,
+                    rows,
+                    format: isColumn || item.type === 'text' ? effectiveFormat(owner.format, state.layout.format) : null
+                }).then(answer => {
+                    if (!answer) return;
+                    if (itemAt(where) !== item) return;
+                    if (isColumn && !item.columns?.includes(owner)) return;
+
+                    if (answer.rules) owner[key] = answer.rules;
+                    else delete owner[key];
+
+                    restructured(`highlight:${item.id}${isColumn ? `:${data.index}` : rows ? ':rows' : ''}`);
+                });
+                return;
+            }
+
+            case 'format-india':
+                state.layout.format = { ...(state.layout.format ?? {}), ...INDIAN_DEFAULTS };
+                restructured('format:report:india');
                 return;
 
             case 'add-group-level':
@@ -1539,6 +1703,34 @@ export function createDesigner({
     }
 
 
+    /**
+     * A group band's background, or none. Only a table's group bands take one:
+     * they are drawn inside the table, where a shaded "Region North" row is
+     * how a reader finds where each group starts.
+     *
+     * @param {string} type a group band key
+     * @param {string|null} color a #rrggbb, or null for none
+     */
+    function setBandFill(type, color) {
+        if (!parseBandKey(type)) return;
+
+        const band = findBand(state.layout, type);
+        if (!band) return;
+
+        if (color) {
+            if (band.background === color) return;
+            band.background = color;
+        } else {
+            if (band.background == null) return;
+            delete band.background;
+        }
+
+        /** the rail is not rebuilt - a colour picker may still be open in it */
+        draw();
+        record(`band-fill:${type}`);
+    }
+
+
     root.dataset.mode = state.mode;
 
     zoomPicker = createDropdown(bar.querySelector('[data-role="zoom-dropdown"]'));
@@ -1704,7 +1896,8 @@ export function createDesigner({
         },
         act,
         toggleBand,
-        setBandHeight
+        setBandHeight,
+        setBandFill
     });
 
     /**

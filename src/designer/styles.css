@@ -633,7 +633,7 @@
  */
 .dz-field {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: 100px minmax(0, 1fr);
   align-items: center;
   column-gap: 12px;
   row-gap: 6px;
@@ -869,38 +869,59 @@
 /* ---------------- structure controls ---------------- */
 
 /**
- * The right-click pill.
+ * The right-click menu.
  *
  * Absolute inside .dz-main rather than fixed to the window, so it scrolls out
  * of the way with the page area it belongs to and cannot be left hanging over
  * the rail. Above the selection outline and its handles, below the bar.
+ *
+ * A list of named rows - icon, name, keys - as a context menu is everywhere
+ * else, so what each one does is read rather than guessed from a glyph.
  */
 .dz-menu {
   position: absolute;
   z-index: 8;
 
   display: flex;
-  align-items: center;
-  gap: 2px;
+  flex-direction: column;
+  min-width: 200px;
   padding: 4px;
 
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(34 39 44 / .18);
+
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 12px;
 }
 
 .dz-menu-item {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
   align-items: center;
-  justify-content: center;
-  width: 30px;
+  gap: 10px;
   height: 30px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 5px;
   background: none;
-  color: var(--ink-soft);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.dz-menu-icon {
+  display: inline-flex;
+  color: var(--ink-soft);
+}
+
+.dz-menu-keys {
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 11px;
 }
 
 .dz-menu-item:hover:not(:disabled),
@@ -908,6 +929,11 @@
   background: var(--accent-soft);
   color: var(--accent-ink);
   outline: none;
+}
+
+.dz-menu-item:hover:not(:disabled) .dz-menu-icon,
+.dz-menu-item:focus-visible .dz-menu-icon {
+  color: inherit;
 }
 
 /* the one action that cannot be taken back by moving something else */
@@ -918,14 +944,13 @@
 }
 
 .dz-menu-item:disabled {
-  opacity: .35;
+  opacity: .4;
   cursor: default;
 }
 
 .dz-menu-sep {
-  width: 1px;
-  height: 18px;
-  margin: 0 3px;
+  height: 1px;
+  margin: 4px 6px;
   background: var(--border);
 }
 
@@ -1153,7 +1178,7 @@
 
 /* less the card's own padding, so its controls line up with the rail's */
 .dz-group-level .dz-field:not(.dz-field-toggle) {
-  grid-template-columns: 88px 1fr;
+  grid-template-columns: 88px minmax(0, 1fr);
 }
 
 .dz-group-level .dz-band-row:last-child {
@@ -1852,4 +1877,435 @@ a.dz-tool[aria-disabled="true"]:hover {
   border-color: transparent;
   background: none;
   color: var(--ink);
+}
+
+/* ---------------- number and date formats ---------------- */
+
+/**
+ * A format's summary is the control: it reads as what the values look like,
+ * and a click opens the editor. As wide as the column a control sits in.
+ */
+.dz-format {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dz-format:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dz-format:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+}
+
+.dz-format-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dz-format-edit {
+  flex: none;
+  color: var(--accent-ink);
+  font-size: 11px;
+}
+
+/* a button that belongs to a section's fields, not one that adds a row */
+.dz-section-action {
+  margin-top: 4px;
+}
+
+.dz-section-action::before {
+  content: none;
+}
+
+/* the editor: wider than the other dialogs, for two columns of choices */
+.modal-card.dz-format-card {
+  width: min(480px, calc(100vw - 32px));
+}
+
+/**
+ * The dialog sits outside the rail, so its controls inherited the page's 16px
+ * and towered over their 10px labels. 13px, as the other dialogs' choices are.
+ */
+.dz-format-card .dz-field select,
+.dz-format-card .dz-field input[type="text"],
+.dz-format-card .dz-field input[type="number"] {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.dz-format-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.dz-format-types legend {
+  margin-bottom: 8px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* a type is a pill; the radio inside stays for the keyboard and for forms */
+.dz-format-type {
+  position: relative;
+  cursor: pointer;
+}
+
+.dz-format-type input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dz-format-type span {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.dz-format-type:hover span {
+  border-color: var(--accent);
+}
+
+.dz-format-type input:checked + span {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.dz-format-type input:focus-visible + span {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.dz-format-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+}
+
+.dz-format-group[hidden] {
+  display: none;
+}
+
+.dz-format-group .modal-summary {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  font-size: 11px;
+}
+
+.dz-format-group .dz-field[hidden] {
+  display: none;
+}
+
+/* what the choices make of real values, as the report will print them */
+.dz-format-sample {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--backdrop);
+}
+
+.dz-format-sample-label {
+  flex: none;
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.dz-format-sample-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-family: "Courier Prime", monospace;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the report-defaults button sits apart from the two that close the dialog */
+.dz-format-card .modal-actions [data-role="reset"] {
+  margin-right: auto;
+}
+
+/* a choice with Custom…: the box for the custom value sits under the select */
+.dz-choice-custom {
+  display: grid;
+  gap: 6px;
+}
+
+.dz-choice-custom [hidden] {
+  display: none;
+}
+
+/* ---------------- highlight rules ---------------- */
+
+/* wide enough for a rule to read as one sentence */
+.modal-card.dz-highlight-card {
+  width: min(640px, calc(100vw - 32px));
+}
+
+/* the dialog's own buttons and notes at the rules' size, not the page's 16px */
+.dz-highlight-card .dz-add-row {
+  height: 34px;
+  font-size: 13px;
+}
+
+.dz-hl-rules {
+  display: grid;
+  gap: 10px;
+  max-height: 55vh;
+  margin-bottom: 12px;
+  overflow-y: auto;
+}
+
+/**
+ * A rule is a card on a three-column grid - its label, its controls, its own
+ * buttons - the same for every rule, so each control sits under the matching
+ * one in the rule above whatever the label says or the test needs.
+ */
+.dz-hl-rule {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 56px;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--backdrop);
+}
+
+.dz-hl-label {
+  color: var(--ink-soft);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/**
+ * What to test, how, and against what. The value gets the most room: a
+ * "between" puts two boxes and an "and" in it, and the dropdowns' longest
+ * choice is "is not empty".
+ */
+.dz-hl-when {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, .9fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+
+.dz-hl-values {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dz-hl-values input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dz-hl-and {
+  flex: none;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.dz-hl-novalue {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* every control one height, one border, one type size */
+.dz-hl-rule select,
+.dz-hl-rule input[type="text"] {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.dz-hl-rule select:focus-visible,
+.dz-hl-rule input[type="text"]:focus-visible,
+.dz-hl-toggle:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+  border-color: var(--accent-strong);
+}
+
+.dz-hl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.dz-hl-actions .dz-icon,
+.dz-hl-slot {
+  width: 24px;
+  height: 24px;
+  margin-left: 0;
+}
+
+/* the style line: colours, then weight and slant, then the sample at the end */
+.dz-hl-style {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.dz-hl-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dz-hl-color-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.dz-hl-rule .dz-swatch {
+  gap: 2px;
+}
+
+.dz-hl-rule .dz-swatch-well,
+.dz-hl-rule .dz-swatch-well input[type="color"] {
+  width: 40px;
+  height: 32px;
+}
+
+.dz-hl-rule .dz-swatch-well input[type="color"] {
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+/**
+ * The clear button keeps its place when there is no colour to clear, so the
+ * fill, the toggles and the sample never shift from one rule to the next.
+ */
+.dz-hl-rule .dz-swatch.is-none .dz-swatch-clear {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+.dz-hl-rule .dz-swatch-clear {
+  width: 20px;
+  height: 20px;
+  margin-left: 0;
+}
+
+.dz-hl-toggles {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.dz-hl-toggle {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dz-hl-toggle:hover {
+  border-color: var(--accent);
+}
+
+.dz-hl-toggle[aria-pressed="true"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* what the rule does to a value, in the rule's own style, at the line's end */
+.dz-hl-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  font-family: "Courier Prime", monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* a group band's row: its name, its background, its height */
+.dz-band-row.has-fill {
+  grid-template-columns: 1fr auto 64px;
+}
+
+.dz-band-fill .dz-swatch-well,
+.dz-band-fill .dz-swatch-well input[type="color"] {
+  width: 36px;
+  height: 28px;
+}
+
+.dz-band-fill .dz-swatch-well input[type="color"] {
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+/* the clear button keeps its place, so the height box never moves */
+.dz-band-fill.is-none .dz-swatch-clear {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+.dz-band-fill .dz-swatch-clear {
+  width: 18px;
+  height: 18px;
+  margin-left: 0;
 }

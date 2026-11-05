@@ -2,6 +2,10 @@
 import { pageRegions, bandZoneHeight } from './regions.js';
 import { levelsOf, groupFrame, fragmentBandsOf, startsPage } from './tables.js';
 import { designHeight, total, headerHeightFor, bandsHeight } from './measure.js';
+import { formatValue, percentFormat } from './format.js';
+import { PERCENTAGE, shownValue } from './group.js';
+import { soleKey } from './resolve.js';
+import { highlightFor } from './highlight.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -797,10 +801,26 @@ function resolveGroupBand(bandTemplate, grp, sampleRow, level = 0) {
          * Build on `text`, not `value` - resolve.js has already put the root
          * data in and deliberately left everything group-scoped standing.
          */
-        item.text = (item.text ?? item.value).replace(
-            REGEX,
-            (match, key) => groupPlaceholder(match, key.trim(), grp, sampleRow)
-        );
+        const sole = soleKey(item.value);
+
+        item.text = (item.text ?? item.value).replace(REGEX, (match, key) => {
+            const found = groupPlaceholder(match, key.trim(), grp, sampleRow);
+
+            /** the value itself, for an item that prints nothing else - a subtotal */
+            if (sole === key.trim() && found.value !== undefined) {
+                item.raw = found.value;
+                if (found.share) item.rawFormat = percentFormat(item.format);
+            }
+
+            if (found.value === undefined) return found.text;
+            if (found.value == null) return '';
+            if (found.share) return formatValue(found.value, percentFormat(item.format));
+            return formatValue(found.value, found.count ? null : item.format);
+        });
+
+        /** a subtotal's rules, asked of this group's total; a field reads the group's row */
+        const lit = highlightFor(item.highlight, shownValue(item), sampleRow);
+        if (lit) item.highlighted = lit;
     }
 
     return resolved;
@@ -816,21 +836,24 @@ function resolveGroupBand(bandTemplate, grp, sampleRow, level = 0) {
  * @param {string} key
  * @param {object} grp
  * @param {object} sampleRow
- * @returns {string}
+ * @returns {{text?: string, value?: *, count?: boolean}} `text` for a token
+ *   left standing, else the `value` it stands for - formatted by the caller
  */
 function groupPlaceholder(match, key, grp, sampleRow) {
-    if (PAGE_KEYS.includes(key)) return match;
+    if (PAGE_KEYS.includes(key)) return { text: match };
 
     const expr = key.match(/^(\w+)\((.*?)\)$/);
 
     if (expr) {
         const [, fn, field] = expr;
-        const value = grp.aggregates?.[field]?.[fn.trim()];
-        return value == null ? '' : String(value);
+        return {
+            value: grp.aggregates?.[field]?.[fn.trim()] ?? null,
+            count: fn.trim() === 'count',
+            share: fn.trim() === PERCENTAGE
+        };
     }
 
-    const value = sampleRow?.[key];
-    return value == null ? '' : String(value);
+    return { value: sampleRow?.[key] ?? null };
 }
 
 

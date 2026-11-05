@@ -19,6 +19,7 @@
  */
 
 import { reportRows, tableRows, columnLabel, groupColumns } from './rows.js';
+import { formatValue } from './format.js';
 
 export { reportTables } from './rows.js';
 
@@ -41,6 +42,9 @@ const FORMULA_LEAD = /^[=+\-@\t\r]/;
  * @param {string|string[]} [options.groupLabel='Group'] the group column's
  *   heading; a list heads one column per level of a nested grouping, which
  *   otherwise takes the names of the fields it groups by
+ * @param {boolean} [options.formatted=false] write each cell as the report
+ *   prints it - ₹1,00,000.00, 17/06/2026 - rather than the value itself, which
+ *   is what another program reading the file wants
  * @param {boolean} [options.neutraliseFormulas=true] see below
  * @returns {string} CSV text, empty when the report holds no such table
  */
@@ -52,6 +56,7 @@ export function toCSV(pages, options = {}) {
         groupColumn = true,
         groupLabel = 'Group',
         neutraliseFormulas = true,
+        formatted = false,
         table: only = null
     } = options;
 
@@ -69,7 +74,9 @@ export function toCSV(pages, options = {}) {
     }
 
     for (const entry of table.rows) {
-        const cells = table.columns.map(c => entry.row?.[c.field]);
+        const cells = table.columns.map(c => formatted
+            ? formatValue(entry.row?.[c.field], c.format)
+            : entry.row?.[c.field]);
         lines.push(encodeRow([...groups.cells(entry), ...cells], delimiter, neutraliseFormulas));
     }
 

@@ -23,6 +23,9 @@
 
 import { ReportError } from './validate.js';
 import { tablesOf, datasetOf, groupingsOf, normalizeGrouping } from './tables.js';
+import { formatValue, percentFormat, toNumber } from './format.js';
+import { soleKey } from './resolve.js';
+import { highlightFor } from './highlight.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -65,7 +68,7 @@ export function group(resolvedJson, data) {
     }
 
     /** a report of nothing but text bands is legal - there is simply nothing to bind */
-    const scope = { rows: bound[0]?.rows ?? [], named };
+    const scope = { rows: bound[0]?.rows ?? [], table: bound[0]?.table ?? null, named, data };
 
     aggregate(bands, scope);
     return json;
@@ -112,6 +115,9 @@ function bindGroups(table, rows, grouping, dataset) {
     const leaves = [];
 
     /** splits `rows` by one level, and each part by the next, down to the last */
+    /** what a {percentage()} is a share of: the whole table, or the group outside */
+    const all = rows;
+
     const split = (rows, depth, outer) => {
         const level = levels[depth];
         const bands = [level.header, level.footer].filter(Boolean);
@@ -120,7 +126,7 @@ function bindGroups(table, rows, grouping, dataset) {
             const node = {
                 by: level.by,
                 key,
-                aggregates: groupAggregates(bands, groupRows, dataset)
+                aggregates: groupAggregates(bands, groupRows, dataset, { all, parent: rows, table })
             };
             const chain = [...outer, node];
 
@@ -243,7 +249,15 @@ function aggregate(bands, scope) {
              * standing; re-resolving from `value` here would discard its work
              * and leave "{authorizer}" printed literally on the report.
              */
-            item.text = fillAggregates(item.text ?? item.value, scope);
+            item.text = fillAggregates(item.text ?? item.value, scope, item);
+
+            /**
+             * Every value the item prints is known now - its placeholders were
+             * filled by resolve.js, its totals just here - so its highlight
+             * rules can be asked. A rule naming a field reads the data.
+             */
+            const lit = highlightFor(item.highlight, shownValue(item), scope.data);
+            if (lit) item.highlighted = lit;
         }
     }
 }
@@ -256,16 +270,41 @@ function aggregate(bands, scope) {
  * as they are.
  * @param {string} value
  * @param {{rows: object[], named: Map<string, object[]>}} scope
+ * @param {object} item the text item, whose format the answer is printed in -
+ *   and which keeps the answer as `raw` when it is the item's only placeholder
  * @returns {string}
  */
-function fillAggregates(value, scope) {
+function fillAggregates(value, scope, item) {
+    const sole = soleKey(item.value);
+
     return value.replace(REGEX, (match, key) => {
         const expr = parseAggregate(key.trim());
         if (!expr) return match;
 
-        const { rows, field } = scoped(expr.field, scope);
-        const result = compute({ key: expr.key, field }, rows);
-        return result == null ? '' : String(result);
+        const isShare = expr.key === PERCENTAGE;
+        let result;
+
+        if (isShare) {
+            /** outside a group, a share is of the whole: every scope is the dataset */
+            const measure = (which, fn, field) => {
+                const target = scoped(field, scope);
+                return compute({ key: fn, field: target.field }, target.rows);
+            };
+            result = percentage(expr.field, measure, () => measureField(scope.table, scope.rows));
+        } else {
+            const { rows, field } = scoped(expr.field, scope);
+            result = compute({ key: expr.key, field }, rows);
+        }
+
+        if (sole === key.trim()) {
+            item.raw = result;
+            if (isShare) item.rawFormat = percentFormat(item.format);
+        }
+
+        /** a count is a count of rows, whatever the item's format says about money */
+        if (result == null) return '';
+        if (isShare) return formatValue(result, percentFormat(item.format));
+        return formatValue(result, expr.key === 'count' ? null : item.format);
     });
 }
 
@@ -301,6 +340,117 @@ function scoped(field, scope) {
 }
 
 
+/** the aggregate that is a share of a total rather than a figure of its own */
+export const PERCENTAGE = 'percentage';
+
+
+/**
+ * {percentage(part)} or {percentage(part, of)} - a value as a share of another,
+ * as a fraction: 0.5708 prints as 57.08%.
+ *
+ *   part   an aggregate - sum(amount), count(), avg(price) - over the rows in
+ *          scope, or a plain number: 1000
+ *   of     what it is a share of. Left out, it is the whole table's total: the
+ *          same aggregate over every row for an aggregate part, and the sum of
+ *          the table's money column for a number. Or a number - a target, such
+ *          as 50000 - an aggregate over every row, or `parent`: the same over
+ *          the group outside this one.
+ *
+ * Nothing is a share of zero or of nothing: that is blank, never Infinity%.
+ *
+ * @param {string} args what is inside the brackets
+ * @param {(which: 'part'|'all'|'parent', fn: string, field: string) => number|null} measure
+ *   an aggregate over this group's rows, the table's or the outer group's
+ * @param {() => string|null} moneyField the field a plain number is a share of
+ * @returns {number|null}
+ */
+function percentage(args, measure, moneyField) {
+    const [partText, ofText] = splitArguments(args);
+    const part = term(partText);
+    if (!part || part.kind === 'parent') return null;
+
+    /** what "the whole" is made of when only the part is given, or `parent` is */
+    const whole = part.kind === 'aggregate'
+        ? { fn: part.fn, field: part.field }
+        : { fn: 'sum', field: moneyField() };
+
+    const partValue = part.kind === 'number' ? part.value : measure('part', part.fn, part.field);
+
+    const of = ofText === undefined ? { kind: 'all' } : term(ofText);
+    if (!of) return null;
+
+    let ofValue = null;
+    if (of.kind === 'number') ofValue = of.value;
+    else if (of.kind === 'aggregate') ofValue = measure('all', of.fn, of.field);
+    else if (whole.fn === 'count' || whole.field) {
+        ofValue = measure(of.kind === 'parent' ? 'parent' : 'all', whole.fn, whole.field);
+    }
+
+    if (partValue == null || ofValue == null || ofValue === 0) return null;
+    return round(partValue / ofValue);
+}
+
+
+/** one argument of percentage(): a number, `parent`, or an aggregate */
+function term(text) {
+    const t = (text ?? '').trim();
+    if (t === '') return null;
+    if (t === 'parent') return { kind: 'parent' };
+
+    const number = toNumber(t);
+    if (number !== null) return { kind: 'number', value: number };
+
+    const expr = parseAggregate(t);
+    if (!expr || expr.key === PERCENTAGE) return null;
+    return { kind: 'aggregate', fn: expr.key, field: expr.field };
+}
+
+
+/** "sum(amount), 50000" into its two arguments, a comma inside brackets being no split */
+function splitArguments(args) {
+    let depth = 0;
+
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '(') depth++;
+        else if (args[i] === ')') depth--;
+        else if (args[i] === ',' && depth === 0) return [args.slice(0, i), args.slice(i + 1)];
+    }
+
+    return [args, undefined];
+}
+
+
+/**
+ * The field a plain-number share is of: the table's money column - the first
+ * formatted as currency, then as a number, then the last column that holds
+ * numbers, totals being the right-hand column of most tables.
+ * @param {object|null} table
+ * @param {object[]} rows
+ * @returns {string|null}
+ */
+function measureField(table, rows) {
+    const columns = Array.isArray(table?.columns) ? table.columns : [];
+    const formatted = (type) => columns.find(c => c?.format?.type === type)?.field;
+    const numeric = [...columns].reverse()
+        .find(c => (rows ?? []).some(row => toNumber(row?.[c?.field]) !== null));
+
+    return formatted('currency') ?? formatted('number') ?? numeric?.field ?? null;
+}
+
+
+/**
+ * The value a highlight rule tests for a text item: what it printed, as the
+ * reader reads it - a share as its percentage, 57.08 rather than 0.5708.
+ * @param {object} item
+ * @returns {*}
+ */
+export function shownValue(item) {
+    return item.rawFormat?.type === 'percent' && typeof item.raw === 'number'
+        ? round(item.raw * 100)
+        : item.raw;
+}
+
+
 function parseAggregate(expr) {
     const match = expr.match(/^(\w+)\((.*?)\)$/);
     if (!match) return null;
@@ -331,10 +481,16 @@ function parseAggregate(expr) {
  * @param {object[]} bands the level's own group bands
  * @param {object[]} rows the group's rows
  * @param {string|null} name the grouped table's dataset
+ * @param {{all?: object[], parent?: object[], table?: object}} [around] the
+ *   table's rows and the outer group's, for {percentage()} to divide by
  * @returns {object}
  */
-function groupAggregates(bands, rows, name) {
+function groupAggregates(bands, rows, name, around = {}) {
     const aggregates = {};
+
+    const within = { part: rows, all: around.all ?? rows, parent: around.parent ?? around.all ?? rows };
+    const measure = (which, fn, field) =>
+        compute({ key: fn, field: withoutScope(field, name) }, within[which]);
 
     for (const band of bands) {
         for (const item of band.items ?? []) {
@@ -351,7 +507,9 @@ function groupAggregates(bands, rows, name) {
                     max: null
                 };
 
-                aggregates[expr.field][expr.key] = compute({ key: expr.key, field }, rows);
+                aggregates[expr.field][expr.key] = expr.key === PERCENTAGE
+                    ? percentage(expr.field, measure, () => measureField(around.table, within.all))
+                    : compute({ key: expr.key, field }, rows);
             }
         }
     }

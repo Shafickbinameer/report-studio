@@ -13,6 +13,7 @@
 
 import { levelsOf } from '../engine/tables.js';
 import { setGroupBy } from './grouping.js';
+import { formatValue, DATE_PATTERNS, CURRENCY_SYMBOLS } from '../engine/format.js';
 
 
 /**
@@ -520,9 +521,70 @@ export function reportFields(layout) {
                 num('page.margin.bottom', 'Bottom', { min: 0 }),
                 num('page.margin.left', 'Left', { min: 0 })
             ]
+        },
+        {
+            /**
+             * What every number and date format in the report falls back on.
+             * A text item or a column says it is money or a date; how money
+             * and dates are written is said once, here.
+             */
+            title: 'Numbers and dates',
+            fields: [
+                {
+                    key: 'format.grouping', label: 'Digit groups', type: 'choice',
+                    options: [
+                        { value: 'international', label: '1,234,567' },
+                        { value: 'indian', label: '12,34,567 (Indian)' },
+                        { value: 'none', label: '1234567' }
+                    ]
+                },
+                {
+                    key: 'format.symbol', label: 'Currency', type: 'choice',
+                    options: CURRENCY_SYMBOLS, custom: true,
+                    hint: 'The symbol currency formats print; Custom… for one not listed'
+                },
+                {
+                    key: 'format.symbolPosition', label: 'Symbol goes', type: 'choice',
+                    options: [
+                        { value: 'before', label: 'Before ₹100' },
+                        { value: 'after', label: 'After 100 ₹' }
+                    ]
+                },
+                {
+                    key: 'format.pattern', label: 'Dates', type: 'choice',
+                    options: datePatternChoices(layout.format?.pattern),
+                    hint: 'How a date prints unless its own format says otherwise'
+                }
+            ],
+            actions: [{
+                action: 'format-india', label: 'Use Indian: ₹, 1,00,000, dd/MM/yyyy',
+                title: 'Indian digit groups, the rupee and day/month/year dates'
+            }]
         }
     ];
 }
+
+
+/**
+ * The date layouts a choice offers, each shown as the date it prints - ISO
+ * first, being the default. A pattern the report already has that is not one
+ * of them is offered too, so the choice can show it.
+ * @param {string|undefined} current
+ * @returns {{value: string, label: string}[]}
+ */
+export function datePatternChoices(current) {
+    const patterns = ['yyyy-MM-dd', ...DATE_PATTERNS.filter(p => p !== 'yyyy-MM-dd')];
+    if (typeof current === 'string' && current && !patterns.includes(current)) patterns.push(current);
+
+    return patterns.map(pattern => ({
+        value: pattern,
+        label: formatValue(SAMPLE_DATE, { type: 'date', pattern })
+    }));
+}
+
+
+/** the day the format choices are shown with */
+const SAMPLE_DATE = '2026-06-17';
 
 
 export function allReportFields(layout) {

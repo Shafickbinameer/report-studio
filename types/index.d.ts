@@ -3,8 +3,8 @@
  */
 
 import type {
-    Band, BandType, GroupBand, GroupFragment, GroupLevel, Layout, PaginatedReport, Page, ReportData,
-    TableItem, TextStyle
+    Band, BandType, FormatDefaults, GroupBand, GroupFragment, GroupLevel, Layout, PaginatedReport,
+    HighlightRule, Page, ReportData, TableColumn, TableItem, TextStyle, ValueFormat
 } from './layout.js';
 
 export type * from './layout.js';
@@ -100,6 +100,8 @@ export interface CSVOptions {
     groupLabel?: string | string[];
     /** stop cells starting `=`, `+`, `-` or `@` running as formulas; default true */
     neutraliseFormulas?: boolean;
+    /** write each cell as printed, ₹1,00,000.00, rather than its value; default false */
+    formatted?: boolean;
 }
 
 export type ReportCSVOptions = Pick<CSVOptions, 'delimiter' | 'newline' | 'neutraliseFormulas'>;
@@ -189,6 +191,34 @@ export function groupingsOf(layout: Layout): TableGrouping[];
 
 /** the first grouped table, or null when nothing is grouped */
 export function groupingOf(layout: Layout): TableGrouping | null;
+
+/** the text a value prints as, under a format and the report's defaults */
+export function formatValue(value: unknown, format?: ValueFormat | null, defaults?: FormatDefaults | null): string;
+
+/** a format in one line, such as "Currency · ₹12,34,567.89" */
+export function describeFormat(format?: ValueFormat | null, defaults?: FormatDefaults | null): string;
+
+/** the Excel number format code that shows a value as formatValue prints it, or null */
+export function excelNumberFormat(format?: ValueFormat | null, defaults?: FormatDefaults | null): string | null;
+
+/** international digit groups, no symbol, ISO dates */
+export const DEFAULT_FORMAT: Readonly<Required<ValueFormat>>;
+
+/** the style the first rule that holds gives a value, or null */
+export function highlightFor(
+    rules: HighlightRule[] | null | undefined, value: unknown, row?: Record<string, unknown> | null
+): HighlightRule['style'] | null;
+
+/** a table cell's style: its row's rules, then its column's own on top */
+export function cellHighlight(
+    table: TableItem, column: TableColumn, row: Record<string, unknown>
+): HighlightRule['style'] | null;
+
+/** "None", "1 rule", "3 rules" */
+export function describeHighlight(rules: HighlightRule[] | null | undefined): string;
+
+/** ₹, 1,00,000 and dd/MM/yyyy - what the designer's one-click Indian button sets */
+export const INDIAN_DEFAULTS: Readonly<FormatDefaults>;
 
 /** the most levels a table may be grouped at; validateLayout refuses more */
 export const MAX_GROUP_LEVELS: number;

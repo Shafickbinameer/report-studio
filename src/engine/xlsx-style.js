@@ -238,12 +238,38 @@ export function excelBorder({ style = 'solid', width = 1, color = null } = {}) {
 export function cellFormat(design) {
     if (!design) return null;
 
-    if (design.kind === 'text') return textFormat(design.style ?? {});
+    if (design.kind === 'text') return lit(textFormat(design.style ?? {}), design.highlight);
     if (design.kind === 'head' || design.kind === 'cell') {
-        return tableFormat(design.kind === 'head', design.column ?? {}, design.table ?? {});
+        return lit(tableFormat(design.kind === 'head', design.column ?? {}, design.table ?? {}),
+            design.highlight);
     }
 
     return null;
+}
+
+
+/**
+ * A format with a highlight rule's style laid over it: the text colour, the
+ * fill, bold and italic, each only where the rule set it - the same four the
+ * page draws, so a red figure on the page is a red figure in the sheet.
+ *
+ * @param {object} format from textFormat or tableFormat
+ * @param {object|null|undefined} highlight from highlight.js
+ * @returns {object}
+ */
+function lit(format, highlight) {
+    if (!highlight) return format;
+
+    const font = { ...format.font };
+    if (highlight.color) font.color = argb(highlight.color) ?? font.color;
+    if (highlight.fontWeight) font.bold = isBold(highlight.fontWeight);
+    if (highlight.fontStyle) font.italic = highlight.fontStyle === 'italic' || highlight.fontStyle === 'oblique';
+
+    return {
+        ...format,
+        font,
+        fill: highlight.background ? (argb(highlight.background) ?? format.fill) : format.fill
+    };
 }
 
 
@@ -343,6 +369,20 @@ export function createStyles() {
     const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'];
     const xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
 
+    /** custom number format codes, by code; Excel numbers its own from 164 up */
+    const numFmts = new Map();
+
+    /**
+     * The id of a custom number format, such as "#,##0.00" or "dd/mm/yyyy",
+     * adding it the first time it is asked for.
+     * @param {string} code
+     * @returns {number}
+     */
+    function numFmt(code) {
+        if (!numFmts.has(code)) numFmts.set(code, 164 + numFmts.size);
+        return numFmts.get(code);
+    }
+
     const index = new Map([
         ...fonts.map((x, i) => [x, i]),
         ...fills.map((x, i) => [x, i]),
@@ -401,7 +441,8 @@ export function createStyles() {
 
     /**
      * @param {object|null} format from cellFormat, or { font: { bold } } and the like
-     * @param {number} [numFmtId=0] a built-in number format, such as 14 for a date
+     * @param {number} [numFmtId=0] a number format's id: built in, such as 14 for a
+     *   date, or one numFmt handed out
      * @returns {number} the cell format's index
      */
     function xf(format, numFmtId = 0) {
@@ -434,6 +475,11 @@ export function createStyles() {
     function xml() {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+            (numFmts.size
+                ? `<numFmts count="${numFmts.size}">${[...numFmts]
+                    .map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${escapeAttr(code)}"/>`)
+                    .join('')}</numFmts>`
+                : '') +
             `<fonts count="${fonts.length}">${fonts.join('')}</fonts>` +
             `<fills count="${fills.length}">${fills.join('')}</fills>` +
             `<borders count="${borders.length}">${borders.join('')}</borders>` +
@@ -443,7 +489,7 @@ export function createStyles() {
             '</styleSheet>';
     }
 
-    return { xf, xml, get size() { return xfs.length; } };
+    return { xf, numFmt, xml, get size() { return xfs.length; } };
 }
 
 

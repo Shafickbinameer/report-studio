@@ -311,6 +311,146 @@ the report's own *groupHeader* and *groupFooter* bands. They still work
 unchanged, and the designer moves them onto the table when it opens them.
 `normalizeGrouping(layout)` does the same from code.
 
+### Number and date formats
+
+Select a text item, or look at a table column's card. Then press its **Format**
+button to choose how its values print. You can also right-click a text item
+and choose **Format…**, or right-click a table cell and choose **Format
+"Amount" column…** to format the column under the pointer. The Format Editor
+offers:
+
+- **Number, Currency or Percent:** decimal places, digit groups (`1,234,567`,
+  Indian `12,34,567`, or none), how negatives show (`-1,234`, `(1,234)` or
+  `1,234-`), and how zero shows (`0.00`, `-` or blank). Currency also has a
+  symbol, placed before or after the number. Percent multiplies by 100, so
+  `0.125` prints as `12.50%`.
+- **Date or Date & time:** a layout such as `dd/MM/yyyy`, `dd-MMM-yyyy` or
+  `d MMMM yyyy`, or a pattern of your own built from `yyyy MM MMM dd HH hh mm
+  ss a`.
+- **As it comes:** no formatting, which is the default.
+
+A sample line shows real values as you choose. In the layout file, a format
+sits on the item or the column:
+
+```json
+{ "field": "amount", "label": "Amount", "format": { "type": "currency", "decimals": 0 } }
+```
+
+**The report's defaults.** How digits are grouped, the currency symbol and the
+date layout are set once for the whole report, under *Numbers and dates* on the
+report rail (`layout.format`). An item's format only stores what differs from
+them, so changing the report's defaults changes every format that didn't ask
+for something else. A new report is neutral: `1,234,567`, no symbol, and
+`2026-06-17`. **Use Indian** sets `₹`, `1,00,000` and `dd/MM/yyyy` in one
+click.
+
+```json
+"format": { "grouping": "indian", "symbol": "₹", "pattern": "dd/MM/yyyy" }
+```
+
+What it applies to:
+
+- **Table cells.** Each cell prints in its column's format, and row heights are
+  measured on the printed text.
+- **Text placeholders, totals and group totals.** In a text item such as
+  `Total {sum(amount)}`, every placeholder prints in the item's format, and the
+  words stay as typed. `{count()}` always prints as a plain count.
+- **`{today}`** prints in the report's date layout, or the item's own if it has
+  a date format.
+- **Dates** come from the data as written (`2026-06-17`), so they never shift a
+  day across time zones. Values that aren't the format's type (a name in a
+  number column, an impossible date) print as they are.
+- **Excel.** Numbers stay real numbers and dates become real Excel dates, each
+  shown with a matching Excel number format, so the workbook still adds up and
+  sorts. A text item that is a single placeholder, such as a grand total,
+  becomes a formatted number on the Report sheet. Excel has no lakh grouping,
+  so Indian grouping uses conditional formats (`[>=10000000]` and
+  `[>=100000]`). As a result, a negative number of a lakh or more shows
+  international grouping in Excel, and the "zero shows as" choice isn't carried
+  over.
+- **CSV** writes the values themselves (`100000`, `2026-06-17`) by default.
+  Pass `{ formatted: true }` to write what's printed.
+
+`formatValue(value, format, defaults)` and `excelNumberFormat(format, defaults)`
+are exported for hosts that need the same rules.
+
+### Percentages
+
+`{percentage(...)}` gives a value as a share of another, such as each
+product's share of total sales. It works in any band and prints as a
+percentage.
+
+| Placeholder | Means | Example |
+|---|---|---|
+| `{percentage(sum(total))}` | this group's sum ÷ the whole table's | `57.08%` |
+| `{percentage(sum(total), parent)}` | this group's sum ÷ the group outside it (nested grouping) | city as a share of its region |
+| `{percentage(sum(total), 50000)}` | ÷ a target | `112.40%` of target |
+| `{percentage(sum(total), max(total))}` | ÷ another aggregate over the whole table | |
+| `{percentage(1000)}` | a number ÷ the table's money column total | `0.09%` |
+| `{percentage(count())}` | this group's rows ÷ all rows | |
+
+- **The part** can be any aggregate (`sum`, `count`, `avg`, `min`, `max`) or a
+  plain number. **What it's divided by** is optional: leave it out for the
+  whole table's total, or give a number, another aggregate, or `parent`.
+- **A plain number** with nothing to divide by is taken as a share of the
+  table's money column: the first column formatted as currency, then as a
+  number, then the right-most column that holds numbers.
+- **In a report band** (not a group band), the part is the whole table, so
+  `{percentage(sum(total))}` is 100%. Give a target or another aggregate
+  instead.
+- **How it prints:** with 2 decimals by default. Give the text item a Percent
+  format to change the decimals or the negative style. It prints as a
+  percentage even inside a currency-formatted item.
+- **Dividing by zero:** a share of zero, or of a field with no numbers, prints
+  blank.
+- **Highlight rules** test the percentage as read (57.08), not the fraction.
+- **Excel:** a text item that is only a percentage goes into Excel as the
+  fraction (0.5708) with a `0.00%` format.
+- **Designer:** "Percentage of total" is in the placeholder tool next to Sum
+  and the other aggregates.
+
+### Conditional formatting
+
+Highlight values by what they are, like Crystal Reports' Highlighting Expert:
+show negative amounts in red, shade overdue invoices, mark totals over a
+target in green. Rules can go in three places:
+
+- **A table column**, under *Highlight* on its card, or by right-clicking a
+  cell and choosing *Highlight "Amount" column…*. A rule tests the cell's
+  value or another field of its row, and styles that cell.
+- **A table's rows**, under *Row highlight* on the table's rail, or *Highlight
+  rows…* on the right-click menu. A rule tests a field of the row and styles
+  every cell in it. A column's own rules are applied on top, so a red figure
+  in a shaded row is both.
+- **A text item**, under *Format → Highlight*. A rule tests the value it
+  prints (when the item is a single placeholder such as `{sum(amount)}`), or
+  any field of the data. In a group footer, it tests that group's own total.
+
+Each rule is a condition and a style:
+
+```json
+"highlight": [
+  { "when": { "op": "<", "value": 0 }, "style": { "color": "#b3261e", "fontWeight": "bold" } },
+  { "when": { "op": ">=", "value": 100000 }, "style": { "color": "#1d6b3a", "background": "#e6f4ea" } }
+],
+"rowHighlight": [
+  { "when": { "field": "status", "op": "=", "value": "Overdue" }, "style": { "background": "#fdecec" } }
+]
+```
+
+- **Rule order.** Rules are checked in order, and only the first one that
+  holds is used. The editor's ↑ button changes the order.
+- **Tests:** equals, is not, less/more than, at most/at least, between (both
+  ends included), contains, starts with, is empty, is not empty.
+- **How values compare.** Numbers compare as numbers (`"1200"` counts), dates
+  by their day, and text ignores case. A word is never ordered against a
+  number or a date, so `"Pending" >= 1000` doesn't hold.
+- **Styles:** text colour, fill, bold and italic. A rule changes only what it
+  names.
+- **Where it applies.** The page, its row heights (a bold cell is measured
+  bold) and both Excel sheets all use the same rules. Excel cells are styled
+  as printed; they aren't live Excel conditional formats.
+
 ### Images
 
 An image item can get its picture in two ways:
