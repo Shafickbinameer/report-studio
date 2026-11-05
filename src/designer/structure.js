@@ -10,11 +10,19 @@
  * once. Bands are therefore a *set* of at most seven, not an ordered list, and
  * their order on the page is regions.js's decision rather than the author's.
  * That removes reordering from the designer entirely.
+ *
+ * A grouped table's own group bands are addressed alongside them by a key that
+ * names the table - `groupHeader:refunds` - which every function here that
+ * takes a band type also takes. See grouping.js.
  */
 
 import { GRID, snap, designHeight } from './geometry.js';
 import { FONT_STACKS } from './fields.js';
-import { absoluteTop, designZones } from './canvas.js';
+import { absolutePoint, designZones } from './canvas.js';
+import {
+    GROUP_KINDS, parseBandKey, groupBandAt, groupBandsIn, groupedTables,
+    setGroupBand, isGroupKind, needsNormalizing
+} from './grouping.js';
 
 
 /** every band type, in the order they appear down the page */
@@ -141,8 +149,12 @@ function datasetForNewTable(layout) {
  *
  * Tables are stacked rather than overlapped - validate.js refuses two that
  * share any height of a band - so the copy goes below everything on the band
- * rather than a step down and across. And it is not grouped by a field of its
- * own, since a report groups one table and the original is already that one.
+ * rather than a step down and across.
+ *
+ * A grouping of its own comes with it, header and footer included: any number
+ * of tables may be grouped, and a copy that lost its group design would be a
+ * copy of only half the table. The older `groupBy` does not, because that
+ * borrows the report's group bands and only one table may.
  *
  * @param {object} copy mutated in place
  * @param {object} band the band it is going onto, before the copy is added
@@ -153,8 +165,71 @@ function settleTable(copy, band) {
 }
 
 
+/**
+ * A band by its key: a report band by its type, or a table's group band by
+ * `groupHeader:<table id>`.
+ * @param {object} layout
+ * @param {string} type
+ * @returns {object|null}
+ */
 export function findBand(layout, type) {
+    if (parseBandKey(type)) return groupBandAt(layout, type);
+
     return bandList(layout).find(b => b.type === type) ?? null;
+}
+
+
+/**
+ * Every band the report has, by key, in the order they run down the page: a
+ * table's group header with the report's own, before the detail, and its
+ * footer after.
+ *
+ * @param {object} layout
+ * @returns {string[]}
+ */
+export function bandKeys(layout) {
+    const tableBands = groupBandsIn(layout);
+    const keys = [];
+
+    for (const type of BAND_TYPES) {
+        if (hasBand(layout, type)) keys.push(type);
+
+        if (GROUP_KINDS.includes(type)) {
+            keys.push(...tableBands.filter(b => b.kind === type).map(b => b.key));
+        }
+    }
+
+    return keys;
+}
+
+
+/**
+ * The bands the rail offers a checkbox for, in page order: every report band
+ * type, and both group bands of each grouped table.
+ *
+ * The report's own groupHeader and groupFooter are only offered while the
+ * report has one, or is grouped the older way and so needs one. A table's
+ * grouping carries its own now, and the report's are the older form - left in
+ * a file by a report that is no longer grouped, and listed so that they can be
+ * removed.
+ *
+ * @param {object} layout
+ * @returns {string[]}
+ */
+export function railBands(layout) {
+    const grouped = groupedTables(layout);
+    const olderForm = needsNormalizing(layout);
+    const keys = [];
+
+    for (const type of BAND_TYPES) {
+        if (!GROUP_KINDS.includes(type) || hasBand(layout, type) || olderForm) keys.push(type);
+
+        if (GROUP_KINDS.includes(type)) {
+            keys.push(...grouped.map(g => g.keys[GROUP_KINDS.indexOf(type)]));
+        }
+    }
+
+    return keys;
 }
 
 
@@ -171,6 +246,11 @@ export function hasBand(layout, type) {
  * @returns {object|null} the band, or null if it was already there
  */
 export function addBand(layout, type) {
+    if (parseBandKey(type)) {
+        const made = setGroupBand(layout, type, true);
+        return made && typeof made === 'object' ? made : null;
+    }
+
     if (!BAND_TYPES.includes(type)) return null;
     if (hasBand(layout, type)) return null;
 
@@ -192,9 +272,16 @@ export function addBand(layout, type) {
 
 /**
  * Switches a band off, and everything on it with it.
+ *
+ * A table's group band is switched off on the table's grouping, which keeps
+ * its field; switching off its last one leaves a grouping validate.js names as
+ * a problem, as switching off a report band under a groupBy always did.
+ *
  * @returns {boolean} whether there was one to remove
  */
 export function removeBand(layout, type) {
+    if (parseBandKey(type)) return setGroupBand(layout, type, false) === true;
+
     const at = bandList(layout).findIndex(b => b.type === type);
     if (at === -1) return false;
 
@@ -203,10 +290,19 @@ export function removeBand(layout, type) {
 }
 
 
-/** every item id in the report, across every band */
+/** every item id in the report, across every band - a table's group bands too */
 function usedIds(layout) {
-    return new Set(bandList(layout)
+    return new Set([...bandList(layout), ...groupBandsIn(layout).map(g => g.band)]
         .flatMap(b => (b.items || []).map(i => i.id)));
+}
+
+
+/**
+ * Whether an item may go onto a band. Anything may, except a table onto a
+ * group band: a group band is drawn inside its table, once per group.
+ */
+function fits(type, item) {
+    return !(item?.type === 'table' && isGroupKind(type));
 }
 
 
@@ -433,7 +529,7 @@ export function createTable(layout, band, columns = DEFAULT_COLUMNS) {
 
 export function addItem(layout, bandType, item) {
     const band = findBand(layout, bandType);
-    if (!band) return null;
+    if (!band || !fits(bandType, item)) return null;
 
     band.items ??= [];
     band.items.push(item);
@@ -568,6 +664,7 @@ export function pasteItems(layout, bandType, entries) {
          * clipboard of five items should place the four it can.
          */
         if (item.type === 'table' && !canAddTable(layout)) continue;
+        if (!fits(bandType, item)) continue;
 
         const copy = structuredClone(item);
         const y = Math.max(0, (item.y ?? 0) + DUPLICATE_OFFSET);
@@ -621,15 +718,23 @@ export function moveItemToBand(layout, from, to, id) {
     if (!source || !target) return false;
 
     const item = (source.items || []).find(i => i.id === id);
-    if (!item) return false;
+    if (!item || !fits(to, item)) return false;
 
-    const page = absoluteTop(layout, from, item.y ?? 0);
+    const page = absolutePoint(layout, from, item.x ?? 0, item.y ?? 0);
 
     removeItem(layout, from, id);
     addItem(layout, to, item);
 
-    const landed = absoluteTop(layout, to, 0);
-    if (page !== null && landed !== null) item.y = Math.round(page - landed);
+    /**
+     * Both axes: a table's group band starts where its table does, so an x
+     * carried across unchanged would jump the item sideways by that much.
+     */
+    const landed = absolutePoint(layout, to, 0, 0);
+
+    if (page && landed) {
+        item.x = Math.round(page.x - landed.x);
+        item.y = Math.round(page.y - landed.y);
+    }
 
     return true;
 }
@@ -672,10 +777,13 @@ export function removeColumn(table, index) {
  *
  * @param {object} layout
  * @param {{band: string}|null} selection
+ * @param {object} [options]
+ * @param {boolean} [options.table] it is a table, which no group band takes
  * @returns {string|null}
  */
-export function targetBand(layout, selection) {
-    if (selection && hasBand(layout, selection.band)) return selection.band;
+export function targetBand(layout, selection, { table = false } = {}) {
+    if (selection && hasBand(layout, selection.band)
+        && !(table && isGroupKind(selection.band))) return selection.band;
     if (hasBand(layout, 'detail')) return 'detail';
 
     return bandList(layout)[0]?.type ?? null;

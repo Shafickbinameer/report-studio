@@ -262,7 +262,9 @@ describe('group - an aggregate resolves in whatever band it is put in', () => {
         });
 
         const out = group(resolve(json, data), data);
-        const footer = out.bands.find(b => b.type === 'groupFooter');
+
+        /** the report's groupFooter now travels on the table it was drawn for */
+        const footer = out.bands.find(b => b.type === 'detail').items[0].grouping[0].footer;
 
         expect(footer.items[0].text ?? footer.items[0].value).toBe('Sub: {sum(price)}');
     });

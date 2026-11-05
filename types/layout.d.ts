@@ -95,7 +95,17 @@ export interface TableItem extends ItemBase {
     showHeader?: boolean;
     /** the dataset this table reads rows from; the layout's when absent */
     dataset?: string | null;
-    /** group this table's rows by a field. One table per report may */
+    /**
+     * How this table's rows are grouped: the field, and the bands each group
+     * is drawn with. One level for now; a list because nested groups will
+     * add levels to it. Any number of tables in a report may be grouped.
+     */
+    grouping?: GroupLevel[] | null;
+    /**
+     * The older way to group: by this field, drawn with the report's own
+     * groupHeader and groupFooter bands, so only one table may use it.
+     * Read for layouts that have it; prefer `grouping`.
+     */
     groupBy?: string | null;
     /** false keeps each cell to one line with an ellipsis */
     wrap?: boolean;
@@ -137,6 +147,29 @@ export interface ImageItem extends ItemBase {
 
 export type ReportItem = TextItem | TableItem | LineItem | BoxItem | ImageItem;
 
+/**
+ * A band drawn once per group, inside the table it belongs to. Any item but a
+ * table. A group band's `{field}` reads the group's rows, and its
+ * `{sum(field)}` totals that group alone.
+ */
+export interface GroupBand {
+    /** pixels; grows to fit what is in it */
+    height?: number;
+    items: Array<TextItem | LineItem | BoxItem | ImageItem>;
+    [key: string]: unknown;
+}
+
+/** one level of a table's grouping */
+export interface GroupLevel {
+    /** the row field whose value decides which group a row is in */
+    by: string;
+    /** drawn above each group's rows; at least one of header and footer */
+    header?: GroupBand | null;
+    /** drawn under each group's last row */
+    footer?: GroupBand | null;
+    [key: string]: unknown;
+}
+
 export interface Band {
     type: BandType;
     /** pixels, or a percentage of the printable height such as `'10%'` */
@@ -152,7 +185,11 @@ export interface Layout {
     page: PageSetup;
     /** the dataset tables read from when they name none of their own */
     dataset?: string | null;
-    /** group the first table's rows by this field */
+    /**
+     * The older way to group: the first table's rows by this field, drawn
+     * with the report's groupHeader and groupFooter bands. Prefer a table's
+     * own `grouping`.
+     */
     groupBy?: string | null;
     bands: Band[];
     [key: string]: unknown;

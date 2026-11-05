@@ -21,7 +21,11 @@ import {
     fieldsFor, allFields, reportFields, allReportFields,
     COLUMN_FIELDS, readField, writeField
 } from './fields.js';
-import { BAND_TYPES, BAND_NOTES, hasBand, findBand } from './structure.js';
+import { BAND_NOTES, hasBand, findBand, railBands } from './structure.js';
+import {
+    parseBandKey, bandLabel, groupBandKey, groupedTables, GROUP_KINDS
+} from './grouping.js';
+import { levelsOf } from '../engine/tables.js';
 import { esc, imageSrc } from '../render/items.js';
 
 
@@ -35,16 +39,55 @@ import { esc, imageSrc } from '../render/items.js';
 /**
  * The rail for a selected item.
  * @param {object} item
+ * @param {object} [layout] the report it is in, which a grouped table's own
+ *   group band controls need - the other grouped tables, to copy a design from
  * @returns {string} markup
  */
-export function drawPanel(item) {
+export function drawPanel(item, layout = null) {
     return `
     <div class="dz-panel-head">
         <span class="dz-panel-type">${esc(item.type)}</span>
         <span class="dz-panel-id">${esc(item.id)}</span>
     </div>
     ${sections(item, fieldsFor(item))}
+    ${item.type === 'table' ? grouping(item, layout) : ''}
     ${item.type === 'table' ? columns(item) : ''}`;
+}
+
+
+/**
+ * A grouped table's own group bands, switched on and off and sized here as
+ * well as in the report's band list - this is where somebody who has just set
+ * *Group by* is looking.
+ *
+ * And, when another table is grouped too, a way to give this one the same
+ * header and footer: each grouping is a table's own, so two that should look
+ * alike are made alike by copying.
+ *
+ * @param {object} table
+ * @param {object|null} layout
+ * @returns {string} markup, empty for a table that is not grouped
+ */
+function grouping(table, layout) {
+    if (!levelsOf(table).length) return '';
+
+    /** the table alone is enough to find its own bands */
+    const scope = layout ?? { bands: [{ type: 'detail', items: [table] }] };
+
+    const others = layout
+        ? groupedTables(layout).filter(g => g.table !== table.id)
+        : [];
+
+    return `
+    <section class="dz-section dz-bands dz-grouping">
+        <h3>Grouping</h3>
+        ${GROUP_KINDS.map(kind => bandRow(scope, groupBandKey(kind, table.id))).join('')}
+        ${others.map(g => `
+            <button type="button" class="dz-add-row" data-action="copy-grouping"
+                    data-from="${esc(g.table)}"
+                    title="Replace this table's group header and footer with copies of ${esc(g.table)}'s">
+                Copy group design from ${esc(g.table)}</button>`).join('')}
+    </section>`;
 }
 
 
@@ -242,34 +285,56 @@ function columns(table) {
  *
  * A checkbox each, in page order, rather than a list that can be reordered -
  * validate.js allows one band of each type and regions.js decides where each
- * sits, so there is no order here for anyone to choose.
+ * sits, so there is no order here for anyone to choose. Each grouped table's
+ * own header and footer are listed with the report's, named for their table.
  */
 function bands(layout) {
     return `
     <section class="dz-section dz-bands">
         <h3>Bands</h3>
-        ${BAND_TYPES.map(type => {
-            const band = findBand(layout, type);
-            const on = hasBand(layout, type);
-
-            return `
-            <div class="dz-band-row${on ? ' is-on' : ''}">
-                <label class="dz-band-name">
-                    <input type="checkbox" data-band="${esc(type)}" ${on ? 'checked' : ''}>
-                    <span>${esc(type)}</span>
-                </label>
-                ${on && type !== 'detail'
-                    ? `<input type="text" class="dz-band-height"
-                             data-band-height="${esc(type)}"
-                             value="${esc(band.height ?? '')}"
-                             placeholder="auto" spellcheck="false"
-                             aria-label="${esc(type)} height">`
-                    : `<span class="dz-band-height-none">${
-                        type === 'detail' ? 'what is left' : ''}</span>`}
-                <p class="dz-hint">${esc(BAND_NOTES[type] ?? '')}</p>
-            </div>`;
-        }).join('')}
+        ${railBands(layout).map(type => bandRow(layout, type)).join('')}
     </section>`;
+}
+
+
+/** what a band row says under its name */
+function bandNote(type) {
+    const parsed = parseBandKey(type);
+    if (!parsed) return BAND_NOTES[type] ?? '';
+
+    return parsed.kind === 'groupHeader'
+        ? `Before each group of ${parsed.table}`
+        : `After each group of ${parsed.table}`;
+}
+
+
+/**
+ * One band's switch and height, by key.
+ * @param {object} layout
+ * @param {string} type a band type, or a table's group band key
+ * @returns {string} markup
+ */
+function bandRow(layout, type) {
+    const band = findBand(layout, type);
+    const on = hasBand(layout, type);
+    const label = bandLabel(type);
+
+    return `
+    <div class="dz-band-row${on ? ' is-on' : ''}">
+        <label class="dz-band-name">
+            <input type="checkbox" data-band="${esc(type)}" ${on ? 'checked' : ''}>
+            <span>${esc(label)}</span>
+        </label>
+        ${on && type !== 'detail'
+            ? `<input type="text" class="dz-band-height"
+                     data-band-height="${esc(type)}"
+                     value="${esc(band.height ?? '')}"
+                     placeholder="auto" spellcheck="false"
+                     aria-label="${esc(label)} height">`
+            : `<span class="dz-band-height-none">${
+                type === 'detail' ? 'what is left' : ''}</span>`}
+        <p class="dz-hint">${esc(bandNote(type))}</p>
+    </div>`;
 }
 
 
@@ -340,13 +405,26 @@ export function attachPanel({
 
         const raw = field.type === 'toggle' ? node.checked : node.value;
 
+        /**
+         * A field may say which reading of its object decides the rail's
+         * shape, rather than that every edit to it does - *Group by* changes
+         * the controls only when it turns grouping on or off, not on every
+         * letter of the field name.
+         */
+        const shape = typeof field.rebuilds === 'function' ? field.rebuilds : null;
+        const before = shape ? shape(bound.target) : null;
+
         if (writeField(bound.target, field, raw)) {
             /**
              * Some fields change which fields there are - choosing a named
              * sheet takes the width and height boxes away, and Custom brings
              * them back. The caller is told, because it owns the rail.
              */
-            changed(`field:${field.key}`, { rebuild: Boolean(field.rebuilds) });
+            const rebuild = shape
+                ? shape(bound.target) !== before
+                : Boolean(field.rebuilds);
+
+            changed(`field:${field.key}`, { rebuild });
         }
     }
 

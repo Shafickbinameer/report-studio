@@ -207,13 +207,15 @@ export function guideNear(layout, axis, at, within = GRAB) {
 /**
  * The guides that apply inside one band, in that band's own coordinates.
  *
- * A vertical guide needs no conversion - a band's x origin is the printable
- * area's. A horizontal one does: the same guide is a different `y` in every
- * band, which is the whole reason bands hold their items in their own
- * coordinates in the first place.
+ * A horizontal guide is a different `y` in every band, which is the whole
+ * reason bands hold their items in their own coordinates in the first place.
+ * A vertical one is the same `x` in every band that runs the page's width,
+ * and is moved over for a table's group band, which starts where its table
+ * does.
  *
  * @param {object} layout
- * @param {{originY: number, h: number}} band from canvas.bandBox
+ * @param {{originX: number, originY: number, w: number, h: number}} band
+ *   from canvas.bandBox
  * @returns {{x: number[], y: number[]}}
  */
 export function guidesInBand(layout, band) {
@@ -221,8 +223,14 @@ export function guidesInBand(layout, band) {
 
     if (!band) return { x: all.x, y: [] };
 
+    const originX = band.originX ?? 0;
+
     return {
-        x: all.x,
+        x: originX === 0
+            ? all.x
+            : all.x
+                .map(at => at - originX)
+                .filter(at => at >= 0 && at <= (band.w ?? 0)),
         /** only the ones that actually cross this band; the rest are elsewhere */
         y: all.y
             .map(at => at - (band.originY ?? 0))

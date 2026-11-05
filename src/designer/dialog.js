@@ -13,6 +13,7 @@
  */
 
 import { DEFAULT_COLUMNS } from './structure.js';
+import { bandLabel } from './grouping.js';
 import { toId } from '../shared/store.js';
 import { esc } from '../render/items.js';
 import { createDropdown } from '../shared/dropdown.js';
@@ -536,7 +537,7 @@ export function askToken(root, layout, current = null) {
                 const wanted = defaultBand(layout, token, current);
 
                 bandWrapper.innerHTML = listbox('band',
-                    choices.map(b => ({ value: b, label: b })), wanted);
+                    choices.map(b => ({ value: b, label: bandLabel(b) })), wanted);
 
                 bandPicker = createDropdown(bandWrapper);
                 bandPicker.addEventListener('change', () => refresh());
@@ -595,7 +596,7 @@ export function askToken(root, layout, current = null) {
 
 
 function aggregateNote(token, band) {
-    return `${token.label} prints nothing in a ${band}.`;
+    return `${token.label} prints nothing in a ${bandLabel(band)}.`;
 }
 
 
@@ -612,12 +613,12 @@ function scopeNote(token, band) {
     const scope = aggregateScope(token, band);
 
     if (scope === 'group') {
-        return `In a ${band}, ${token.label.toLowerCase()} is worked out over ` +
+        return `In a ${bandLabel(band)}, ${token.label.toLowerCase()} is worked out over ` +
             `each group's own rows, once per group.`;
     }
 
     if (scope === 'report') {
-        return `In a ${band}, ${token.label.toLowerCase()} is worked out over ` +
+        return `In a ${bandLabel(band)}, ${token.label.toLowerCase()} is worked out over ` +
             `every row in the report.`;
     }
 
@@ -654,7 +655,7 @@ function tokenMarkup(layout, fields, current) {
         fields[0], { hidden: !needsField(first), empty: 'No fields yet - add a table first' })}
 
         ${picker('band', 'Band',
-            bandChoices(layout, first).map(b => ({ value: b, label: b })),
+            bandChoices(layout, first).map(b => ({ value: b, label: bandLabel(b) })),
             defaultBand(layout, first, current))}
 
         <p class="dz-token-warning" data-role="token-warning" aria-live="polite" hidden></p>

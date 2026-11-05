@@ -11,6 +11,7 @@
  */
 
 import { assertLayout, assertData } from './validate.js';
+import { levelsOf } from './tables.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -91,18 +92,38 @@ export function resolve(rptJson, rptData) {
          * this stage cannot resolve there is deferred rather than blanked, so
          * grouping still has it to work with.
          */
-        const deferUnknown = GROUP_BANDS.includes(band.type);
+        resolveBand(band, rptData, GROUP_BANDS.includes(band.type));
 
+        /** a table's own group bands are group bands just the same */
         for (const item of band.items) {
-            if (item.type == "text")
-                item.text = resolveTxt(item, rptData, deferUnknown);
+            if (item.type !== 'table') continue;
 
-            if (item.type == "image")
-                item.resolvedSrc = resolveImage(item, rptData);
+            for (const level of levelsOf(item)) {
+                for (const groupBand of [level?.header, level?.footer]) {
+                    if (Array.isArray(groupBand?.items)) resolveBand(groupBand, rptData, true);
+                }
+            }
         }
     }
 
     return resolved;
+}
+
+
+/**
+ * Fills in what the root data can answer on one band's items.
+ * @param {object} band
+ * @param {object} rptData
+ * @param {boolean} deferUnknown leave an unresolvable key for the grouping stage
+ */
+function resolveBand(band, rptData, deferUnknown) {
+    for (const item of band.items) {
+        if (item.type == "text")
+            item.text = resolveTxt(item, rptData, deferUnknown);
+
+        if (item.type == "image")
+            item.resolvedSrc = resolveImage(item, rptData);
+    }
 }
 
 

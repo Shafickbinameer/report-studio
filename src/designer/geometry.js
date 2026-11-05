@@ -9,7 +9,8 @@
  */
 
 
-import { DESIGN_ROWS, designHeight } from '../engine/measure.js';
+import { DESIGN_ROWS, designHeight as printedDesignHeight } from '../engine/measure.js';
+import { groupBandsOf } from '../engine/tables.js';
 
 
 /** spec 5.2: positions snap to a 10px grid */
@@ -51,12 +52,59 @@ export function snap(value) {
  * equivalent, and it is the same figure the canvas draws with, so the selection
  * outline lands exactly on the table rather than near it.
  *
- * Re-exported from the engine rather than written twice: it is also the height
+ * Built on the engine's figure rather than written twice: that is the height
  * paginate.js treats as the table's designed size, and the canvas and the
- * printed page have to agree about that or nothing below a table lands where it
+ * printed page have to agree about it or nothing below a table lands where it
  * was put.
+ *
+ * A grouped table is drawn as one group - its column headings, its group
+ * header, the sample rows, its group footer - because that is the unit it
+ * prints in, so its box on the canvas is taller by its two group bands. The
+ * engine's figure leaves them out, and a table grows from that figure at print
+ * time, so what sits below the table still clears it there.
+ *
+ * @param {object} item
+ * @returns {number} pixels
  */
-export { designHeight };
+export function designHeight(item) {
+    const height = printedDesignHeight(item);
+    if (item?.type !== 'table') return height;
+
+    const { header, footer } = groupBandsOf(item);
+    return height + stripHeight(header) + stripHeight(footer);
+}
+
+
+/**
+ * Where a grouped table's group bands sit inside its box: below the column
+ * headings, then below the sample rows.
+ *
+ * @param {object} table
+ * @returns {{groupHeader: {y: number, h: number}|null,
+ *            groupFooter: {y: number, h: number}|null}}
+ *   offsets from the table's own top; null for a band the table does not have
+ */
+export function groupStrips(table) {
+    const { header, footer } = groupBandsOf(table);
+
+    const rowHeight = table?.rowHeight ?? 0;
+    const headings = table?.showHeader ? (table.headerHeight ?? rowHeight) : 0;
+    const head = stripHeight(header);
+
+    return {
+        groupHeader: header ? { y: headings, h: head } : null,
+        groupFooter: footer
+            ? { y: headings + head + DESIGN_ROWS * rowHeight, h: stripHeight(footer) }
+            : null
+    };
+}
+
+
+/** a group band's height, in pixels - only a number counts, as in validate.js */
+export function stripHeight(band) {
+    const height = Number(band?.height);
+    return band && Number.isFinite(height) && height > 0 ? height : 0;
+}
 
 
 /** an item's box in band-relative coordinates */

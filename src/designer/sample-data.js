@@ -19,7 +19,7 @@
  */
 
 import { PLACEHOLDER, isEngineKey, isRowScoped } from '../engine/resolve.js';
-import { groupingOf, datasetOf } from '../engine/tables.js';
+import { groupingsOf, datasetOf, tablesOf, levelsOf } from '../engine/tables.js';
 
 
 /** enough rows to show a group break, few enough to read at a glance */
@@ -53,13 +53,47 @@ export const SAMPLE_IMAGE = 'data:image/png;base64,' +
  * @returns {{root: string[], row: string[]}} paths, de-duplicated
  */
 export function requiredKeys(layout) {
+    return keysIn(everyBand(layout));
+}
+
+
+/**
+ * Every band whose items the report prints, as `{ band, rowScoped }`: the
+ * report's own, and each grouped table's group bands - which are row-scoped
+ * whatever they say their type is, since that is where they are drawn.
+ *
+ * @param {object} layout
+ * @returns {{band: object, rowScoped: boolean}[]}
+ */
+function everyBand(layout) {
+    const report = (Array.isArray(layout?.bands) ? layout.bands : [])
+        .map(band => ({ band, rowScoped: isRowScoped(band?.type) }));
+
+    return [...report, ...tableGroupBands(tablesOf(layout))
+        .map(band => ({ band, rowScoped: true }))];
+}
+
+
+/** the group bands the given tables carry, skipping any that are not bands */
+function tableGroupBands(tables) {
+    return tables
+        .flatMap(table => levelsOf(table))
+        .flatMap(level => [level?.header, level?.footer])
+        .filter(band => band && typeof band === 'object' && Array.isArray(band.items));
+}
+
+
+/**
+ * The placeholder keys in some bands, split by the scope each is read in.
+ * @param {{band: object, rowScoped: boolean}[]} bands
+ * @returns {{root: string[], row: string[]}}
+ */
+function keysIn(bands) {
     const root = new Set();
     const row = new Set();
 
-    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
-        const rowScoped = isRowScoped(band.type);
-
-        for (const item of (band.items || [])) {
+    for (const { band, rowScoped } of bands) {
+        for (const item of (band?.items || [])) {
             if (item.type !== 'text' || typeof item.value !== 'string') continue;
 
             for (const [, raw] of item.value.matchAll(PLACEHOLDER)) {
@@ -96,7 +130,7 @@ export function requiredKeys(layout) {
 export function imageKeys(layout) {
     const found = new Set();
 
-    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+    for (const { band } of everyBand(layout)) {
         for (const item of (band.items || [])) {
             if (item.type !== 'image' || typeof item.field !== 'string') continue;
 
@@ -139,20 +173,38 @@ export function datasets(layout) {
     }
 
     /**
-     * A report can group and place row placeholders without ever drawing a
-     * table, so the rows they read are created if anything needs them at all.
-     * They are the grouped table's: a group band's `{region}` is read off the
-     * rows of the table being grouped, whichever table that is.
+     * Each grouped table's rows carry the field it is grouped by, and the row
+     * fields its own group bands print: a group band's `{region}` is read off
+     * the rows of the table it belongs to, and no other table's.
      */
-    const { row } = requiredKeys(layout);
-    const grouping = groupingOf(layout);
-    const by = grouping?.by ?? layout?.groupBy ?? null;
+    const groupings = groupingsOf(layout);
+    const covered = new Set();
 
-    if (row.length || by) {
-        const fields = fieldsOf(
-            (grouping && datasetOf(grouping.table, layout)) || fallback);
+    for (const grouping of groupings) {
+        const fields = fieldsOf(datasetOf(grouping.table, layout) || fallback);
+        const bands = [grouping.header, grouping.footer]
+            .filter(band => band && typeof band === 'object');
 
-        for (const key of row) fields.add(key);
+        if (grouping.by) fields.add(grouping.by);
+
+        for (const band of bands) covered.add(band);
+        for (const key of keysIn(bands.map(band => ({ band, rowScoped: true }))).row) {
+            fields.add(key);
+        }
+    }
+
+    /**
+     * A report can group and place row placeholders without ever drawing a
+     * table - a group band nothing is grouped by, a `groupBy` with no table to
+     * group - so the rows they read are created if anything needs them at all.
+     */
+    const loose = keysIn(everyBand(layout).filter(({ band }) => !covered.has(band))).row;
+    const by = groupings.length ? null : (layout?.groupBy ?? null);
+
+    if (loose.length || by) {
+        const fields = fieldsOf(fallback);
+
+        for (const key of loose) fields.add(key);
         if (by) fields.add(by);
     }
 
@@ -278,7 +330,7 @@ function isPlainObject(value) {
 export function summedFields(layout) {
     const found = new Set();
 
-    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+    for (const { band } of everyBand(layout)) {
         for (const item of (band.items || [])) {
             if (item.type !== 'text') continue;
 
@@ -299,16 +351,17 @@ export function summedFields(layout) {
 
 
 /**
- * The field each dataset is grouped by - one at most, the grouped table's.
+ * The field each dataset is grouped by: each grouped table's, on its own
+ * dataset. Two tables grouped differently over one dataset get the first's.
  * @param {object} layout
  * @returns {Map<string, string>}
  */
 function groupedFieldsByDataset(layout) {
     const found = new Map();
-    const grouping = groupingOf(layout);
 
-    if (grouping) {
-        found.set(datasetOf(grouping.table, layout) || layout?.dataset || 'rows', grouping.by);
+    for (const grouping of groupingsOf(layout)) {
+        const name = datasetOf(grouping.table, layout) || layout?.dataset || 'rows';
+        if (!found.has(name)) found.set(name, grouping.by);
     }
 
     return found;
@@ -325,7 +378,7 @@ function groupedFieldsByDataset(layout) {
 function scopedAggregates(layout) {
     const found = [];
 
-    for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
+    for (const { band } of everyBand(layout)) {
         for (const item of (band.items || [])) {
             if (item.type !== 'text') continue;
 

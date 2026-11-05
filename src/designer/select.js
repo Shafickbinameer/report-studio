@@ -19,6 +19,7 @@ import {
     itemBox, moveTo, resizeBy, applyBox, resizableAxes, GRID
 } from './geometry.js';
 import { bandUnder, bandBox } from './canvas.js';
+import { findBand } from './structure.js';
 import { guidesFor, gapsAround, unionBox } from './guides.js';
 import {
     addGuide, moveGuide, removeGuide, guideNear, guidesInBand
@@ -142,7 +143,7 @@ export function attachEditing({
     function lookup(one) {
         if (!one) return null;
 
-        const band = (getLayout().bands || []).find(b => b.type === one.band);
+        const band = findBand(getLayout(), one.band);
         return (band?.items || []).find(i => i.id === one.id) ?? null;
     }
 
@@ -156,7 +157,7 @@ export function attachEditing({
      * @returns {object[]} boxes, in band coordinates
      */
     function neighbours(bandType, moving) {
-        const band = (getLayout().bands || []).find(b => b.type === bandType);
+        const band = findBand(getLayout(), bandType);
         const dragged = new Set(moving.map(entry => entry.where.id));
 
         return (band?.items || [])

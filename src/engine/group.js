@@ -1,11 +1,12 @@
 /**
- * group.js binds every table to its rows, partitions the grouped one, and
+ * group.js binds every table to its rows, partitions each grouped one, and
  * resolves aggregate placeholders.
  *
  * An aggregate has to be worked out over some set of rows, and there are only
  * two sets a band can mean:
  *
- *   groupHeader / groupFooter - that group's rows, and only that group's.
+ *   groupHeader / groupFooter - that group's rows, and only that group's. Each
+ *     grouped table has its own pair, carried on the table as `grouping`.
  *     They are templates rather than bands: one copy is drawn per group, so
  *     each copy has a different answer. Filled in per fragment by paginate.js,
  *     where which group is being drawn is known.
@@ -19,24 +20,29 @@
  */
 
 import { ReportError } from './validate.js';
-import { tablesOf, datasetOf, groupingOf } from './tables.js';
+import { tablesOf, datasetOf, groupingsOf, normalizeGrouping } from './tables.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
 
 
 export function group(resolvedJson, data) {
-    const json = structuredClone(resolvedJson);
-    const bands = json.bands;
-    const tables = tablesOf(json);
-
-    if (json.groupBy != null && tables.length === 0) {
+    if (resolvedJson.groupBy != null && tablesOf(resolvedJson).length === 0) {
         throw new ReportError(
-            `group: layout.groupBy is "${json.groupBy}" but no band contains a table to group`
+            `group: layout.groupBy is "${resolvedJson.groupBy}" but no band contains a table to group`
         );
     }
 
-    const grouping = groupingOf(json);
+    /**
+     * From here on grouping is said one way only - on each table - whichever
+     * way the layout file said it. normalizeGrouping also makes the copy this
+     * stage works on, so the layout handed in is left as it was.
+     */
+    const json = normalizeGrouping(resolvedJson);
+    const bands = json.bands;
+    const tables = tablesOf(json);
+
+    const groupings = new Map(groupingsOf(json).map(g => [g.table, g]));
     const named = namedDatasets(data);
 
     /** the rows each table reads, bound as they are found */
@@ -47,8 +53,10 @@ export function group(resolvedJson, data) {
     });
 
     for (const { table, rows } of bound) {
-        if (table === grouping?.table) {
-            bindGroups(table, rows, grouping.by, bands, datasetOf(table, json));
+        const grouping = groupings.get(table);
+
+        if (grouping) {
+            bindGroups(table, rows, grouping, datasetOf(table, json));
         } else {
             table.row = rows;
         }
@@ -63,17 +71,23 @@ export function group(resolvedJson, data) {
 
 
 /**
- * Splits the grouped table's rows into groups, each carrying its own totals.
+ * Splits one grouped table's rows into groups, each carrying its own totals.
+ *
+ * The totals are worked out from this table's own group bands over this
+ * table's own rows. With one grouped table that was a distinction without a
+ * difference; with two, reading the other table's bands is how a subtotal of
+ * refunds would come to be summed over orders.
+ *
  * @param {object} table
  * @param {object[]} rows
- * @param {string} by the field that decides which group a row is in
- * @param {object[]} bands
+ * @param {{by: string, header: object|null, footer: object|null}} grouping
  * @param {string|null} dataset the table's dataset name, which a group band's
  *   aggregate may carry as a prefix
  */
-function bindGroups(table, rows, by, bands, dataset) {
-    const groupedData = groupedRows(rows, by);
-    const groupedAggregates = groupedAggregate(bands, groupedData, dataset);
+function bindGroups(table, rows, grouping, dataset) {
+    const groupedData = groupedRows(rows, grouping.by);
+    const groupBands = [grouping.header, grouping.footer].filter(Boolean);
+    const groupedAggregates = groupedAggregate(groupBands, groupedData, dataset);
 
     table.groups = Object.entries(groupedData).map(([key, groupRows]) => ({
         key,
@@ -241,7 +255,7 @@ function parseAggregate(expr) {
  * because it is the same thing said in full.
  *
  * Shape: aggregates[groupKey][field] = { count, sum, avg, min, max }
- * @param {object[]} bands
+ * @param {object[]} bands the grouped table's own group bands
  * @param {object} dataset grouped rows, keyed by group key
  * @param {string|null} name the grouped table's dataset
  * @returns {object}
@@ -255,9 +269,7 @@ function groupedAggregate(bands, dataset, name) {
     }
 
     for (const band of bands) {
-        if (!GROUP_SCOPED.includes(band.type)) continue;
-
-        for (const item of band.items) {
+        for (const item of band.items ?? []) {
             if (item.type != "text") continue;
 
             for (const expr of parseAll(item.value)) {

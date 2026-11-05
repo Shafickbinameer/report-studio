@@ -151,7 +151,7 @@ describe('several tables in a report', () => {
     });
 
     /** groupHeader and groupFooter are shared, so they cannot head two tables */
-    it('refuses two grouped tables', () => {
+    it('refuses two tables grouped the older way, which share one pair of group bands', () => {
         const issues = validateLayout(layout({
             bands: [
                 band('detail', [
@@ -163,7 +163,8 @@ describe('several tables in a report', () => {
         }));
 
         expect(issues).toHaveLength(1);
-        expect(issues[0]).toMatch(/2 tables are grouped \("a", "b"\)/);
+        expect(issues[0]).toMatch(/2 tables are grouped by groupBy \("a", "b"\)/);
+        expect(issues[0]).toMatch(/grouping of their own/);
     });
 
     it('asks for a group band to show a table grouped by its own field', () => {

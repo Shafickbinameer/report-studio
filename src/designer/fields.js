@@ -11,6 +11,9 @@
  * Nothing here invents a field the engine does not read.
  */
 
+import { levelsOf } from '../engine/tables.js';
+import { setGroupBy } from './grouping.js';
+
 
 /**
  * Spec 10 left the font list open, and closes it here: web-safe families only.
@@ -219,11 +222,7 @@ export function fieldsFor(item) {
                         hint: "The key in the data object whose rows this table " +
                             "draws. Blank reads the report's dataset"
                     },
-                    {
-                        key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
-                        hint: 'A field to group these rows by, or blank. One table ' +
-                            'in a report can be grouped'
-                    }
+                    GROUP_BY
                 ]
             },
             {
@@ -490,6 +489,11 @@ function pageFields(layout) {
  * @returns {object[]} `{ title, fields }` sections
  */
 export function reportFields(layout) {
+    /**
+     * No *Group by* here any more. Grouping is a table's own - each grouped
+     * table carries its field and the bands its groups are drawn with - so it
+     * is set on the table, where there is no question which one it means.
+     */
     if (!layout) return [];
 
     return [
@@ -501,11 +505,6 @@ export function reportFields(layout) {
                     key: 'dataset', label: 'Dataset', type: 'text', nullable: true,
                     hint: 'The key in the data object that drives the rows, ' +
                         'for every table that does not name its own'
-                },
-                {
-                    key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
-                    hint: 'A field name, or blank for no grouping. Groups the ' +
-                        'first table, unless a table sets its own'
                 }
             ]
         },
@@ -535,6 +534,25 @@ export function allReportFields(layout) {
 export function allFields(item) {
     return fieldsFor(item).flatMap(section => section.fields);
 }
+
+
+/**
+ * A table's *Group by*: the field its own grouping splits the rows by.
+ *
+ * Derived rather than a path, because there is more to turning grouping on
+ * than one value - a table that was not grouped gets a header to show its
+ * groups in, and clearing the box takes the grouping away. setGroupBy is where
+ * that is decided. It rebuilds the rail when it turns grouping on or off,
+ * since that is when the table's group band controls come and go.
+ */
+const GROUP_BY = {
+    key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
+    hint: 'A field to group these rows by, or blank. Each grouped table has ' +
+        'its own group header and footer',
+    read: (table) => levelsOf(table)[0]?.by ?? table.groupBy ?? null,
+    write: (table, value) => setGroupBy(table, value),
+    rebuilds: (table) => levelsOf(table).length > 0
+};
 
 
 function pathOf(key) {

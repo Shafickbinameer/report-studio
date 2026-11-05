@@ -8,6 +8,7 @@
  */
 
 import { textHeight } from './text-metrics.js';
+import { groupBandsOf } from './tables.js';
 
 
 /**
@@ -345,8 +346,9 @@ function measureTableItem(item, json) {
     }
 
     const groups = item.groups ?? [];
-    const grpHeaderHgt = bandHeight(json, 'groupHeader');
-    const grpFooterHgt = bandHeight(json, 'groupFooter');
+    const { header, footer } = groupBandsOf(item);
+    const grpHeaderHgt = groupBandHeight(header, json);
+    const grpFooterHgt = groupBandHeight(footer, json);
 
     let height = 0;
 
@@ -370,22 +372,22 @@ export function total(list) {
 
 
 /**
- * Height of a template band that never flows on its own (groupHeader /
- * groupFooter). It is measured here rather than read raw so a group band whose
- * text wraps is still accounted for.
+ * Height of a template band that never flows on its own - one of a grouped
+ * table's group bands. It is measured here rather than read raw so a group band
+ * whose text wraps is still accounted for.
+ *
+ * Measured with measureBand, the same as every other band, and the answer left
+ * on the band as measuredHeight. paginate.js reserves room for a group by that
+ * figure, so this has to be the same figure: a separate count of text items
+ * only, as there was, said a group band holding a box taller than its text was
+ * shorter here than it was there.
+ *
+ * @param {object|null} band
  * @param {object} json
- * @param {string} type
  * @returns {number}
  */
-function bandHeight(json, type) {
-    const band = json.bands.find(b => b.type === type);
-    if (!band?.items) return 0;
+function groupBandHeight(band, json) {
+    if (!Array.isArray(band?.items)) return 0;
 
-    let contentHeight = 0;
-    for (const item of band.items) {
-        const height = item.type === 'text' ? measureTextItem(item) : 0;
-        contentHeight = Math.max(contentHeight, (item.y ?? 0) + height);
-    }
-
-    return Math.max(band.height ?? 0, contentHeight);
+    return measureBand(band, json).measuredHeight;
 }

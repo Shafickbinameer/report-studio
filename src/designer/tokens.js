@@ -18,7 +18,9 @@
  */
 
 import { datasets } from './sample-data.js';
-import { BAND_TYPES, hasBand, findBand } from './structure.js';
+import { bandKeys, findBand } from './structure.js';
+import { kindOf, bandLabel as labelOf } from './grouping.js';
+import { levelsOf } from '../engine/tables.js';
 
 
 /** the placeholder that stands in for the field until one is chosen */
@@ -135,7 +137,7 @@ const GROUP_SCOPED = ['groupHeader', 'groupFooter'];
 export function aggregateScope(token, bandType) {
     if (!token?.aggregate) return null;
 
-    return GROUP_SCOPED.includes(bandType) ? 'group' : 'report';
+    return GROUP_SCOPED.includes(kindOf(bandType)) ? 'group' : 'report';
 }
 
 
@@ -149,7 +151,7 @@ export function resolvesIn(token, bandType) {
     if (!token) return false;
     if (!token.bands?.length) return true;
 
-    return token.bands.includes(bandType);
+    return token.bands.includes(kindOf(bandType));
 }
 
 
@@ -186,11 +188,15 @@ export function availableFields(layout) {
 
     if (layout?.groupBy) found.add(layout.groupBy);
 
-    /** a table grouped by a field of its own */
+    /** a table grouped by a field of its own, either way it says so */
     for (const band of (Array.isArray(layout?.bands) ? layout.bands : [])) {
         for (const item of (band.items || [])) {
-            if (item?.type === 'table' && typeof item.groupBy === 'string' && item.groupBy) {
-                found.add(item.groupBy);
+            if (item?.type !== 'table') continue;
+
+            if (typeof item.groupBy === 'string' && item.groupBy) found.add(item.groupBy);
+
+            for (const level of levelsOf(item)) {
+                if (typeof level?.by === 'string' && level.by) found.add(level.by);
             }
         }
     }
@@ -206,16 +212,19 @@ export function availableFields(layout) {
  * not exist would be offering to create one as a side effect of inserting a
  * page number.
  *
+ * A grouped table's own group bands are offered by their keys, beside the
+ * report's bands of the same kind.
+ *
  * @param {object} layout
  * @param {object} token
- * @returns {string[]} band types, in page order
+ * @returns {string[]} band keys, in page order
  */
 export function bandChoices(layout, token) {
-    const present = BAND_TYPES.filter(type => hasBand(layout, type));
+    const present = bandKeys(layout);
 
     if (!token?.bands?.length) return present;
 
-    const allowed = present.filter(type => token.bands.includes(type));
+    const allowed = present.filter(key => token.bands.includes(kindOf(key)));
 
     /**
      * A report with no footer band gets the full list rather than an empty one,
@@ -253,7 +262,15 @@ export function defaultBand(layout, token, current = null) {
      * be selected at the time.
      */
     for (const type of (token?.prefer ?? [])) {
-        if (choices.includes(type)) return type;
+        /**
+         * A kind, which may be several bands: a subtotal asked for while
+         * working on one table's groups goes in that table's footer, not the
+         * first grouped table's.
+         */
+        if (current && kindOf(current) === type && choices.includes(current)) return current;
+
+        const first = choices.find(key => kindOf(key) === type);
+        if (first) return first;
     }
 
     if (current && choices.includes(current) && resolvesIn(token, current)) {
@@ -289,5 +306,5 @@ export function tokenItem(token, field) {
 
 /** the band an insert would land on, for the dialog to name */
 export function bandLabel(layout, type) {
-    return findBand(layout, type) ? type : null;
+    return findBand(layout, type) ? labelOf(type) : null;
 }

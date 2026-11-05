@@ -201,9 +201,8 @@ Totals can name the dataset they add up:
 The named dataset does not need a table of its own. Any array in the data can
 be totalled this way.
 
-One table per report can be grouped. Set *Group by* on that table. A layout
-with a report-wide *Group by* still groups its first table. The group header
-and footer bands are shared, which is why only one table can use them.
+Any number of tables can be grouped, each by a field of its own — see
+[Grouping](#grouping).
 
 For CSV, the viewer's export writes every table in the order they print. From
 code, `toCSV(pages, { table: 'refunds' })` writes one table, and
@@ -234,6 +233,34 @@ nothing to write); it embeds `data:` pictures only. `await toXLSXAsync(pages)`
 fetches URL pictures first, and `reportImageSources(pages)` lists the URLs it
 would fetch. Pass `{ report: false }` or `{ tables: false }` to leave a kind of
 sheet out, or `{ styled: false }` for plain data with bold headers.
+
+### Grouping
+
+Set *Group by* on a table and its rows are split into groups by that field.
+Each grouped table has its own group header, drawn above each group, and group
+footer, drawn under it, so two grouped tables can look different and total
+different things. In the layout file a table carries them as `grouping`:
+
+```json
+{
+  "type": "table", "id": "refunds", "dataset": "refunds",
+  "grouping": [{
+    "by": "reason",
+    "header": { "height": 24, "items": [ { "id": "reason", "type": "text", "value": "Reason: {reason}" } ] },
+    "footer": { "height": 20, "items": [ { "id": "subtotal", "type": "text", "value": "Subtotal {sum(amount)}" } ] }
+  }]
+}
+```
+
+Inside a group band, `{reason}` is the group's value and `{sum(amount)}` adds
+up that group's rows only. A group that runs over a page break prints its
+header again on the next page and its footer only once, where it ends. Either
+band may be `null`, but not both. One level of grouping per table for now.
+
+Layouts written before 2.0 group with a report-wide or per-table `groupBy` and
+the report's own *groupHeader* and *groupFooter* bands. They still work
+unchanged, and the designer moves them onto the table when it opens them.
+`normalizeGrouping(layout)` does the same from code.
 
 ### Images
 

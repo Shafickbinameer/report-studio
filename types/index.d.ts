@@ -3,7 +3,7 @@
  */
 
 import type {
-    Band, BandType, Layout, PaginatedReport, Page, ReportData, TableItem, TextStyle
+    Band, BandType, GroupBand, GroupLevel, Layout, PaginatedReport, Page, ReportData, TableItem, TextStyle
 } from './layout.js';
 
 export type * from './layout.js';
@@ -19,7 +19,11 @@ export function buildPages(layout: Layout, data: ReportData): PaginatedReport;
 
 /** stage 1 of buildPages: fills in placeholders from the data */
 export function resolve(layout: Layout, data: ReportData): Layout;
-/** stage 2: splits the grouped table's rows into groups */
+/**
+ * stage 2: binds each table to its rows and splits every grouped table's rows
+ * into groups. Grouping written the older way comes out as each table's own
+ * `grouping` - see normalizeGrouping.
+ */
 export function group(resolved: Layout, data: ReportData): Layout;
 /** stage 3: measures text and table rows */
 export function measure(grouped: Layout): Layout;
@@ -161,8 +165,35 @@ export function tablesOf(layout: Layout): TableItem[];
 /** the dataset a table reads: its own, or the layout's */
 export function datasetOf(table: TableItem, layout: Layout): string | null;
 
-/** the grouped table and its field, or null when nothing is grouped */
-export function groupingOf(layout: Layout): { table: TableItem; by: string } | null;
+/** a grouped table, its field, and the bands its groups are drawn with */
+export interface TableGrouping {
+    table: TableItem;
+    by: string;
+    header: GroupBand | Band | null;
+    footer: GroupBand | Band | null;
+}
+
+/** every grouped table, in the order they are drawn, either way it is grouped */
+export function groupingsOf(layout: Layout): TableGrouping[];
+
+/** the first grouped table, or null when nothing is grouped */
+export function groupingOf(layout: Layout): TableGrouping | null;
+
+/** a table's grouping levels as the layout states them; empty when it has none */
+export function levelsOf(table: TableItem): GroupLevel[];
+
+/** whether a table is grouped, by `grouping` or by the older `groupBy` */
+export function isGrouped(table: TableItem): boolean;
+
+/** the bands a table's groups are drawn with, from a layout past normalizeGrouping */
+export function groupBandsOf(table: TableItem): { header: GroupBand | null; footer: GroupBand | null };
+
+/**
+ * A copy of a layout with grouping written one way only: `layout.groupBy`,
+ * `table.groupBy` and the report's groupHeader/groupFooter bands become that
+ * table's own `grouping`. Idempotent; the layout given is not changed.
+ */
+export function normalizeGrouping<T extends Layout>(layout: T): T;
 
 /** width of one line of text, in pixels */
 export function measureText(text: string, style?: TextStyle): number;

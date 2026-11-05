@@ -7,7 +7,7 @@
  */
 
 
-import { tablesOf, hasOwnGrouping } from './tables.js';
+import { tablesOf, hasOwnGrouping, levelsOf } from './tables.js';
 import { designHeight } from './measure.js';
 
 
@@ -114,12 +114,18 @@ export function validateLayout(json) {
 /**
  * What the tables of a report may be, together.
  *
- * Any number of them, each bound to its own dataset - but two things they may
- * not do, because the engine has no honest way to print them:
+ * Any number of them, each bound to its own dataset, and any number of them
+ * grouped - each through a `grouping` of its own, which carries the bands its
+ * groups are drawn with. What they may not do, because the engine has no
+ * honest way to print it:
  *
- *   Two grouped tables. groupHeader and groupFooter are the report's bands, so
- *   both tables would draw their groups with the same heading - and a subtotal
- *   in it would be summed over whichever table happened to be drawn.
+ *   Two tables grouped the older way. `groupBy` on a table borrows the report's
+ *   groupHeader and groupFooter, and there is one of each - so both tables
+ *   would draw their groups with the same heading. A second grouped table says
+ *   so with a `grouping` of its own.
+ *
+ *   One table grouped both ways. Which of the two it meant is not something to
+ *   guess at.
  *
  *   Two tables side by side. Each table splits across pages on its own, so the
  *   one on the left would run to page three before the one on the right began,
@@ -142,14 +148,17 @@ function validateTables(json, bands, issues) {
         if (table.dataset != null && typeof table.dataset !== 'string') {
             issues.push(`table "${table.id}".dataset must be a dataset name or null`);
         }
+
+        validateGrouping(table, issues);
     }
 
     const grouped = tables.filter(hasOwnGrouping);
 
     if (grouped.length > 1) {
         issues.push(
-            `${grouped.length} tables are grouped (${grouped.map(t => `"${t.id}"`).join(', ')}); ` +
-            `a report groups one, because groupHeader and groupFooter are shared`);
+            `${grouped.length} tables are grouped by groupBy (${grouped.map(t => `"${t.id}"`).join(', ')}); ` +
+            `only one can use the report's groupHeader and groupFooter - give the others ` +
+            `a grouping of their own`);
     }
 
     if (grouped.length > 0 && json.groupBy == null
@@ -157,6 +166,16 @@ function validateTables(json, bands, issues) {
         issues.push(
             `table "${grouped[0].id}" is grouped by "${grouped[0].groupBy}" but there is ` +
             `no groupHeader or groupFooter band to show it`);
+    }
+
+    /** layout.groupBy means the first table, unless a table names its own groupBy */
+    const first = tables[0];
+
+    if (json.groupBy != null && grouped.length === 0
+        && first && levelsOf(first).length > 0) {
+        issues.push(
+            `layout.groupBy groups the first table, "${first.id}", which already has a ` +
+            `grouping of its own; remove one of the two`);
     }
 
     for (const band of bands) {
@@ -179,6 +198,99 @@ function validateTables(json, bands, issues) {
             }
         }
     }
+}
+
+
+/**
+ * A table's own grouping: a list of levels, each a field and the bands its
+ * groups are drawn with.
+ *
+ *   "grouping": [{ "by": "region", "header": { "height": 30, "items": [] }, "footer": null }]
+ *
+ * One level for now. The list is the shape nested groups will take, so a
+ * second level is refused by name rather than by a shape error - it is a
+ * thing the engine does not do yet, not a malformed layout.
+ *
+ * @param {object} table
+ * @param {string[]} issues
+ */
+function validateGrouping(table, issues) {
+    if (table.grouping == null) return;
+
+    const where = `table "${table.id}".grouping`;
+
+    if (!Array.isArray(table.grouping)) {
+        issues.push(`${where} must be a list of group levels, or null`);
+        return;
+    }
+
+    if (table.grouping.length > 0 && hasOwnGrouping(table)) {
+        issues.push(
+            `table "${table.id}" is grouped both by groupBy and by grouping; remove groupBy`);
+    }
+
+    if (table.grouping.length > 1) {
+        issues.push(
+            `${where} has ${table.grouping.length} levels; grouping within a group is not ` +
+            `supported yet, so a table takes one`);
+    }
+
+    table.grouping.forEach((level, n) => {
+        const at = `${where}[${n}]`;
+
+        if (level == null || typeof level !== 'object' || Array.isArray(level)) {
+            issues.push(`${at} must be an object with by, header and footer`);
+            return;
+        }
+
+        if (typeof level.by !== 'string' || level.by === '') {
+            issues.push(`${at}.by must be the name of the field to group by`);
+        }
+
+        validateGroupBand(level.header, `${at}.header`, issues);
+        validateGroupBand(level.footer, `${at}.footer`, issues);
+
+        if (level.header == null && level.footer == null) {
+            issues.push(`${at} has neither a header nor a footer to show its groups`);
+        }
+    });
+}
+
+
+/**
+ * One of a table's group bands: a band in all but its place in the file, so
+ * its items are checked the same way. It may not hold a table - it is drawn
+ * once for every group, inside the table it belongs to.
+ *
+ * @param {*} band
+ * @param {string} where
+ * @param {string[]} issues
+ */
+function validateGroupBand(band, where, issues) {
+    if (band == null) return;
+
+    if (typeof band !== 'object' || Array.isArray(band)) {
+        issues.push(`${where} must be a band with items, or null`);
+        return;
+    }
+
+    if (band.height != null && !(typeof band.height === 'number' && band.height >= 0)) {
+        issues.push(`${where}.height must be a number of pixels`);
+    }
+
+    if (!Array.isArray(band.items)) {
+        issues.push(`${where}.items must be an array`);
+        return;
+    }
+
+    band.items.forEach((item, j) => {
+        if (item?.type === 'table') {
+            issues.push(`${where}.items[${j}] is a table; a group band cannot hold one`);
+            return;
+        }
+
+        validateItem(item, `${where}.items[${j}]`, issues);
+    });
 }
 
 

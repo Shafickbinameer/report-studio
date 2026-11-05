@@ -1,5 +1,6 @@
 
 import { pageRegions, bandZoneHeight } from './regions.js';
+import { groupBandsOf } from './tables.js';
 import { designHeight, total, headerHeightFor } from './measure.js';
 
 
@@ -23,8 +24,6 @@ export function paginate(json) {
             pageHeader: paginateJSON.bands.find(b => b.type === "pageHeader"),
             pageFooter: paginateJSON.bands.find(b => b.type === "pageFooter"),
             detail: paginateJSON.bands.find(b => b.type === "detail"),
-            groupHeader: paginateJSON.bands.find(b => b.type === "groupHeader") || null,
-            groupFooter: paginateJSON.bands.find(b => b.type === "groupFooter") || null,
         }
     };
 
@@ -124,7 +123,7 @@ function calPages(bands, context) {
 
     // spreading the report header and footer from the context.assignedBands
     const { assignedBands, availableHeight } = context;
-    const { reportFooter, reportHeader, groupHeader, groupFooter, pageHeader, pageFooter } = assignedBands;
+    const { reportFooter, reportHeader, pageHeader, pageFooter } = assignedBands;
 
     /**
      * The detail zone of a continuation page - no report header, no report
@@ -332,6 +331,9 @@ function calPages(bands, context) {
                     * table header, group header, min of one row and the group footer
                     * also provide the table header hgt , group header and footer hgt
                     */
+                    /** this table's own group bands - another grouped table's are not these */
+                    const { header: groupHeader, footer: groupFooter } = groupBandsOf(item);
+
                     const grpHeaderHgt = groupHeader?.measuredHeight ?? 0;
                     const grpFooterHgt = groupFooter?.measuredHeight ?? 0;
                     const tblHeaderHgt = item.headerMeasured ?? headerHeightFor(item);
@@ -600,7 +602,7 @@ function calPages(bands, context) {
                  * enough to overflow.
                  */
                 const placed = item.type === "table" && item.groups
-                    ? { ...item, groups: wholeGroupFragments(item, groupHeader, groupFooter) }
+                    ? { ...item, groups: wholeGroupFragments(item) }
                     : item;
 
                 place(calBand, { ...structuredClone(placed), y: pageY(itemY) });
@@ -686,12 +688,12 @@ function anchorBands(pages) {
 /**
  * Every group of a table that fits on one page, as unsplit fragments. Gives the
  * no-overflow path the same shape the splitting path produces.
- * @param {object} item the table item carrying groups
- * @param {object|null} groupHeader
- * @param {object|null} groupFooter
+ * @param {object} item the table item carrying groups, and its own group bands
  * @returns {object[]}
  */
-function wholeGroupFragments(item, groupHeader, groupFooter) {
+function wholeGroupFragments(item) {
+    const { header: groupHeader, footer: groupFooter } = groupBandsOf(item);
+
     return item.groups.map(grp => ({
         key: grp.key,
         rows: grp.rows,
@@ -709,7 +711,7 @@ function wholeGroupFragments(item, groupHeader, groupFooter) {
  * Fills in a groupHeader / groupFooter template for one group fragment.
  * Unlike the aggregate pass in group.js this keeps the literal text around a
  * placeholder, so "Subtotal: {sum(price)}" stays "Subtotal: 160".
- * @param {object|null} bandTemplate the shared groupHeader / groupFooter band
+ * @param {object|null} bandTemplate the table's own groupHeader / groupFooter band
  * @param {object} grp the group being placed, carrying its aggregates
  * @param {object} sampleRow any row of the group - all share the groupBy value
  * @returns {object|null} a resolved clone, or null when no template exists

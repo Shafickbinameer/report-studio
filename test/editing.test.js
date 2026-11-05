@@ -332,9 +332,26 @@ describe('bands', () => {
         node.dispatchEvent(new Event('change', { bubbles: true }));
     };
 
-    it('lists every band type, on or off', () => {
+    it('lists every report band type, on or off', () => {
+        /**
+         * Five, not seven: the report's own groupHeader and groupFooter are the
+         * older form of grouping, and a table carries its own now.
+         */
         mount();
-        expect(panel().querySelectorAll('[data-band]')).toHaveLength(7);
+        expect([...panel().querySelectorAll('[data-band]')].map(n => n.dataset.band))
+            .toEqual(['pageHeader', 'reportHeader', 'detail', 'reportFooter', 'pageFooter']);
+    });
+
+    it("lists both group bands of each grouped table, by the table's name", () => {
+        const l = json();
+        l.bands[1].items[1].grouping = [{ by: 'region', header: { height: 20, items: [] }, footer: null }];
+        mount(l);
+
+        expect([...panel().querySelectorAll('[data-band]')].map(n => n.dataset.band))
+            .toEqual(['pageHeader', 'reportHeader', 'groupHeader:tbl', 'detail',
+                'groupFooter:tbl', 'reportFooter', 'pageFooter']);
+        expect(toggle('groupHeader:tbl').checked).toBe(true);
+        expect(toggle('groupFooter:tbl').checked).toBe(false);
     });
 
     it('checks the ones the report has', () => {
@@ -519,11 +536,14 @@ describe('a broken report stays editable', () => {
     });
 
     it('is fixed by switching the group band on', () => {
-        const d = mount();
-        d.layout.groupBy = 'region';
-        d.redraw();
+        /** a table grouped by a field, with no band yet to show its groups in */
+        const l = json();
+        l.bands[1].items[1].grouping = [{ by: 'region', header: null, footer: null }];
+        const d = mount(l);
 
-        const node = panel().querySelector('[data-band="groupHeader"]');
+        expect(root().querySelector('.dz-problems')).not.toBeNull();
+
+        const node = panel().querySelector('[data-band="groupHeader:tbl"]');
         node.checked = true;
         node.dispatchEvent(new Event('change', { bubbles: true }));
 
@@ -575,6 +595,13 @@ describe('the field tool', () => {
     const itemsOnBand = (d, type) =>
         d.layout.bands.find(b => b.type === type)?.items ?? [];
 
+    /**
+     * The fixture is grouped the older way, and the designer moves that onto
+     * its table when it opens it - so the group footer is the table's own.
+     */
+    const footerItems = (d) =>
+        d.layout.bands.find(b => b.type === 'detail').items[0].grouping[0].footer.items;
+
     it('offers the placeholders rather than making them be remembered', async () => {
         await openTool();
 
@@ -609,7 +636,7 @@ describe('the field tool', () => {
         choose('sum');
         await insert();
 
-        expect(itemsOnBand(d, 'groupFooter')[0].value).toMatch(/^\{sum\(/);
+        expect(footerItems(d)[0].value).toMatch(/^\{sum\(/);
     });
 
     it('offers the fields the report already has, for an aggregate', async () => {
@@ -629,7 +656,7 @@ describe('the field tool', () => {
         pick('field', 'price');
         await insert();
 
-        expect(itemsOnBand(d, 'groupFooter')[0].value).toBe('{sum(price)}');
+        expect(footerItems(d)[0].value).toBe('{sum(price)}');
     });
 
     it('hides the field picker for a token that takes none', async () => {
@@ -655,7 +682,7 @@ describe('the field tool', () => {
             .querySelectorAll('[data-role="band-dropdown"] .dropdown-item')]
             .map(n => n.dataset.value);
 
-        expect(bands).toEqual(['pageHeader', 'detail', 'groupFooter', 'pageFooter']);
+        expect(bands).toEqual(['pageHeader', 'detail', 'groupFooter:tbl', 'pageFooter']);
     });
 
     it('says which rows the aggregate will cover where it is going', async () => {
@@ -676,7 +703,7 @@ describe('the field tool', () => {
     it('says a group band means that group instead', async () => {
         await openTool();
         choose('sum');
-        pick('band', 'groupFooter');
+        pick('band', 'groupFooter:tbl');
 
         expect(box().querySelector('[data-role="token-warning"]').textContent)
             .toMatch(/each group's own rows/);
@@ -698,7 +725,7 @@ describe('the field tool', () => {
         choose('sum');
         await insert();
 
-        expect(itemsOnBand(d, 'groupFooter')[0].style.align).toBe('right');
+        expect(footerItems(d)[0].style.align).toBe('right');
     });
 
     it('selects what it inserted, so the rail is already on it', async () => {
@@ -1281,14 +1308,16 @@ describe('problems are said in the corner', () => {
     });
 
     it('goes when the report validates, and is announced again if it breaks', () => {
-        const d = mount();
-        halfGrouped(d);
+        /** grouped, but with no band to show the groups in */
+        const l = json();
+        l.bands[1].items[1].grouping = [{ by: 'region', header: null, footer: null }];
+        mount(l);
 
         expect(toast()).not.toBeNull();
 
         /** re-queried each time: switching a band on rebuilds the rail */
         const setBand = (on) => {
-            const node = panel().querySelector('[data-band="groupHeader"]');
+            const node = panel().querySelector('[data-band="groupHeader:tbl"]');
             node.checked = on;
             node.dispatchEvent(new Event('change', { bubbles: true }));
         };

@@ -17,7 +17,7 @@ import { allFields, allReportFields, fieldsFor, reportFields } from './fields.js
 import { blankLayout, isEmptyLayout } from './blank.js';
 import {
     drawSheet, selectionBox, selectionBoxes, bandUnder, bandBox, drawGuides,
-    guideLines, guideNubs
+    guideLines, guideNubs, designZones, zoneStyle
 } from './canvas.js';
 import { attachEditing } from './select.js';
 import {
@@ -42,6 +42,7 @@ import {
     moveItemToBand, createText, createTable, createLine, createBox, createImage, addColumn,
     removeColumn, targetBand, canAddTable
 } from './structure.js';
+import { openLayout, copyGroupDesign, groupBandsIn, parseBandKey } from './grouping.js';
 
 
 /** the raster formats the renderer will draw from a data: URI; see imageSrc */
@@ -198,7 +199,12 @@ export function createDesigner({
          */
         rulers: false,
 
-        layout: isEmptyLayout(layout) ? blankLayout() : layout,
+        /**
+         * A layout grouped the older way has its grouping moved onto its
+         * table here, once - every control in the designer edits a table's
+         * own grouping. Any other layout is the host's own object, untouched.
+         */
+        layout: isEmptyLayout(layout) ? blankLayout() : openLayout(layout),
         /**
          * The selected items, oldest first, as `{ band, id }` - the band type
          * and the item id, because ids are only unique within a band
@@ -396,6 +402,29 @@ export function createDesigner({
             /** a table's height is its rows', so it is never written here */
             if (item.type !== 'table') drawn.style.height = `${item.h}px`;
         }
+
+        if (boxes.some(({ item }) => item.type === 'table')) patchTableZones();
+    }
+
+
+    /**
+     * A grouped table's group bands are drawn inside it, as zones of their own
+     * on top of it - so a table being dragged or resized takes them along, and
+     * their names in the gutter with them.
+     */
+    function patchTableZones() {
+        const margin = state.layout.page.margin;
+
+        for (const z of designZones(state.layout)) {
+            if (!z.table) continue;
+
+            const key = cssEscape(z.type);
+            const zone = canvas.querySelector(`.dz-zone[data-band-type="${key}"]`);
+            if (zone) zone.setAttribute('style', zoneStyle(z, margin));
+
+            const tag = canvas.querySelector(`[data-band-tag="${key}"]`);
+            if (tag) tag.style.top = `${z.top + margin.top}px`;
+        }
     }
 
 
@@ -424,7 +453,7 @@ export function createDesigner({
 
         panel.innerHTML = many > 1
             ? drawManyPanel(selectedItems())
-            : (selected() ? drawPanel(selected()) : drawReportPanel(state.layout));
+            : (selected() ? drawPanel(selected(), state.layout) : drawReportPanel(state.layout));
     }
 
 
@@ -556,7 +585,7 @@ export function createDesigner({
      * nothing draws an outline round empty space.
      */
     function replaceLayout(next, { id: nextId, dirty }) {
-        state.layout = next;
+        state.layout = openLayout(next);
         state.selection = [];
 
         /** another report is another design; its pages have not been run yet */
@@ -899,7 +928,8 @@ export function createDesigner({
             }
 
             case 'add-table': {
-                const type = targetBand(state.layout, primary());
+                /** never onto a group band, which is drawn inside a table */
+                const type = targetBand(state.layout, primary(), { table: true });
                 if (!type) return;
 
                 if (!canAddTable(state.layout)) return;
@@ -1020,6 +1050,16 @@ export function createDesigner({
                 restructured(`delete:${gone}`);
                 return;
             }
+
+            case 'copy-grouping':
+                if (item?.type !== 'table' || !data?.from) return;
+
+                if (copyGroupDesign(state.layout, item.id, data.from)) {
+                    /** whatever was selected on the bands just replaced is gone */
+                    state.selection = state.selection.filter(one => itemAt(one));
+                    restructured(`grouping:copy:${item.id}`);
+                }
+                return;
 
             case 'add-column':
                 if (item?.type !== 'table') return;
@@ -1419,7 +1459,8 @@ export function createDesigner({
 
     /** whether an item is still in the layout - undo can take it while a dialog is open */
     function itemStillThere(item) {
-        return (state.layout.bands ?? []).some(band => (band.items ?? []).includes(item));
+        const bands = [...(state.layout.bands ?? []), ...groupBandsIn(state.layout).map(g => g.band)];
+        return bands.some(band => (band.items ?? []).includes(item));
     }
 
 
@@ -1449,6 +1490,12 @@ export function createDesigner({
         if (!band) return;
 
         const trimmed = String(raw).trim();
+
+        /**
+         * A table's group band is sized in pixels only: it is drawn inside the
+         * table, once per group, where a share of the page means nothing.
+         */
+        if (parseBandKey(type) && /%$/.test(trimmed)) return;
 
         if (trimmed === '') delete band.height;
         else if (/^-?[\d.]+\s*%$/.test(trimmed)) band.height = trimmed;
@@ -1621,13 +1668,43 @@ export function createDesigner({
          */
         changed: (key, { rebuild = false } = {}) => {
             draw();
-            if (rebuild) drawRail();
+            if (rebuild) redrawRailKeepingFocus();
             record(key);
         },
         act,
         toggleBand,
         setBandHeight
     });
+
+    /**
+     * Rebuilds the rail without taking the focus out of the control being
+     * typed in.
+     *
+     * *Group by* changes the rail's shape on the letter that turns grouping on
+     * - the table's group band controls appear - and that letter is rarely the
+     * last one. So the field that had the focus gets it back, caret and all,
+     * and the rest of the word goes where it was being typed.
+     */
+    function redrawRailKeepingFocus() {
+        const active = doc.activeElement;
+        const key = panel.contains(active) ? active?.dataset?.field : null;
+        const caret = key && typeof active.selectionStart === 'number'
+            ? [active.selectionStart, active.selectionEnd]
+            : null;
+
+        drawRail();
+
+        if (!key) return;
+
+        const again = panel.querySelector(`[data-field="${cssEscape(key)}"]:not([data-column])`);
+        if (!again) return;
+
+        again.focus();
+        if (caret && typeof again.setSelectionRange === 'function') {
+            try { again.setSelectionRange(...caret); } catch { /* not a text control */ }
+        }
+    }
+
 
     /** the bar and the footer both carry actions; the rail wires its own */
     function onChromeClick(event) {
