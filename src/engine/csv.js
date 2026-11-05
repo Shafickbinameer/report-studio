@@ -18,7 +18,7 @@
  * the encoding.
  */
 
-import { reportRows, tableRows, columnLabel } from './rows.js';
+import { reportRows, tableRows, columnLabel, groupColumns } from './rows.js';
 
 export { reportTables } from './rows.js';
 
@@ -38,7 +38,9 @@ const FORMULA_LEAD = /^[=+\-@\t\r]/;
  * @param {string} [options.newline='\r\n'] RFC 4180 line ending
  * @param {boolean} [options.header=true] emit the column labels as the first row
  * @param {boolean} [options.groupColumn=true] prepend the group key on a grouped report
- * @param {string} [options.groupLabel='Group']
+ * @param {string|string[]} [options.groupLabel='Group'] the group column's
+ *   heading; a list heads one column per level of a nested grouping, which
+ *   otherwise takes the names of the fields it groups by
  * @param {boolean} [options.neutraliseFormulas=true] see below
  * @returns {string} CSV text, empty when the report holds no such table
  */
@@ -56,20 +58,19 @@ export function toCSV(pages, options = {}) {
     const table = tableRows(pages, only);
     if (!table) return '';
 
-    const grouped = groupColumn && table.rows.some(r => r.group !== null);
+    /** one column per level a table is grouped at; none when it is not, or when asked */
+    const groups = groupColumn ? groupColumns(table, groupLabel) : { labels: [], cells: () => [] };
     const labels = table.columns.map(columnLabel);
 
     const lines = [];
 
     if (header) {
-        lines.push(encodeRow(grouped ? [groupLabel, ...labels] : labels,
-            delimiter, neutraliseFormulas));
+        lines.push(encodeRow([...groups.labels, ...labels], delimiter, neutraliseFormulas));
     }
 
-    for (const { group, row } of table.rows) {
-        const cells = table.columns.map(c => row?.[c.field]);
-        lines.push(encodeRow(grouped ? [group, ...cells] : cells,
-            delimiter, neutraliseFormulas));
+    for (const entry of table.rows) {
+        const cells = table.columns.map(c => entry.row?.[c.field]);
+        lines.push(encodeRow([...groups.cells(entry), ...cells], delimiter, neutraliseFormulas));
     }
 
     return lines.join(newline);

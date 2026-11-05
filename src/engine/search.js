@@ -7,6 +7,8 @@
  * vanilla preview and a future React Preview share one implementation.
  */
 
+import { fragmentBandsOf } from './tables.js';
+
 
 /**
  * Every occurrence of {query} in a built report, in page order.
@@ -80,10 +82,14 @@ function collectTable(item, pageNO, bandType, needle, caseSensitive, matches) {
 
     /** a grouped table carries its rows inside per-group fragments */
     for (const fragment of (item.groups ?? [])) {
-        collectBand(fragment.headerBand, pageNO, 'groupHeader', needle, caseSensitive, matches);
+        const { headers, footers } = fragmentBandsOf(fragment);
+
+        for (const band of headers) {
+            collectBand(band, pageNO, 'groupHeader', needle, caseSensitive, matches);
+        }
         collectRows(fragment.rows, columns, item.id, pageNO, bandType, needle, caseSensitive, matches);
-        if (fragment.showFooter) {
-            collectBand(fragment.footerBand, pageNO, 'groupFooter', needle, caseSensitive, matches);
+        for (const band of footers) {
+            collectBand(band, pageNO, 'groupFooter', needle, caseSensitive, matches);
         }
     }
 }

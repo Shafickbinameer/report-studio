@@ -97,11 +97,11 @@ const zonesOf = (l) => Object.fromEntries(designZones(l).map(z => [z.type, z]));
 describe('band keys', () => {
     it("names a table's group band by its kind and its table", () => {
         expect(groupBandKey('groupFooter', 'refunds')).toBe('groupFooter:refunds');
-        expect(parseBandKey('groupFooter:refunds')).toEqual({ kind: 'groupFooter', table: 'refunds' });
+        expect(parseBandKey('groupFooter:refunds')).toEqual({ kind: 'groupFooter', table: 'refunds', level: 0 });
     });
 
     it('splits at the first colon only, so an id may hold one', () => {
-        expect(parseBandKey('groupHeader:a:b')).toEqual({ kind: 'groupHeader', table: 'a:b' });
+        expect(parseBandKey('groupHeader:a:b')).toEqual({ kind: 'groupHeader', table: 'a:b', level: 0 });
     });
 
     it('reads any other key as no group band', () => {

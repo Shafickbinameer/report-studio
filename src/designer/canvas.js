@@ -32,11 +32,10 @@
 import { pageRegions, bandZoneHeight } from '../engine/regions.js';
 import { items, esc } from '../render/items.js';
 import {
-    SAMPLE_ROWS, designHeight, itemBox, resizableAxes, handlesFor, groupStrips, stripHeight
+    SAMPLE_ROWS, designHeight, itemBox, resizableAxes, handlesFor, levelStrips
 } from './geometry.js';
 import { ticksFor, guidesOf } from './rulers.js';
-import { groupBandKey, bandLabel, GROUP_KINDS } from './grouping.js';
-import { groupBandsOf } from '../engine/tables.js';
+import { groupBandKey, bandLabel } from './grouping.js';
 
 
 /** zones that own a strip of the page, drawn top to bottom */
@@ -65,9 +64,9 @@ function designItem(item) {
     }
 
     if (item.type === 'table') {
-        const { header, footer } = groupBandsOf(item);
+        const strips = levelStrips(item);
 
-        if (!header && !footer) {
+        if (!strips.length) {
             return {
                 ...item,
                 row: sampleRows(item.columns),
@@ -77,20 +76,22 @@ function designItem(item) {
 
         /**
          * A grouped table is drawn as one of its groups, through the same
-         * markup a printed group is - headings, group header, rows, group
-         * footer. The group bands are left empty here: each is drawn over its
-         * row as a zone of its own, so what is on it can be selected and
-         * dragged like anything on any other band.
+         * markup a printed group is - headings, group headers, rows, group
+         * footers; every level's, where a group that starts and ends every
+         * level draws them. The group bands are left empty here: each is drawn
+         * over its row as a zone of its own, so what is on it can be selected
+         * and dragged like anything on any other band.
          */
-        const room = (band) => band ? { height: stripHeight(band), items: [] } : null;
+        const room = (strip) => ({ height: strip.h, level: strip.level, items: [] });
+        const of = (kind) => strips.filter(s => s.kind === kind).map(room);
 
         return {
             ...item,
             groups: [{
                 showHeader: true,
-                showFooter: Boolean(footer),
-                headerBand: room(header),
-                footerBand: room(footer),
+                showFooter: true,
+                headerBands: of('groupHeader'),
+                footerBands: of('groupFooter'),
                 rows: sampleRows(item.columns)
             }],
             measuredHeight: designHeight(item)
@@ -190,23 +191,20 @@ export function designZones(layout) {
  * @returns {object[]}
  */
 function tableZones(table, host) {
-    const strips = groupStrips(table);
-    const bands = groupBandsOf(table);
-    const slot = { groupHeader: bands.header, groupFooter: bands.footer };
-
-    return GROUP_KINDS.filter(kind => strips[kind]).map(kind => {
-        const key = groupBandKey(kind, table.id);
+    return levelStrips(table).map(({ kind, level, band, y, h }) => {
+        const key = groupBandKey(kind, table.id, level);
 
         return {
             type: key,
             kind,
+            level,
             table: table.id,
             label: bandLabel(key),
-            top: host.top + (table.y ?? 0) + strips[kind].y,
+            top: host.top + (table.y ?? 0) + y,
             left: host.left + (table.x ?? 0),
-            height: strips[kind].h,
+            height: h,
             width: table.w ?? 0,
-            band: slot[kind]
+            band
         };
     });
 }

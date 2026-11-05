@@ -482,7 +482,9 @@ function dataRows(i, rows, heights) {
 function groupBandRow(band, colSpan, cls) {
     if (!band) return '';
     const height = band.measuredHeight > 0 ? band.measuredHeight : (band.height ?? 0);
-    return `<tr class="${cls}">
+    /** which level of a nested grouping, for a stylesheet that tells them apart */
+    const level = Number.isInteger(band.level) ? ` data-group-level="${band.level}"` : '';
+    return `<tr class="${cls}"${level}>
         <td colspan="${colSpan}" class="group-band-cell">
             <div class="band" style="position:relative;height:${px(height)}px">${items(band.items)}</div>
         </td>
@@ -503,16 +505,40 @@ function flatBody(i) {
 /**
  * One tbody per group fragment, so a group that survives a page break keeps its
  * header on the next page and only prints its footer on the fragment that ends it.
+ *
+ * A table grouped within its groups draws every header the fragment opens,
+ * outermost first, and every footer it closes, innermost first - pagination
+ * has already decided which those are.
  */
 function groupedBody(i) {
     const colSpan = i.columns.length;
 
-    return i.groups.map(g => `
+    return i.groups.map(g => {
+        const { headers, footers } = fragmentBands(g);
+
+        return `
         ${g.showHeader && i.showHeader ? columnHeader(i) : ""}
         <tbody>
-            ${groupBandRow(g.headerBand, colSpan, "group-header")}
+            ${headers.map(band => groupBandRow(band, colSpan, "group-header")).join("")}
             ${dataRows(i, g.rows, g.rowHeights)}
-            ${g.showFooter ? groupBandRow(g.footerBand, colSpan, "group-footer") : ""}
+            ${footers.map(band => groupBandRow(band, colSpan, "group-footer")).join("")}
         </tbody>
-    `).join("");
+    `;
+    }).join("");
+}
+
+
+/**
+ * A fragment's group bands, in drawing order. The same reading as the engine's
+ * fragmentBandsOf, kept here so render/ stays free of the engine: a fragment
+ * built before nested groups, or by the designer, has only the single
+ * headerBand and footerBand.
+ */
+function fragmentBands(g) {
+    const headers = Array.isArray(g.headerBands) ? g.headerBands : [g.headerBand];
+    const footers = Array.isArray(g.footerBands)
+        ? g.footerBands
+        : [g.showFooter ? g.footerBand : null];
+
+    return { headers: headers.filter(Boolean), footers: footers.filter(Boolean) };
 }

@@ -42,7 +42,10 @@ import {
     moveItemToBand, createText, createTable, createLine, createBox, createImage, addColumn,
     removeColumn, targetBand, canAddTable
 } from './structure.js';
-import { openLayout, copyGroupDesign, groupBandsIn, parseBandKey } from './grouping.js';
+import {
+    openLayout, copyGroupDesign, groupBandsIn, parseBandKey,
+    addGroupLevel, removeGroupLevel, moveGroupLevelOut
+} from './grouping.js';
 
 
 /** the raster formats the renderer will draw from a data: URI; see imageSrc */
@@ -1060,6 +1063,34 @@ export function createDesigner({
                     restructured(`grouping:copy:${item.id}`);
                 }
                 return;
+
+            case 'add-group-level':
+                if (item?.type !== 'table') return;
+
+                if (addGroupLevel(item) !== -1) restructured(`grouping:add-level:${item.id}`);
+                return;
+
+            case 'remove-group-level':
+            case 'move-group-level-out': {
+                if (item?.type !== 'table') return;
+
+                const level = Number(data?.level);
+                const done = action === 'remove-group-level'
+                    ? removeGroupLevel(item, level)
+                    : moveGroupLevelOut(item, level);
+
+                if (done) {
+                    /**
+                     * A table's group band keys name levels by position, so
+                     * once levels move or go a selection on one of them may
+                     * point at another level's band - or at none.
+                     */
+                    state.selection = state.selection
+                        .filter(one => parseBandKey(one.band)?.table !== item.id);
+                    restructured(`grouping:${action}:${item.id}:${level}`);
+                }
+                return;
+            }
 
             case 'add-column':
                 if (item?.type !== 'table') return;

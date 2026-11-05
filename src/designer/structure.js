@@ -225,7 +225,13 @@ export function railBands(layout) {
         if (!GROUP_KINDS.includes(type) || hasBand(layout, type) || olderForm) keys.push(type);
 
         if (GROUP_KINDS.includes(type)) {
-            keys.push(...grouped.map(g => g.keys[GROUP_KINDS.indexOf(type)]));
+            const slot = GROUP_KINDS.indexOf(type);
+
+            /** headers run outermost first down the page, footers innermost first */
+            for (const g of grouped) {
+                const levels = type === 'groupFooter' ? [...g.levels].reverse() : g.levels;
+                keys.push(...levels.map(level => level.keys[slot]));
+            }
         }
     }
 

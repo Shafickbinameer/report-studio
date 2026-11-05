@@ -38,6 +38,8 @@ export {
     levelsOf,
     isGrouped,
     normalizeGrouping,
+    fragmentBandsOf,
+    MAX_GROUP_LEVELS,
     measureText,
     wrapLines,
     textHeight,

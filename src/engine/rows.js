@@ -39,6 +39,9 @@
  */
 
 
+import { levelsOf, fragmentBandsOf } from './tables.js';
+
+
 /** the items that are drawn rather than written */
 const GRAPHICS = ['image', 'line', 'box'];
 
@@ -125,9 +128,11 @@ export function tableRows(pages, only = null) {
                 }
 
                 for (const fragment of (item.groups ?? [])) {
+                    const path = Array.isArray(fragment.path) ? fragment.path : [fragment.key];
+
                     fragment.rows.forEach((row, n) => {
                         rows.push({
-                            group: fragment.key, row,
+                            group: fragment.key, groups: path, row,
                             height: rowHeight(item, fragment.rowHeights, n)
                         });
                     });
@@ -138,7 +143,49 @@ export function tableRows(pages, only = null) {
 
     if (columns === null) return null;
 
-    return { id, columns, table: tableDesign(first), headerHeight: headerHeight(first), rows };
+    return {
+        id, columns, table: tableDesign(first), headerHeight: headerHeight(first), rows,
+        groupBy: levelsOf(first).map(level => level?.by ?? null)
+    };
+}
+
+
+/**
+ * The group columns an export puts before a grouped table's own, one per level
+ * it is grouped at - region, then city - so the groups survive a sort.
+ *
+ * Named by `label`: a list names each level in turn; a single name is the
+ * column of a table grouped at one level, as it has always been. A nested
+ * table's levels left unnamed are called after the column showing the field
+ * they group by, or the field itself.
+ *
+ * @param {{columns: object[], groupBy?: string[], rows: {group: *, groups?: Array}[]}} table
+ *   from tableRows
+ * @param {string|string[]} [label='Group']
+ * @returns {{labels: string[], cells: (row: object) => Array}} no labels when
+ *   the table is not grouped
+ */
+export function groupColumns(table, label = 'Group') {
+    const pathOf = (row) => row.groups ?? (row.group == null ? [] : [row.group]);
+    const depth = Math.max(0, ...table.rows.map(row => pathOf(row).length));
+
+    const named = (n) => {
+        const by = table.groupBy?.[n];
+        const column = table.columns.find(c => by != null && c.field === by);
+        return column ? columnLabel(column) : (by ?? `Group ${n + 1}`);
+    };
+
+    const labels = Array.from({ length: depth }, (_, n) => {
+        if (Array.isArray(label)) return label[n] ?? named(n);
+        return depth === 1 ? label : named(n);
+    });
+
+    const cells = (row) => {
+        const path = pathOf(row);
+        return Array.from({ length: depth }, (_, n) => path[n] ?? null);
+    };
+
+    return { labels, cells };
 }
 
 
@@ -446,11 +493,13 @@ function collectTable(table, out, context) {
     }
 
     for (const fragment of table.groups) {
+        const { headers, footers } = fragmentBandsOf(fragment);
+
         if (fragment.showHeader && table.showHeader) labels();
-        if (fragment.headerBand) groupBand(fragment.headerBand);
+        headers.forEach(band => groupBand(band));
 
         fragment.rows.forEach((row, n) => cells(row, rowHeight(table, fragment.rowHeights, n)));
 
-        if (fragment.showFooter && fragment.footerBand) groupBand(fragment.footerBand);
+        footers.forEach(band => groupBand(band));
     }
 }

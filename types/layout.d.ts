@@ -97,8 +97,10 @@ export interface TableItem extends ItemBase {
     dataset?: string | null;
     /**
      * How this table's rows are grouped: the field, and the bands each group
-     * is drawn with. One level for now; a list because nested groups will
-     * add levels to it. Any number of tables in a report may be grouped.
+     * is drawn with. Outermost level first; each further level groups within
+     * the groups of the one before - by region, then by city. Each level
+     * groups by a different field. Any number of tables in a report may be
+     * grouped.
      */
     grouping?: GroupLevel[] | null;
     /**
@@ -167,6 +169,13 @@ export interface GroupLevel {
     header?: GroupBand | null;
     /** drawn under each group's last row */
     footer?: GroupBand | null;
+    /**
+     * the order of this level's groups, by their value; numbers sort as
+     * numbers. Absent or null keeps the order the values are first seen in
+     */
+    sort?: 'asc' | 'desc' | null;
+    /** start each of this level's groups, after the table's first, on a new page */
+    newPage?: boolean;
     [key: string]: unknown;
 }
 
@@ -200,6 +209,33 @@ export interface Layout {
  * tables, and objects or values for text placeholders.
  */
 export type ReportData = Record<string, unknown>;
+
+/**
+ * One group's rows on one page - an entry of a built table's `groups`. For a
+ * table grouped at more than one level it is one of the innermost groups, with
+ * the bands of every outer group it starts or ends.
+ */
+export interface GroupFragment {
+    /** the innermost level's group key */
+    key: string;
+    /** the group key at every level, outermost first */
+    path: string[];
+    rows: Array<Record<string, unknown>>;
+    rowHeights: number[];
+    /** whether the table's column labels head this fragment */
+    showHeader: boolean;
+    /** whether this fragment holds its group's last row */
+    showFooter: boolean;
+    /** group headers drawn over the rows, outermost first, each with its `level` */
+    headerBands: Array<GroupBand & { level: number }>;
+    /** group footers drawn under them, innermost first, each with its `level` */
+    footerBands: Array<GroupBand & { level: number }>;
+    /** the innermost level's header, when drawn here */
+    headerBand: (GroupBand & { level: number }) | null;
+    /** the innermost level's footer, when drawn here */
+    footerBand: (GroupBand & { level: number }) | null;
+    [key: string]: unknown;
+}
 
 /** one page of a built report */
 export interface Page {

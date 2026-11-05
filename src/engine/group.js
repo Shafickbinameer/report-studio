@@ -6,7 +6,9 @@
  * two sets a band can mean:
  *
  *   groupHeader / groupFooter - that group's rows, and only that group's. Each
- *     grouped table has its own pair, carried on the table as `grouping`.
+ *     grouped table has its own pair for each level it is grouped at, carried
+ *     on the table as `grouping`. A region footer means the region's rows; a
+ *     city footer inside it means that city's.
  *     They are templates rather than bands: one copy is drawn per group, so
  *     each copy has a different answer. Filled in per fragment by paginate.js,
  *     where which group is being drawn is known.
@@ -78,22 +80,92 @@ export function group(resolvedJson, data) {
  * difference; with two, reading the other table's bands is how a subtotal of
  * refunds would come to be summed over orders.
  *
+ * A table grouped at more than one level - by region, and within each region
+ * by city - still comes out as one flat list, of its innermost groups, in the
+ * order they are drawn. Every stage after this one walks `groups` as a list,
+ * and a tree would have had each of them learn to walk it. What a flat list
+ * has to say instead is where each outer group starts and ends, so each
+ * innermost group carries:
+ *
+ *   key        its own group's key, as a one-level group always has
+ *   path       the key at every level, outermost first: ['North', 'Oslo']
+ *   rows       its rows
+ *   aggregates its own level's totals, as a one-level group always has
+ *   levels     one entry per level, outermost first: { by, key, aggregates },
+ *              each level's totals over that level's whole group - the
+ *              region's footer sums the region, not the city it ends with
+ *   opens      the outermost level whose group starts with this one; it and
+ *              every level inside it print their headers here
+ *   closes     the outermost level whose group ends with this one; footers
+ *              print from the innermost out to it
+ *
+ * A one-level group opens and closes level 0, always.
+ *
  * @param {object} table
  * @param {object[]} rows
- * @param {{by: string, header: object|null, footer: object|null}} grouping
+ * @param {{levels: {by: string, header: object|null, footer: object|null}[]}} grouping
  * @param {string|null} dataset the table's dataset name, which a group band's
  *   aggregate may carry as a prefix
  */
 function bindGroups(table, rows, grouping, dataset) {
-    const groupedData = groupedRows(rows, grouping.by);
-    const groupBands = [grouping.header, grouping.footer].filter(Boolean);
-    const groupedAggregates = groupedAggregate(groupBands, groupedData, dataset);
+    const levels = grouping.levels;
+    const leaves = [];
 
-    table.groups = Object.entries(groupedData).map(([key, groupRows]) => ({
-        key,
-        rows: groupRows,
-        aggregates: groupedAggregates[key]
-    }));
+    /** splits `rows` by one level, and each part by the next, down to the last */
+    const split = (rows, depth, outer) => {
+        const level = levels[depth];
+        const bands = [level.header, level.footer].filter(Boolean);
+
+        for (const [key, groupRows] of sortedGroups(groupedRows(rows, level.by), level.sort)) {
+            const node = {
+                by: level.by,
+                key,
+                aggregates: groupAggregates(bands, groupRows, dataset)
+            };
+            const chain = [...outer, node];
+
+            if (depth < levels.length - 1) {
+                split(groupRows, depth + 1, chain);
+                continue;
+            }
+
+            leaves.push({
+                key,
+                path: chain.map(n => n.key),
+                rows: groupRows,
+                aggregates: node.aggregates,
+                levels: chain
+            });
+        }
+    };
+
+    split(rows, 0, []);
+
+    /**
+     * Two neighbouring groups share an outer group for as long as their chains
+     * hold the same node - the same object, not merely an equal key.
+     */
+    leaves.forEach((leaf, n) => {
+        leaf.opens = firstDifference(leaves[n - 1], leaf);
+        leaf.closes = firstDifference(leaves[n + 1], leaf);
+    });
+
+    table.groups = leaves;
+}
+
+
+/**
+ * The outermost level at which a neighbouring group is in a different group
+ * from this one - 0 when there is no neighbour, as at either end of the table.
+ * @param {object|undefined} other
+ * @param {object} leaf
+ * @returns {number}
+ */
+function firstDifference(other, leaf) {
+    if (!other) return 0;
+
+    const depth = leaf.levels.findIndex((node, n) => other.levels[n] !== node);
+    return depth === -1 ? leaf.levels.length - 1 : depth;
 }
 
 
@@ -240,13 +312,14 @@ function parseAggregate(expr) {
 
 
 /**
- * Per-group aggregates, keyed on both dimensions that matter: the group key and
- * the field the expression targets. Dropping either makes groups overwrite each
- * other, or {sum(price)} collide with {sum(qty)}.
+ * One group's aggregates, keyed on the field the expression targets and then
+ * the function, so {sum(price)} does not collide with {sum(qty)}.
  *
- * Both group bands are read, not just the footer. "Region A - 12 orders" is a
- * heading, and a count that worked in the footer and printed blank in the
- * header is the same fault this file exists to have stopped having.
+ * Both of the level's group bands are read, not just the footer. "Region A -
+ * 12 orders" is a heading, and a count that worked in the footer and printed
+ * blank in the header is the same fault this file exists to have stopped
+ * having. Only that level's bands are read: a city footer's {avg(price)} is
+ * not worked out for regions that never print it.
  *
  * Keyed on the expression's argument as written, because that is what
  * paginate.js looks it up by - so `{sum(sales.amount)}` in a group footer is
@@ -254,19 +327,14 @@ function parseAggregate(expr) {
  * band only ever means its group's rows; naming the grouped dataset is allowed
  * because it is the same thing said in full.
  *
- * Shape: aggregates[groupKey][field] = { count, sum, avg, min, max }
- * @param {object[]} bands the grouped table's own group bands
- * @param {object} dataset grouped rows, keyed by group key
+ * Shape: aggregates[field] = { count, sum, avg, min, max }
+ * @param {object[]} bands the level's own group bands
+ * @param {object[]} rows the group's rows
  * @param {string|null} name the grouped table's dataset
  * @returns {object}
  */
-function groupedAggregate(bands, dataset, name) {
+function groupAggregates(bands, rows, name) {
     const aggregates = {};
-
-    /** every group gets a slot, even one no groupFooter expression touches */
-    for (const key of Object.keys(dataset)) {
-        aggregates[key] = {};
-    }
 
     for (const band of bands) {
         for (const item of band.items ?? []) {
@@ -275,20 +343,15 @@ function groupedAggregate(bands, dataset, name) {
             for (const expr of parseAll(item.value)) {
                 const field = withoutScope(expr.field, name);
 
-                for (const [key, rows] of Object.entries(dataset)) {
-                    if (!aggregates[key][expr.field]) {
-                        aggregates[key][expr.field] = {
-                            count: null,
-                            sum: null,
-                            avg: null,
-                            min: null,
-                            max: null
-                        };
-                    }
+                aggregates[expr.field] ??= {
+                    count: null,
+                    sum: null,
+                    avg: null,
+                    min: null,
+                    max: null
+                };
 
-                    aggregates[key][expr.field][expr.key] =
-                        compute({ key: expr.key, field }, rows);
-                }
+                aggregates[expr.field][expr.key] = compute({ key: expr.key, field }, rows);
             }
         }
     }
@@ -316,16 +379,57 @@ function parseAll(value) {
 }
 
 
-function groupedRows(dataset, groupBy) {
-    const grouped = {};
-    for (const row of dataset) {
-        const key = row[groupBy];
-        if (!grouped[key]) {
-            grouped[key] = [];
-        }
-        grouped[key].push(row);
+/**
+ * Rows split by one field, in the order each value first appears.
+ *
+ * A Map, not an object: an object lists integer-like keys first and in
+ * ascending order whatever order they were added in, so grouping by year put
+ * 2023 before 2024 even when the data ran newest first. Keys are still the
+ * field's value as text, which is what they have always been.
+ *
+ * @param {object[]} rows
+ * @param {string} by
+ * @returns {Map<string, object[]>}
+ */
+function groupedRows(rows, by) {
+    const grouped = new Map();
+
+    for (const row of rows) {
+        const key = String(row?.[by]);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(row);
     }
+
     return grouped;
+}
+
+
+/** compares group keys the way a person reads them: "Item 2" before "Item 10" */
+const KEY_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+
+/**
+ * One level's groups in the order its `sort` asks for: as first seen, when it
+ * asks for none; else by key, ascending or descending.
+ *
+ * Keys are compared as numbers when both are numbers - a key is the field's
+ * value as text, and as text "9" sorts after "10". Otherwise they are compared
+ * as words with their digits read as numbers, so an ISO date sorts by date. Two
+ * keys that compare equal keep the order they were first seen in.
+ *
+ * @param {Map<string, object[]>} groups
+ * @param {'asc'|'desc'|null|undefined} sort
+ * @returns {Iterable<[string, object[]]>}
+ */
+function sortedGroups(groups, sort) {
+    if (sort !== 'asc' && sort !== 'desc') return groups;
+
+    const direction = sort === 'desc' ? -1 : 1;
+    const numeric = (key) => key.trim() !== '' && Number.isFinite(Number(key));
+
+    return [...groups].sort(([a], [b]) => direction * (numeric(a) && numeric(b)
+        ? Number(a) - Number(b)
+        : KEY_ORDER.compare(a, b)));
 }
 
 

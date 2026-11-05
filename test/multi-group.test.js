@@ -497,11 +497,15 @@ describe('validating grouping on a table', () => {
             .toEqual(['table "t".grouping must be a list of group levels, or null']);
     });
 
-    it('refuses a second level by name', () => {
-        const issues = validateLayout(withGrouping([...ordersGrouping(), ...refundsGrouping()]));
+    it('accepts a second level, grouping within the groups of the first', () => {
+        expect(validateLayout(withGrouping([...ordersGrouping(), ...refundsGrouping()])))
+            .toEqual([]);
+    });
 
-        expect(issues).toHaveLength(1);
-        expect(issues[0]).toMatch(/has 2 levels; grouping within a group is not supported yet/);
+    it('refuses two levels grouped by the same field', () => {
+        expect(validateLayout(withGrouping([...ordersGrouping(), ...ordersGrouping()])))
+            .toEqual(['table "t".grouping[1] groups by "region" again, as table "t".grouping[0] ' +
+                'already does; group each level by a different field']);
     });
 
     it('refuses a level with no field to group by', () => {

@@ -8,7 +8,7 @@
  */
 
 import { textHeight } from './text-metrics.js';
-import { groupBandsOf } from './tables.js';
+import { levelsOf, groupFrame } from './tables.js';
 
 
 /**
@@ -345,21 +345,25 @@ function measureTableItem(item, json) {
         return headerHgt + total(item.rowHeights);
     }
 
-    const groups = item.groups ?? [];
-    const { header, footer } = groupBandsOf(item);
-    const grpHeaderHgt = groupBandHeight(header, json);
-    const grpFooterHgt = groupBandHeight(footer, json);
+    /** every level's bands, so each carries the measuredHeight paginate.js reads */
+    for (const level of levelsOf(item)) {
+        groupBandHeight(level?.header, json);
+        groupBandHeight(level?.footer, json);
+    }
 
     let height = 0;
 
-    for (const group of groups) {
+    /** the table whole, on one page: only its first group is first on the page */
+    item.groups.forEach((group, n) => {
         group.rowHeights = rowHeightsFor(item, group.rows);
 
-        height += headerHgt
-            + grpHeaderHgt
+        const frame = groupFrame(item, group, n === 0, true);
+
+        height += (frame.columnHeader ? headerHgt : 0)
+            + bandsHeight(frame.headers)
             + total(group.rowHeights)
-            + grpFooterHgt;
-    }
+            + bandsHeight(frame.footers);
+    });
 
     return height;
 }
@@ -368,6 +372,17 @@ function measureTableItem(item, json) {
 /** @param {number[]} list @returns {number} */
 export function total(list) {
     return (list ?? []).reduce((sum, n) => sum + n, 0);
+}
+
+
+/**
+ * What a list of group bands from groupFrame is worth, by the heights measured
+ * onto them.
+ * @param {{band: object}[]} framed
+ * @returns {number}
+ */
+export function bandsHeight(framed) {
+    return total(framed.map(({ band }) => band?.measuredHeight ?? 0));
 }
 
 

@@ -10,7 +10,7 @@
 
 
 import { DESIGN_ROWS, designHeight as printedDesignHeight } from '../engine/measure.js';
-import { groupBandsOf } from '../engine/tables.js';
+import { levelsOf } from '../engine/tables.js';
 
 
 /** spec 5.2: positions snap to a 10px grid */
@@ -70,14 +70,45 @@ export function designHeight(item) {
     const height = printedDesignHeight(item);
     if (item?.type !== 'table') return height;
 
-    const { header, footer } = groupBandsOf(item);
-    return height + stripHeight(header) + stripHeight(footer);
+    return height + levelsOf(item).reduce((sum, level) =>
+        sum + stripHeight(level?.header) + stripHeight(level?.footer), 0);
 }
 
 
 /**
- * Where a grouped table's group bands sit inside its box: below the column
- * headings, then below the sample rows.
+ * Where every group band of a grouped table sits inside its box, in the order a
+ * group draws them: below the column headings each level's header, outermost
+ * first; then the sample rows; then each level's footer, innermost first.
+ *
+ * @param {object} table
+ * @returns {{kind: string, level: number, band: object, y: number, h: number}[]}
+ *   offsets from the table's own top; only the bands the table has
+ */
+export function levelStrips(table) {
+    const levels = levelsOf(table);
+
+    const rowHeight = table?.rowHeight ?? 0;
+    let y = table?.showHeader ? (table.headerHeight ?? rowHeight) : 0;
+
+    const strips = [];
+    const add = (kind, level, band) => {
+        if (!band) return;
+        const h = stripHeight(band);
+        strips.push({ kind, level, band, y, h });
+        y += h;
+    };
+
+    levels.forEach((level, n) => add('groupHeader', n, level?.header));
+    y += DESIGN_ROWS * rowHeight;
+    for (let n = levels.length - 1; n >= 0; n--) add('groupFooter', n, levels[n]?.footer);
+
+    return strips;
+}
+
+
+/**
+ * Where a grouped table's outermost group bands sit inside its box - what a
+ * table grouped at one level has. levelStrips has every level's.
  *
  * @param {object} table
  * @returns {{groupHeader: {y: number, h: number}|null,
@@ -85,18 +116,12 @@ export function designHeight(item) {
  *   offsets from the table's own top; null for a band the table does not have
  */
 export function groupStrips(table) {
-    const { header, footer } = groupBandsOf(table);
-
-    const rowHeight = table?.rowHeight ?? 0;
-    const headings = table?.showHeader ? (table.headerHeight ?? rowHeight) : 0;
-    const head = stripHeight(header);
-
-    return {
-        groupHeader: header ? { y: headings, h: head } : null,
-        groupFooter: footer
-            ? { y: headings + head + DESIGN_ROWS * rowHeight, h: stripHeight(footer) }
-            : null
+    const outer = (kind) => {
+        const strip = levelStrips(table).find(s => s.kind === kind && s.level === 0);
+        return strip ? { y: strip.y, h: strip.h } : null;
     };
+
+    return { groupHeader: outer('groupHeader'), groupFooter: outer('groupFooter') };
 }
 
 

@@ -1,15 +1,25 @@
 /**
  * grouping.js is the designer's side of a table's own grouping.
  *
- * A grouped table carries the bands its groups are drawn with:
+ * A grouped table carries the bands its groups are drawn with, one pair for
+ * each level it is grouped at, outermost first:
  *
- *   { type: 'table', id: 'refunds', grouping: [{ by: 'reason', header, footer }] }
+ *   { type: 'table', id: 'sales', grouping: [
+ *       { by: 'region', header, footer },
+ *       { by: 'city',   header, footer }      within each region
+ *   ] }
  *
  * Everything else in the designer addresses a band by a string - its type,
  * which was enough when a report had one band of each type. A table's group
- * band is addressed the same way, by a key naming the table as well:
+ * band is addressed the same way, by a key naming the table as well, and the
+ * level when it is not the outermost:
  *
- *   'groupHeader:refunds'   the header of the table whose id is "refunds"
+ *   'groupHeader:sales'     the header of the outermost level of table "sales"
+ *   'groupHeader@1:sales'   the header of its second level
+ *
+ * The outermost level's key is the one a table grouped at one level has always
+ * had. The level sits before the separator, where a table id cannot reach, so
+ * an id with a colon in it is still read whole.
  *
  * So the selection, the canvas's data-band-type, the band rail and every
  * structure.js call keep taking one string, and only the few places that need
@@ -19,7 +29,8 @@
  */
 
 import {
-    tablesOf, levelsOf, hasOwnGrouping, normalizeGrouping, GROUP_BAND_TYPES
+    tablesOf, levelsOf, hasOwnGrouping, normalizeGrouping, GROUP_BAND_TYPES,
+    MAX_GROUP_LEVELS, GROUP_SORTS
 } from '../engine/tables.js';
 
 
@@ -31,6 +42,9 @@ export const NEW_GROUP_BAND_HEIGHT = 36;
 
 const SEPARATOR = ':';
 
+/** between a band's kind and its level, in the key of any level but the outermost */
+const LEVEL_MARK = '@';
+
 /** which property of a grouping level holds each kind of band */
 const SLOT = { groupHeader: 'header', groupFooter: 'footer' };
 
@@ -39,10 +53,12 @@ const SLOT = { groupHeader: 'header', groupFooter: 'footer' };
  * The key a table's group band is addressed by.
  * @param {'groupHeader'|'groupFooter'} kind
  * @param {string} tableId
+ * @param {number} [level=0] 0 is the outermost
  * @returns {string}
  */
-export function groupBandKey(kind, tableId) {
-    return `${kind}${SEPARATOR}${tableId}`;
+export function groupBandKey(kind, tableId, level = 0) {
+    const mark = level > 0 ? `${LEVEL_MARK}${level}` : '';
+    return `${kind}${mark}${SEPARATOR}${tableId}`;
 }
 
 
@@ -53,7 +69,7 @@ export function groupBandKey(kind, tableId) {
  * still found.
  *
  * @param {string} key
- * @returns {{kind: string, table: string}|null} null for any other key
+ * @returns {{kind: string, table: string, level: number}|null} null for any other key
  */
 export function parseBandKey(key) {
     if (typeof key !== 'string') return null;
@@ -61,10 +77,17 @@ export function parseBandKey(key) {
     const at = key.indexOf(SEPARATOR);
     if (at === -1) return null;
 
-    const kind = key.slice(0, at);
-    if (!GROUP_KINDS.includes(kind)) return null;
+    const [kind, mark, ...rest] = key.slice(0, at).split(LEVEL_MARK);
+    if (!GROUP_KINDS.includes(kind) || rest.length) return null;
 
-    return { kind, table: key.slice(at + SEPARATOR.length) };
+    let level = 0;
+
+    if (mark !== undefined) {
+        if (!/^[1-9]\d*$/.test(mark)) return null;
+        level = Number(mark);
+    }
+
+    return { kind, table: key.slice(at + SEPARATOR.length), level };
 }
 
 
@@ -87,13 +110,17 @@ export function isGroupKind(key) {
 
 /**
  * What to call a band where a person reads it - the gutter, the band rail, the
- * placeholder dialog. A table's group band says whose it is.
+ * placeholder dialog. A table's group band says whose it is, and which level
+ * when it is not the outermost.
  * @param {string} key
  * @returns {string}
  */
 export function bandLabel(key) {
     const parsed = parseBandKey(key);
-    return parsed ? `${parsed.kind} · ${parsed.table}` : String(key ?? '');
+    if (!parsed) return String(key ?? '');
+
+    const level = parsed.level > 0 ? ` ${parsed.level + 1}` : '';
+    return `${parsed.kind}${level} · ${parsed.table}`;
 }
 
 
@@ -103,41 +130,62 @@ export function tableById(layout, id) {
 }
 
 
+/** a table's level, when it is a level the designer can edit */
+function levelAt(table, n) {
+    const level = levelsOf(table)[n];
+    return level && typeof level === 'object' ? level : null;
+}
+
+
 /**
  * The band behind a table's group band key.
  * @param {object} layout
  * @param {string} key
  * @returns {object|null} null when the key is not a group band key, the table
- *   is not there or not grouped, or the level has no band of that kind
+ *   is not there or not grouped that deep, or the level has no band of that kind
  */
 export function groupBandAt(layout, key) {
     const parsed = parseBandKey(key);
     if (!parsed) return null;
 
-    const level = levelsOf(tableById(layout, parsed.table))[0];
-    const band = level?.[SLOT[parsed.kind]];
+    const band = levelAt(tableById(layout, parsed.table), parsed.level)?.[SLOT[parsed.kind]];
 
     return band && typeof band === 'object' ? band : null;
 }
 
 
 /**
- * Every table group band the report has, in table order.
+ * Every group band key a table has room for, in the order a group draws them:
+ * the headers outermost first, then the footers innermost first.
+ * @param {object} table
+ * @returns {{key: string, kind: string, level: number}[]}
+ */
+function tableKeys(table) {
+    const depth = levelsOf(table).length;
+    const levels = Array.from({ length: depth }, (_, n) => n);
+
+    return [
+        ...levels.map(level => ({ kind: 'groupHeader', level })),
+        ...levels.reverse().map(level => ({ kind: 'groupFooter', level }))
+    ].map(({ kind, level }) => ({ key: groupBandKey(kind, table.id, level), kind, level }));
+}
+
+
+/**
+ * Every table group band the report has, in table order and, within a table,
+ * in the order a group draws them.
  * @param {object} layout
- * @returns {{key: string, kind: string, table: string, band: object}[]}
+ * @returns {{key: string, kind: string, table: string, level: number, band: object}[]}
  */
 export function groupBandsIn(layout) {
     const found = [];
 
     for (const table of tablesOf(layout)) {
-        const level = levelsOf(table)[0];
-        if (!level || typeof level !== 'object') continue;
-
-        for (const kind of GROUP_KINDS) {
-            const band = level[SLOT[kind]];
+        for (const { key, kind, level } of tableKeys(table)) {
+            const band = levelAt(table, level)?.[SLOT[kind]];
 
             if (band && typeof band === 'object') {
-                found.push({ key: groupBandKey(kind, table.id), kind, table: table.id, band });
+                found.push({ key, kind, table: table.id, level, band });
             }
         }
     }
@@ -147,19 +195,27 @@ export function groupBandsIn(layout) {
 
 
 /**
- * Every grouped table, with both its group band keys - whether or not the band
- * is switched on. What the band rail offers a checkbox for.
+ * Every grouped table, with its group band keys - whether or not the band is
+ * switched on. What the band rail offers a checkbox for.
+ *
+ * `by` and `keys` are the outermost level's; `levels` has every level's,
+ * outermost first.
+ *
  * @param {object} layout
- * @returns {{table: string, by: string, keys: string[]}[]}
+ * @returns {{table: string, by: string, keys: string[],
+ *   levels: {by: string, keys: string[]}[]}[]}
  */
 export function groupedTables(layout) {
     return tablesOf(layout)
         .filter(table => levelsOf(table).length > 0)
-        .map(table => ({
-            table: table.id,
-            by: levelsOf(table)[0]?.by ?? '',
-            keys: GROUP_KINDS.map(kind => groupBandKey(kind, table.id))
-        }));
+        .map(table => {
+            const levels = levelsOf(table).map((level, n) => ({
+                by: level?.by ?? '',
+                keys: GROUP_KINDS.map(kind => groupBandKey(kind, table.id, n))
+            }));
+
+            return { table: table.id, by: levels[0].by, keys: levels[0].keys, levels };
+        });
 }
 
 
@@ -183,8 +239,8 @@ export function setGroupBand(layout, key, on) {
     const parsed = parseBandKey(key);
     if (!parsed) return false;
 
-    const level = levelsOf(tableById(layout, parsed.table))[0];
-    if (!level || typeof level !== 'object') return false;
+    const level = levelAt(tableById(layout, parsed.table), parsed.level);
+    if (!level) return false;
 
     const slot = SLOT[parsed.kind];
 
@@ -203,7 +259,7 @@ export function setGroupBand(layout, key, on) {
 
 
 /**
- * The groupings a table had before its *Group by* was cleared.
+ * The groupings a table had before its *Group by* was cleared - every level.
  *
  * Clearing the box and typing a new field arrives as an empty value between
  * the two, and the header and footer someone designed should not be the price
@@ -214,71 +270,179 @@ const cleared = new WeakMap();
 
 
 /**
- * Sets the field a table is grouped by, which is how grouping is switched on
- * and off from the rail.
+ * Sets the field one level of a table is grouped by.
+ *
+ * The outermost level's is the table's *Group by*, which is how grouping is
+ * switched on and off from the rail:
  *
  *   a field, on a table not yet grouped   grouped, with a header showing the
  *                                         group's value
  *   another field                         regrouped; a `{old}` in its bands
  *                                         becomes `{new}`
- *   nothing                               no longer grouped
+ *   nothing                               no longer grouped, at any level
+ *
+ * An inner level is only ever renamed. Emptying its box leaves it there with
+ * no field - which validate.js names - rather than taking away the level and
+ * the box being typed in with it; addGroupLevel and removeGroupLevel are how
+ * levels come and go. An inner level given its first field gets a header
+ * showing it, as a new grouping does, if its header is still empty.
  *
  * @param {object} table mutated in place
  * @param {string|null} by
+ * @param {number} [n=0] the level
  * @returns {boolean} whether anything changed
  */
-export function setGroupBy(table, by) {
-    const level = levelsOf(table)[0];
+export function setGroupBy(table, by, n = 0) {
+    if (n > 0) return renameLevel(table, n, by ?? '');
+
+    const level = levelAt(table, 0);
 
     if (by == null || by === '') {
         if (!level && !hasOwnGrouping(table)) return false;
 
-        if (level) cleared.set(table, level);
+        if (level) cleared.set(table, levelsOf(table));
 
         delete table.grouping;
         delete table.groupBy;
         return true;
     }
 
-    if (level) {
-        if (level.by === by) return false;
-
-        renameField([level.header, level.footer], level.by, by);
-        level.by = by;
-        return true;
-    }
+    if (level) return renameLevel(table, 0, by);
 
     delete table.groupBy;
 
     const before = cleared.get(table);
 
-    if (before) {
+    if (before?.length) {
         cleared.delete(table);
-        renameField([before.header, before.footer], before.by, by);
-        table.grouping = [{ ...before, by }];
+        const [outer, ...inner] = before;
+        renameField([outer.header, outer.footer], outer.by, by);
+        table.grouping = [{ ...outer, by }, ...inner];
         return true;
     }
 
-    table.grouping = [{
-        by,
-        header: {
-            type: 'groupHeader',
-            height: NEW_GROUP_BAND_HEIGHT,
-            items: [groupLabel(by)]
-        },
+    table.grouping = [newLevel(by)];
+
+    return true;
+}
+
+
+/** a level's field changed, and its bands' `{old}` with it */
+function renameLevel(table, n, by) {
+    const level = levelAt(table, n);
+    if (!level || level.by === by) return false;
+
+    if (!level.by && by && level.header && !(level.header.items ?? []).length) {
+        level.header.items = [groupLabel(by)];
+    }
+
+    renameField([level.header, level.footer], level.by, by);
+    level.by = by;
+    return true;
+}
+
+
+/**
+ * Groups a grouped table again, within the groups of its innermost level - by
+ * city within region. The new level starts with a header, as a new grouping
+ * does, and with no field until one is typed.
+ *
+ * @param {object} table mutated in place; must already be grouped
+ * @param {string} [by='']
+ * @returns {number} the new level's index, or -1 when the table is not grouped
+ */
+export function addGroupLevel(table, by = '') {
+    if (!Array.isArray(table?.grouping) || table.grouping.length === 0) return -1;
+    if (table.grouping.length >= MAX_GROUP_LEVELS) return -1;
+
+    table.grouping.push(by ? newLevel(by) : {
+        by: '',
+        header: { type: 'groupHeader', height: NEW_GROUP_BAND_HEIGHT, items: [] },
         footer: null
-    }];
+    });
+
+    return table.grouping.length - 1;
+}
+
+
+/**
+ * Sets how one level's groups are put in order and placed:
+ *
+ *   sort      'asc' or 'desc' by the group's value; '' or null for the order
+ *             the values are first seen in, which is left out of the file
+ *   newPage   true to start each of the level's groups, after the table's
+ *             first, on a page of its own; false is left out of the file
+ *
+ * @param {object} table mutated in place
+ * @param {number} n the level
+ * @param {'sort'|'newPage'} option
+ * @param {*} value
+ * @returns {boolean} whether anything changed
+ */
+export function setGroupOption(table, n, option, value) {
+    const level = levelAt(table, n);
+    if (!level) return false;
+
+    let next;
+
+    if (option === 'sort') next = GROUP_SORTS.includes(value) ? value : undefined;
+    else if (option === 'newPage') next = value === true ? true : undefined;
+    else return false;
+
+    if (level[option] === next) return false;
+
+    if (next === undefined) delete level[option];
+    else level[option] = next;
 
     return true;
 }
 
 
 /**
- * Gives one grouped table the header and footer another one is drawn with.
+ * Takes one level out of a table's grouping, with its bands. The levels inside
+ * it move out one; taking out the only level ungroups the table, as clearing
+ * its *Group by* does.
+ *
+ * @param {object} table mutated in place
+ * @param {number} n
+ * @returns {boolean} whether there was such a level
+ */
+export function removeGroupLevel(table, n) {
+    if (!levelAt(table, n)) return false;
+
+    if (levelsOf(table).length === 1) return setGroupBy(table, null);
+
+    table.grouping.splice(n, 1);
+    return true;
+}
+
+
+/**
+ * Swaps a level with the one outside it: grouping by city and then region
+ * rather than region and then city. Each level keeps its own bands.
+ *
+ * @param {object} table mutated in place
+ * @param {number} n the level to move out; 0 cannot be
+ * @returns {boolean} whether anything moved
+ */
+export function moveGroupLevelOut(table, n) {
+    if (n < 1 || !levelAt(table, n) || !levelAt(table, n - 1)) return false;
+
+    const [level] = table.grouping.splice(n, 1);
+    table.grouping.splice(n - 1, 0, level);
+    return true;
+}
+
+
+/**
+ * Gives one grouped table the group headers and footers another one is drawn
+ * with - every level of them.
  *
  * For two tables that should look alike - a grouping's design is not shared,
- * so this is a copy, and the two are edited apart afterwards. The copy says
- * `{by}` for the table it lands on wherever the original said its own.
+ * so this is a copy, and the two are edited apart afterwards. Each level of the
+ * copy says `{by}` for the level it lands on wherever the original said its
+ * own. Levels the source has and the target does not are left out, and a
+ * level the target has and the source does not keeps its own bands.
  *
  * @param {object} layout
  * @param {string} toId the table to copy onto, which must be grouped
@@ -288,17 +452,23 @@ export function setGroupBy(table, by) {
 export function copyGroupDesign(layout, toId, fromId) {
     if (toId === fromId) return false;
 
-    const target = levelsOf(tableById(layout, toId))[0];
-    const source = levelsOf(tableById(layout, fromId))[0];
+    const targets = levelsOf(tableById(layout, toId));
+    const sources = levelsOf(tableById(layout, fromId));
 
-    if (!target || !source) return false;
+    let copied = false;
 
-    target.header = source.header ? structuredClone(source.header) : null;
-    target.footer = source.footer ? structuredClone(source.footer) : null;
+    targets.forEach((target, n) => {
+        const source = sources[n];
+        if (!target || typeof target !== 'object' || !source || typeof source !== 'object') return;
 
-    renameField([target.header, target.footer], source.by, target.by);
+        target.header = source.header ? structuredClone(source.header) : null;
+        target.footer = source.footer ? structuredClone(source.footer) : null;
 
-    return true;
+        renameField([target.header, target.footer], source.by, target.by);
+        copied = true;
+    });
+
+    return copied;
 }
 
 
@@ -344,6 +514,20 @@ function renameField(bands, from, to) {
             }
         }
     }
+}
+
+
+/** a level grouped by `by`, with a header showing the group's value */
+function newLevel(by) {
+    return {
+        by,
+        header: {
+            type: 'groupHeader',
+            height: NEW_GROUP_BAND_HEIGHT,
+            items: [groupLabel(by)]
+        },
+        footer: null
+    };
 }
 
 

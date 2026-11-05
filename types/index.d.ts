@@ -3,7 +3,8 @@
  */
 
 import type {
-    Band, BandType, GroupBand, GroupLevel, Layout, PaginatedReport, Page, ReportData, TableItem, TextStyle
+    Band, BandType, GroupBand, GroupFragment, GroupLevel, Layout, PaginatedReport, Page, ReportData,
+    TableItem, TextStyle
 } from './layout.js';
 
 export type * from './layout.js';
@@ -91,8 +92,12 @@ export interface CSVOptions {
     header?: boolean;
     /** prepend the group key on a grouped table; default true */
     groupColumn?: boolean;
-    /** default `'Group'` */
-    groupLabel?: string;
+    /**
+     * the group column's heading; default `'Group'`. A list names one column
+     * per level of a nested grouping, whose columns are otherwise named after
+     * the fields they group by
+     */
+    groupLabel?: string | string[];
     /** stop cells starting `=`, `+`, `-` or `@` running as formulas; default true */
     neutraliseFormulas?: boolean;
 }
@@ -126,8 +131,12 @@ export interface XLSXOptions {
     reportSheetName?: string;
     /** prepend the group key on a grouped table's sheet; default true */
     groupColumn?: boolean;
-    /** default `'Group'` */
-    groupLabel?: string;
+    /**
+     * the group column's heading; default `'Group'`. A list names one column
+     * per level of a nested grouping, whose columns are otherwise named after
+     * the fields they group by
+     */
+    groupLabel?: string | string[];
 }
 
 /**
@@ -171,6 +180,8 @@ export interface TableGrouping {
     by: string;
     header: GroupBand | Band | null;
     footer: GroupBand | Band | null;
+    /** every level, outermost first; the fields above are the first's */
+    levels: Array<{ by: string; header: GroupBand | Band | null; footer: GroupBand | Band | null }>;
 }
 
 /** every grouped table, in the order they are drawn, either way it is grouped */
@@ -179,14 +190,30 @@ export function groupingsOf(layout: Layout): TableGrouping[];
 /** the first grouped table, or null when nothing is grouped */
 export function groupingOf(layout: Layout): TableGrouping | null;
 
+/** the most levels a table may be grouped at; validateLayout refuses more */
+export const MAX_GROUP_LEVELS: number;
+
 /** a table's grouping levels as the layout states them; empty when it has none */
 export function levelsOf(table: TableItem): GroupLevel[];
 
 /** whether a table is grouped, by `grouping` or by the older `groupBy` */
 export function isGrouped(table: TableItem): boolean;
 
-/** the bands a table's groups are drawn with, from a layout past normalizeGrouping */
-export function groupBandsOf(table: TableItem): { header: GroupBand | null; footer: GroupBand | null };
+/**
+ * the bands one level of a table's groups are drawn with - the outermost's
+ * when no level is named - from a layout past normalizeGrouping
+ */
+export function groupBandsOf(
+    table: TableItem, level?: number
+): { header: GroupBand | null; footer: GroupBand | null };
+
+/**
+ * a built group fragment's bands in drawing order: headers outermost first,
+ * footers innermost first
+ */
+export function fragmentBandsOf(
+    fragment: GroupFragment
+): { headers: Array<GroupBand & { level?: number }>; footers: Array<GroupBand & { level?: number }> };
 
 /**
  * A copy of a layout with grouping written one way only: `layout.groupBy`,

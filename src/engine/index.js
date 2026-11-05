@@ -21,7 +21,8 @@ export { pageRegions, bandZoneHeight, resolveHeight, DEFAULT_BAND_HEIGHTS } from
 export { toCSV, toReportCSV, reportFilename, reportTables } from './csv.js';
 export { toXLSX, toXLSXAsync, reportImageSources, XLSX_MIME } from './xlsx.js';
 export {
-    tablesOf, datasetOf, groupingOf, groupingsOf, groupBandsOf, levelsOf, isGrouped, normalizeGrouping
+    tablesOf, datasetOf, groupingOf, groupingsOf, groupBandsOf, levelsOf, isGrouped, normalizeGrouping,
+    fragmentBandsOf, MAX_GROUP_LEVELS
 } from './tables.js';
 export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
 

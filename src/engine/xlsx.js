@@ -34,7 +34,7 @@
  * never the layout or the data.
  */
 
-import { reportLayout, reportRows, tableRows, reportTables, columnLabel } from './rows.js';
+import { reportLayout, reportRows, tableRows, reportTables, columnLabel, groupColumns } from './rows.js';
 import {
     argb, cellFormat, createStyles, columnChars, indentLevels, DEFAULT_COLUMN_PX, points
 } from './xlsx-style.js';
@@ -134,7 +134,7 @@ const PLACEHOLDER = /\{[^{}]+\}/;
  * @param {string} [options.reportSheetName='Report']
  * @param {boolean} [options.groupColumn=true] prepend the group key on a
  *   grouped table's sheet, as toCSV does
- * @param {string} [options.groupLabel='Group']
+ * @param {string|string[]} [options.groupLabel='Group'] as toCSV's
  * @param {Object<string, Uint8Array|ArrayBuffer>|Map} [options.images] the
  *   bytes of pictures that are not `data:` URIs, keyed by their src - which is
  *   what toXLSXAsync fetches. A picture with no bytes is left out
@@ -324,13 +324,14 @@ function reportSheet(pages, name, styled, images) {
 
 /**
  * One table as a sheet: the labels, then every row across every page.
- * Grouped tables get the group key as a first column, so the groups survive a
- * sort - the same choice toCSV makes.
+ * Grouped tables get the group key as a first column - one per level, for a
+ * table grouped within its groups - so the groups survive a sort: the same
+ * choice toCSV makes.
  */
 function tableSheet(table, styled, groupColumn, groupLabel) {
-    const grouped = groupColumn && table.rows.some(r => r.group !== null);
-    const columns = grouped ? [{ field: null, align: 'left' }, ...table.columns] : table.columns;
-    const labels = grouped ? [groupLabel, ...table.columns.map(columnLabel)] : table.columns.map(columnLabel);
+    const groups = groupColumn ? groupColumns(table, groupLabel) : { labels: [], cells: () => [] };
+    const columns = [...groups.labels.map(() => ({ field: null, align: 'left' })), ...table.columns];
+    const labels = [...groups.labels, ...table.columns.map(columnLabel)];
 
     /**
      * One format object per column, so the writer resolves each once. A
@@ -359,9 +360,10 @@ function tableSheet(table, styled, groupColumn, groupLabel) {
         height: styled ? table.headerHeight : null
     }];
 
-    for (const { group, row, height } of table.rows) {
+    for (const entry of table.rows) {
+        const { row, height } = entry;
         const values = table.columns.map(c => row?.[c.field]);
-        const cells = grouped ? [group, ...values] : values;
+        const cells = [...groups.cells(entry), ...values];
 
         rows.push({
             cells: cells.map((value, i) => ({ value, format: cellFormats[i] })),

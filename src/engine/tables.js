@@ -57,6 +57,20 @@ export const GROUP_BAND_TYPES = ['groupHeader', 'groupFooter'];
 
 
 /**
+ * The most levels a table may be grouped at.
+ *
+ * Every level adds a header and a footer that a page has to find room for
+ * beside a row, and a report grouped eight deep has stopped being a table and
+ * become an outline. validate.js refuses more; the designer stops offering.
+ */
+export const MAX_GROUP_LEVELS = 8;
+
+
+/** the orders a level's groups may be put in, besides the order they are first seen */
+export const GROUP_SORTS = ['asc', 'desc'];
+
+
+/**
  * Whether a table asks to be grouped through the older `groupBy` field.
  *
  * Kept under its old name because that is what it has always answered. A table
@@ -74,9 +88,9 @@ export function hasOwnGrouping(table) {
 /**
  * A table's grouping levels, outermost first, as the layout states them.
  *
- * Only one level is drawn for now; validate.js refuses more. It is a list
- * anyway because that is the shape nested groups will need, and a layout file
- * written today should not have to change shape to gain a second level.
+ * Each level after the first splits the groups of the one before it: grouped
+ * by region and then by city, "Oslo" under North and "Oslo" under South are
+ * two groups, each inside its own region.
  *
  * @param {object} table
  * @returns {object[]} `{ by, header, footer }` entries, never null
@@ -97,22 +111,120 @@ export function isGrouped(table) {
 
 
 /**
- * The group bands a table is drawn with: its first level's. A table that is not
- * grouped, or a level without one of them, gets null for that band.
+ * The group bands one level of a table is drawn with - the outermost level's
+ * when no level is named. A table that is not grouped that deep, or a level
+ * without one of them, gets null for that band.
  *
  * Reads a normalised layout - one that has been through normalizeGrouping, as
  * every layout past group.js has.
  *
  * @param {object} table
+ * @param {number} [level=0] 0 is the outermost level
  * @returns {{header: object|null, footer: object|null}}
  */
-export function groupBandsOf(table) {
-    const level = levelsOf(table)[0];
+export function groupBandsOf(table, level = 0) {
+    const found = levelsOf(table)[level];
 
     return {
-        header: level?.header ?? null,
-        footer: level?.footer ?? null
+        header: found?.header ?? null,
+        footer: found?.footer ?? null
     };
+}
+
+
+/**
+ * What one fragment of a group draws around its rows - the rule measure.js
+ * sizes a grouped table by, paginate.js splits it by, and the renderer draws
+ * it by, kept here so the three cannot disagree.
+ *
+ * `leaf` is one of the innermost groups group.js makes, with `opens` and
+ * `closes` (both 0 for a table grouped at one level). A fragment is all of
+ * that group's rows on one page, or as many as fit.
+ *
+ *   column labels   on the first fragment of the table on a page, and wherever
+ *                   an outermost group starts. A one-level table so prints
+ *                   them over every group, as it always has; a nested one
+ *                   does not repeat them for every city in a region.
+ *   group headers   from the level the group opens inwards - and every level's
+ *                   on the first fragment on a page, so a page that carries
+ *                   on a region still says which region it is.
+ *   group footers   on the fragment that ends the group only, from the
+ *                   innermost level out to the one it closes.
+ *
+ * @param {object} table the table, past normalizeGrouping
+ * @param {object} leaf the group the fragment is of
+ * @param {boolean} firstOnPage whether nothing of this table is above it on the page
+ * @param {boolean} ends whether the fragment holds the group's last row
+ * @returns {{columnHeader: boolean, headers: {level: number, band: object}[],
+ *   footers: {level: number, band: object}[]}} headers outermost first,
+ *   footers innermost first, each as it is drawn
+ */
+export function groupFrame(table, leaf, firstOnPage, ends) {
+    const levels = levelsOf(table);
+    const opens = leaf?.opens ?? 0;
+    const closes = leaf?.closes ?? 0;
+
+    const headers = [];
+    for (let level = firstOnPage ? 0 : opens; level < levels.length; level++) {
+        const band = levels[level]?.header;
+        if (band) headers.push({ level, band });
+    }
+
+    const footers = [];
+    if (ends) {
+        for (let level = levels.length - 1; level >= closes; level--) {
+            const band = levels[level]?.footer;
+            if (band) footers.push({ level, band });
+        }
+    }
+
+    return { columnHeader: firstOnPage || opens === 0, headers, footers };
+}
+
+
+/**
+ * Whether a group has to start on a page of its own: it starts a group at a
+ * level that says `newPage`, and it is not the table's first group - which
+ * starts wherever the table does, as anything else in a band would.
+ *
+ * @param {object} table the table, past normalizeGrouping
+ * @param {object} leaf one of the innermost groups group.js makes
+ * @param {number} n its place in the table's `groups`
+ * @returns {boolean}
+ */
+export function startsPage(table, leaf, n) {
+    if (n === 0) return false;
+
+    const levels = levelsOf(table);
+    for (let level = leaf?.opens ?? 0; level < levels.length; level++) {
+        if (levels[level]?.newPage === true) return true;
+    }
+
+    return false;
+}
+
+
+/**
+ * The group bands a built fragment draws, in drawing order: headers outermost
+ * first, footers innermost first.
+ *
+ * Reads `headerBands` / `footerBands`, and falls back to the single
+ * `headerBand` / `footerBand` a fragment built some other way may carry - the
+ * designer's canvas draws one-level fragments of its own.
+ *
+ * @param {object} fragment one entry of a built table's `groups`
+ * @returns {{headers: object[], footers: object[]}}
+ */
+export function fragmentBandsOf(fragment) {
+    const headers = Array.isArray(fragment?.headerBands)
+        ? fragment.headerBands
+        : [fragment?.headerBand];
+
+    const footers = Array.isArray(fragment?.footerBands)
+        ? fragment.footerBands
+        : [fragment?.showFooter ? fragment?.footerBand : null];
+
+    return { headers: headers.filter(Boolean), footers: footers.filter(Boolean) };
 }
 
 
@@ -150,7 +262,9 @@ function reportBand(layout, type) {
 
 /**
  * Every grouped table, in table order, with the field it is grouped by and the
- * bands its groups are drawn with.
+ * bands its groups are drawn with - its outermost level's. A table grouped
+ * within its groups as well has the rest in `levels`, which lists every level,
+ * outermost first.
  *
  * Reads either form. A table's own `grouping` says all three itself; a table
  * grouped the older way borrows the report's groupHeader and groupFooter.
@@ -158,29 +272,32 @@ function reportBand(layout, type) {
  * calls that a mistake, and this reads whatever it is given as far as it goes.
  *
  * @param {object} layout
- * @returns {{table: object, by: string, header: object|null, footer: object|null}[]}
+ * @returns {{table: object, by: string, header: object|null, footer: object|null,
+ *   levels: {by: string, header: object|null, footer: object|null}[]}[]}
  */
 export function groupingsOf(layout) {
     const legacy = legacyGroupingOf(layout);
     const found = [];
 
     for (const table of tablesOf(layout)) {
-        const level = levelsOf(table)[0];
-
-        if (level) {
-            found.push({
-                table,
-                by: level.by,
+        /** each level whole - its `sort` and `newPage` with it - bands made explicit */
+        const levels = levelsOf(table)
+            .filter(level => level != null && typeof level === 'object')
+            .map(level => ({
+                ...level,
                 header: level.header ?? null,
                 footer: level.footer ?? null
-            });
+            }));
+
+        if (levels.length > 0) {
+            found.push({ table, ...levels[0], levels });
         } else if (legacy?.table === table) {
-            found.push({
-                table,
+            const only = {
                 by: legacy.by,
                 header: reportBand(layout, 'groupHeader'),
                 footer: reportBand(layout, 'groupFooter')
-            });
+            };
+            found.push({ table, ...only, levels: [only] });
         }
     }
 

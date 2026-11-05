@@ -255,7 +255,56 @@ different things. In the layout file a table carries them as `grouping`:
 Inside a group band, `{reason}` is the group's value and `{sum(amount)}` adds
 up that group's rows only. A group that runs over a page break prints its
 header again on the next page and its footer only once, where it ends. Either
-band may be `null`, but not both. One level of grouping per table for now.
+band may be `null`, but not both.
+
+#### Ordering groups, and a page per group
+
+By default, groups come in the order their values first appear in the data.
+Each level can change that, either in the layout file or with *Order groups*
+and *New page for each group* in the designer:
+
+- `"sort": "asc"` or `"desc"` orders that level's groups by value. Numbers
+  sort as numbers, so 9 comes before 10, and "Item 9" comes before "Item 10".
+  Inner levels are sorted within each outer group.
+- `"newPage": true` starts every group of that level on a new page, except the
+  table's first group. The page repeats the column labels and every level's
+  header. A group longer than a page still continues onto the next.
+
+#### Groups within groups
+
+A table can be grouped more than once — by region, and within each region by
+city. In the designer, select a grouped table and press *Group within each
+group*. Then type the field into *Then group by*. Each level can be moved out
+or removed from there. In the layout file, each level is one more entry in
+`grouping`, with the outermost first:
+
+```json
+"grouping": [
+  { "by": "region",
+    "header": { "height": 24, "items": [ { "id": "r", "type": "text", "value": "Region {region}" } ] },
+    "footer": { "height": 20, "items": [ { "id": "rt", "type": "text", "value": "Region total {sum(amount)}" } ] } },
+  { "by": "city",
+    "header": { "height": 20, "items": [ { "id": "c", "type": "text", "value": "{city}" } ] },
+    "footer": { "height": 20, "items": [ { "id": "ct", "type": "text", "value": "City total {sum(amount)}" } ] } }
+]
+```
+
+- Each inner group sits inside its outer one. "Oslo" under North and "Oslo"
+  under South are two separate groups.
+- Each level's aggregates cover its own group. The region footer adds up the
+  whole region, and the city footer adds up that city only.
+- Headers print outermost first where their groups start. Footers print
+  innermost first where their groups end. The last city of a region prints its
+  city footer and then the region footer.
+- The column labels head each outermost group, not every city.
+- A page that continues a group repeats every level's header, so it still shows
+  "North › Oslo". The footers that finish a group are kept on the same page as
+  its last row.
+- No two levels may group by the same field, and a table may be grouped at
+  most 8 levels deep (`MAX_GROUP_LEVELS`).
+- In CSV and XLSX exports, each level gets its own column. The columns are
+  named after the fields; pass `groupLabel: ['Region', 'City']` to name them
+  yourself.
 
 Layouts written before 2.0 group with a report-wide or per-table `groupBy` and
 the report's own *groupHeader* and *groupFooter* bands. They still work

@@ -7,7 +7,7 @@
  */
 
 
-import { tablesOf, hasOwnGrouping, levelsOf } from './tables.js';
+import { tablesOf, hasOwnGrouping, levelsOf, MAX_GROUP_LEVELS, GROUP_SORTS } from './tables.js';
 import { designHeight } from './measure.js';
 
 
@@ -207,9 +207,9 @@ function validateTables(json, bands, issues) {
  *
  *   "grouping": [{ "by": "region", "header": { "height": 30, "items": [] }, "footer": null }]
  *
- * One level for now. The list is the shape nested groups will take, so a
- * second level is refused by name rather than by a shape error - it is a
- * thing the engine does not do yet, not a malformed layout.
+ * Levels are outermost first; each after the first groups within the groups of
+ * the one before. Grouping twice by the same field is refused - every group of
+ * the inner level would be the whole of its outer group, drawn twice over.
  *
  * @param {object} table
  * @param {string[]} issues
@@ -229,11 +229,14 @@ function validateGrouping(table, issues) {
             `table "${table.id}" is grouped both by groupBy and by grouping; remove groupBy`);
     }
 
-    if (table.grouping.length > 1) {
+    if (table.grouping.length > MAX_GROUP_LEVELS) {
         issues.push(
-            `${where} has ${table.grouping.length} levels; grouping within a group is not ` +
-            `supported yet, so a table takes one`);
+            `${where} has ${table.grouping.length} levels; a table may be grouped at ` +
+            `${MAX_GROUP_LEVELS} at most`);
     }
+
+    /** the level each field was first grouped by, to name a repeat against */
+    const seen = new Map();
 
     table.grouping.forEach((level, n) => {
         const at = `${where}[${n}]`;
@@ -245,6 +248,22 @@ function validateGrouping(table, issues) {
 
         if (typeof level.by !== 'string' || level.by === '') {
             issues.push(`${at}.by must be the name of the field to group by`);
+        } else if (seen.has(level.by)) {
+            issues.push(
+                `${at} groups by "${level.by}" again, as ${where}[${seen.get(level.by)}] ` +
+                `already does; group each level by a different field`);
+        } else {
+            seen.set(level.by, n);
+        }
+
+        if (level.sort != null && !GROUP_SORTS.includes(level.sort)) {
+            issues.push(
+                `${at}.sort must be ${GROUP_SORTS.map(s => `"${s}"`).join(' or ')}, or null ` +
+                `to keep the groups in the order they are first seen`);
+        }
+
+        if (level.newPage != null && typeof level.newPage !== 'boolean') {
+            issues.push(`${at}.newPage must be true or false`);
         }
 
         validateGroupBand(level.header, `${at}.header`, issues);

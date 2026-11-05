@@ -23,9 +23,9 @@ import {
 } from './fields.js';
 import { BAND_NOTES, hasBand, findBand, railBands } from './structure.js';
 import {
-    parseBandKey, bandLabel, groupBandKey, groupedTables, GROUP_KINDS
+    parseBandKey, bandLabel, groupBandKey, groupedTables, setGroupBy, setGroupOption, GROUP_KINDS
 } from './grouping.js';
-import { levelsOf } from '../engine/tables.js';
+import { levelsOf, MAX_GROUP_LEVELS } from '../engine/tables.js';
 import { esc, imageSrc } from '../render/items.js';
 
 
@@ -69,7 +69,8 @@ export function drawPanel(item, layout = null) {
  * @returns {string} markup, empty for a table that is not grouped
  */
 function grouping(table, layout) {
-    if (!levelsOf(table).length) return '';
+    const levels = levelsOf(table);
+    if (!levels.length) return '';
 
     /** the table alone is enough to find its own bands */
     const scope = layout ?? { bands: [{ type: 'detail', items: [table] }] };
@@ -81,13 +82,104 @@ function grouping(table, layout) {
     return `
     <section class="dz-section dz-bands dz-grouping">
         <h3>Grouping</h3>
-        ${GROUP_KINDS.map(kind => bandRow(scope, groupBandKey(kind, table.id))).join('')}
+        ${levels.map((level, n) => groupLevel(scope, table, level, n, levels.length)).join('')}
+        ${levels.length < MAX_GROUP_LEVELS ? `
+            <button type="button" class="dz-add-row" data-action="add-group-level"
+                    title="Split each group of this table again, by another field">
+                Group within each group</button>` : ''}
         ${others.map(g => `
             <button type="button" class="dz-add-row" data-action="copy-grouping"
                     data-from="${esc(g.table)}"
                     title="Replace this table's group header and footer with copies of ${esc(g.table)}'s">
                 Copy group design from ${esc(g.table)}</button>`).join('')}
     </section>`;
+}
+
+
+/**
+ * One level of a table's grouping: its band switches and, for a table grouped
+ * at more than one level, which field it groups by and the controls that move
+ * and remove it.
+ *
+ * The outermost level's field is the table's *Group by*, up with the table's
+ * other properties, so a table grouped once shows nothing here but its bands -
+ * as it always has.
+ *
+ * @param {object} scope a layout holding the table
+ * @param {object} table
+ * @param {object} level
+ * @param {number} n
+ * @param {number} depth how many levels the table has
+ * @returns {string} markup
+ */
+function groupLevel(scope, table, level, n, depth) {
+    const keys = GROUP_KINDS.map(kind => groupBandKey(kind, table.id, n));
+    if (depth === 1) {
+        return `${levelOptions(level, n)}${keys.map(key => bandRow(scope, key)).join('')}`;
+    }
+
+    const id = `dz-f-group-level-${n}`;
+    const by = typeof level?.by === 'string' ? level.by : '';
+
+    return `
+    <div class="dz-group-level" data-level="${n}">
+        <div class="dz-column-head">
+            <span>Level ${n + 1}</span>
+            ${n > 0 ? `
+                <button type="button" class="dz-icon" data-action="move-group-level-out"
+                        data-level="${n}"
+                        title="Group by this before the level above it"
+                        aria-label="Move level ${n + 1} out">&uarr;</button>` : ''}
+            <button type="button" class="dz-icon" data-action="remove-group-level"
+                    data-level="${n}"
+                    title="Stop grouping by this, and remove its header and footer"
+                    aria-label="Remove level ${n + 1}">&times;</button>
+        </div>
+        ${n > 0 ? `
+            <div class="dz-field dz-field-text">
+                <label for="${id}">Then group by</label>
+                <input type="text" id="${id}" data-group-level="${n}"
+                       value="${esc(by)}" spellcheck="false">
+                <p class="dz-hint">A field to group each group above by</p>
+            </div>` : ''}
+        ${levelOptions(level, n)}
+        ${keys.map(key => bandRow(scope, key)).join('')}
+    </div>`;
+}
+
+
+/** the orders a level's groups can be put in, as the rail offers them */
+const SORT_CHOICES = [
+    { value: '', label: 'As they come' },
+    { value: 'asc', label: 'A to Z, 0 to 9' },
+    { value: 'desc', label: 'Z to A, 9 to 0' }
+];
+
+
+/**
+ * How one level's groups are ordered, and whether each starts a page.
+ * @param {object} level
+ * @param {number} n
+ * @returns {string} markup
+ */
+function levelOptions(level, n) {
+    const sort = typeof level?.sort === 'string' ? level.sort : '';
+    const id = `dz-f-group-${n}`;
+
+    return `
+    <div class="dz-field dz-field-choice">
+        <label for="${id}-sort">Order groups</label>
+        <select id="${id}-sort" data-group-option="sort" data-level="${n}">
+            ${SORT_CHOICES.map(o => `<option value="${o.value}"${o.value === sort ? ' selected' : ''}
+                >${esc(o.label)}</option>`).join('')}
+        </select>
+    </div>
+    <div class="dz-field dz-field-toggle">
+        <label for="${id}-page">New page for each group</label>
+        <input type="checkbox" id="${id}-page" data-group-option="newPage" data-level="${n}"
+               ${level?.newPage === true ? 'checked' : ''}>
+        <p class="dz-hint">Every group but the first starts at the top of a page</p>
+    </div>`;
 }
 
 
@@ -302,9 +394,11 @@ function bandNote(type) {
     const parsed = parseBandKey(type);
     if (!parsed) return BAND_NOTES[type] ?? '';
 
-    return parsed.kind === 'groupHeader'
-        ? `Before each group of ${parsed.table}`
-        : `After each group of ${parsed.table}`;
+    const whose = parsed.level > 0
+        ? `level ${parsed.level + 1} group of ${parsed.table}`
+        : `group of ${parsed.table}`;
+
+    return parsed.kind === 'groupHeader' ? `Before each ${whose}` : `After each ${whose}`;
 }
 
 
@@ -369,10 +463,35 @@ export function attachPanel({
 
 
     function onInput(event) {
-        const node = event.target.closest?.('[data-field], [data-band], [data-band-height]');
+        const node = event.target.closest?.(
+            '[data-field], [data-band], [data-band-height], [data-group-level], [data-group-option]');
         if (!node) return;
 
         if (node.tagName === 'TEXTAREA') repaint(node);
+
+        /** how one level's groups are ordered and placed, on the selected table */
+        if (node.dataset.groupOption != null) {
+            const item = getItem();
+            const level = Number(node.dataset.level);
+            const option = node.dataset.groupOption;
+            const value = node.type === 'checkbox' ? node.checked : node.value;
+
+            if (item?.type === 'table' && setGroupOption(item, level, option, value)) {
+                changed(`group-option:${level}:${option}`);
+            }
+            return;
+        }
+
+        /** an inner level's field, on the selected table */
+        if (node.dataset.groupLevel != null) {
+            const item = getItem();
+            const level = Number(node.dataset.groupLevel);
+
+            if (item?.type === 'table' && setGroupBy(item, node.value.trim(), level)) {
+                changed(`group-level:${level}`);
+            }
+            return;
+        }
 
         if (node.dataset.band != null) {
             toggleBand(node.dataset.band, node.checked);

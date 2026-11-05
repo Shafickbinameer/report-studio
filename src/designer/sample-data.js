@@ -182,10 +182,13 @@ export function datasets(layout) {
 
     for (const grouping of groupings) {
         const fields = fieldsOf(datasetOf(grouping.table, layout) || fallback);
-        const bands = [grouping.header, grouping.footer]
+        const bands = grouping.levels
+            .flatMap(level => [level.header, level.footer])
             .filter(band => band && typeof band === 'object');
 
-        if (grouping.by) fields.add(grouping.by);
+        for (const level of grouping.levels) {
+            if (level.by) fields.add(level.by);
+        }
 
         for (const band of bands) covered.add(band);
         for (const key of keysIn(bands.map(band => ({ band, rowScoped: true }))).row) {
@@ -244,7 +247,7 @@ export function sampleData(layout) {
     const groupedBy = groupedFieldsByDataset(layout);
 
     for (const [name, fields] of datasets(layout)) {
-        data[name] = rowsFor([...fields], groupedBy.get(name) ?? null, summed);
+        data[name] = rowsFor([...fields], groupedBy.get(name) ?? [], summed);
     }
 
     return data;
@@ -351,17 +354,18 @@ export function summedFields(layout) {
 
 
 /**
- * The field each dataset is grouped by: each grouped table's, on its own
- * dataset. Two tables grouped differently over one dataset get the first's.
+ * The fields each dataset is grouped by, outermost level first: each grouped
+ * table's, on its own dataset. Two tables grouped differently over one dataset
+ * get the first's.
  * @param {object} layout
- * @returns {Map<string, string>}
+ * @returns {Map<string, string[]>}
  */
 function groupedFieldsByDataset(layout) {
     const found = new Map();
 
     for (const grouping of groupingsOf(layout)) {
         const name = datasetOf(grouping.table, layout) || layout?.dataset || 'rows';
-        if (!found.has(name)) found.set(name, grouping.by);
+        if (!found.has(name)) found.set(name, grouping.levels.map(level => level.by).filter(Boolean));
     }
 
     return found;
@@ -417,6 +421,11 @@ function place(data, path, value) {
 }
 
 
+/**
+ * @param {string[]} fields
+ * @param {string[]} groupBy the fields the rows are grouped by, outermost first
+ * @param {Set<string>} [summed]
+ */
 function rowsFor(fields, groupBy, summed = new Set()) {
     if (!fields.length) return [];
 
@@ -424,13 +433,19 @@ function rowsFor(fields, groupBy, summed = new Set()) {
         const row = {};
 
         for (const field of fields) {
+            const level = groupBy.indexOf(field);
+
             /**
-             * The grouping field repeats, or every row is its own group and the
-             * sample shows nothing about how grouping looks.
+             * A grouping field repeats, or every row is its own group and the
+             * sample shows nothing about how grouping looks. Each level inside
+             * the first changes half as often as the one before, so every outer
+             * group holds more than one inner one.
              */
-            row[field] = field === groupBy
-                ? GROUPS[index % GROUPS.length]
-                : valueFor(field, index, summed.has(field));
+            row[field] = level === -1
+                ? valueFor(field, index, summed.has(field))
+                : level === 0
+                    ? GROUPS[index % GROUPS.length]
+                    : `${label(field)} ${Math.floor(index / 2 ** level) % 2 + 1}`;
         }
 
         return row;
