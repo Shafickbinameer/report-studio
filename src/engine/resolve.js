@@ -11,6 +11,8 @@
  */
 
 import { assertLayout, assertData } from './validate.js';
+import { levelsOf, tablesOf } from './tables.js';
+import { effectiveFormat, formatValue } from './format.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -71,6 +73,60 @@ export function isRowScoped(type) {
 
 
 /**
+ * The key of a text item that is one placeholder and nothing else - "{total}"
+ * or "{sum(amount)}" - or null. Such an item prints one value, and the stage
+ * that fills it in keeps that value as `raw`, so a spreadsheet can hold the
+ * number rather than the text it was printed as.
+ * @param {string} value a text item's value
+ * @returns {string|null}
+ */
+export function soleKey(value) {
+    const match = typeof value === 'string' ? value.trim().match(/^{([^{}]+)}$/) : null;
+    return match ? match[1].trim() : null;
+}
+
+
+/**
+ * Every format in the layout, with the report's defaults filled in under it.
+ *
+ * Done once, here, on the copy every later stage works on - so measure.js, the
+ * renderer and the exporters read a text item's or a column's `format` as it
+ * stands, and none of them has to be handed the report's defaults as well.
+ * @param {object} layout the copy being resolved
+ */
+function settleFormats(layout) {
+    const defaults = layout.format;
+    const settle = (owner) => {
+        const settled = effectiveFormat(owner?.format, defaults);
+        if (settled) owner.format = settled;
+    };
+
+    const textIn = (band) => (Array.isArray(band?.items) ? band.items : [])
+        .filter(item => item?.type === 'text');
+
+    for (const band of layout.bands) textIn(band).forEach(settle);
+
+    for (const table of tablesOf(layout)) {
+        for (const column of (Array.isArray(table.columns) ? table.columns : [])) {
+            /**
+             * A column whose calculation is a share holds 0.25 for a quarter;
+             * printed as it comes that reads as a number, not a share.
+             */
+            if (column && !column.format && /^\s*percentage\s*\(/.test(column.expression ?? '')) {
+                column.format = { type: 'percent' };
+            }
+            settle(column);
+        }
+
+        for (const level of levelsOf(table)) {
+            textIn(level?.header).forEach(settle);
+            textIn(level?.footer).forEach(settle);
+        }
+    }
+}
+
+
+/**
  * Resolves the report JSON with the provided data
  * @param {*} rptJson
  * @param {*} rptData
@@ -84,6 +140,8 @@ export function resolve(rptJson, rptData) {
     // so that report will not affect
     const resolved = structuredClone(rptJson);
 
+    settleFormats(resolved);
+
     for (const band of resolved.bands) {
         /**
          * A group band's placeholders are mostly row fields ({name} is the
@@ -91,18 +149,39 @@ export function resolve(rptJson, rptData) {
          * this stage cannot resolve there is deferred rather than blanked, so
          * grouping still has it to work with.
          */
-        const deferUnknown = GROUP_BANDS.includes(band.type);
+        resolveBand(band, rptData, GROUP_BANDS.includes(band.type), resolved.format);
 
+        /** a table's own group bands are group bands just the same */
         for (const item of band.items) {
-            if (item.type == "text")
-                item.text = resolveTxt(item, rptData, deferUnknown);
+            if (item.type !== 'table') continue;
 
-            if (item.type == "image")
-                item.resolvedSrc = resolveImage(item, rptData);
+            for (const level of levelsOf(item)) {
+                for (const groupBand of [level?.header, level?.footer]) {
+                    if (Array.isArray(groupBand?.items)) resolveBand(groupBand, rptData, true, resolved.format);
+                }
+            }
         }
     }
 
     return resolved;
+}
+
+
+/**
+ * Fills in what the root data can answer on one band's items.
+ * @param {object} band
+ * @param {object} rptData
+ * @param {boolean} deferUnknown leave an unresolvable key for the grouping stage
+ * @param {object} [defaults] the report's own format, for what an item leaves unsaid
+ */
+function resolveBand(band, rptData, deferUnknown, defaults) {
+    for (const item of band.items) {
+        if (item.type == "text")
+            item.text = resolveTxt(item, rptData, deferUnknown, defaults);
+
+        if (item.type == "image")
+            item.resolvedSrc = resolveImage(item, rptData);
+    }
 }
 
 
@@ -147,9 +226,18 @@ function resolveImage(item, rptData) {
  * @param {boolean} deferUnknown leave an unresolvable key for a later stage
  * @returns
  */
-function resolveTxt(item, rptData, deferUnknown) {
+function resolveTxt(item, rptData, deferUnknown, defaults) {
+    const sole = soleKey(item.value);
+
     return item.value.replace(REGEX, (match, key) => {
-        return validatePlaceHolder(match, key.trim(), rptData, item, deferUnknown);
+        const out = validatePlaceHolder(match, key.trim(), rptData, item, deferUnknown, defaults);
+
+        /** the value itself, for an item that prints nothing else */
+        if (sole === key.trim() && out !== match) {
+            item.raw = sole === 'today' ? new Date() : (findVal(sole, rptData) ?? null);
+        }
+
+        return out;
     })
 }
 
@@ -164,7 +252,7 @@ function resolveTxt(item, rptData, deferUnknown) {
  * @param {boolean} deferUnknown
  * @returns
  */
-function validatePlaceHolder(match, key, rptData, item, deferUnknown) {
+function validatePlaceHolder(match, key, rptData, item, deferUnknown, defaults) {
     /**
      * Handed on rather than reported. An aggregate belongs to grouping and a
      * page key belongs to pagination, so neither is resolvable here and neither
@@ -176,7 +264,12 @@ function validatePlaceHolder(match, key, rptData, item, deferUnknown) {
 
     if (PAGE_KEYS.includes(key)) return match;
 
-    if (key == 'today') return new Date().toISOString().slice(0, 10);
+    /**
+     * Today as the item's own date format, or the report's date pattern - in
+     * the local calendar, not UTC's, which before half past five in the
+     * morning in India was still yesterday.
+     */
+    if (key == 'today') return formatValue(new Date(), todayFormat(item.format, defaults));
 
     const value = findVal(key, rptData);
 
@@ -187,7 +280,21 @@ function validatePlaceHolder(match, key, rptData, item, deferUnknown) {
         return '';
     }
 
-    return String(value);
+    return formatValue(value, item.format);
+}
+
+
+/**
+ * The format {today} prints with: the item's, when it is a date format; else a
+ * plain date in the pattern the item's format carries from the report - which
+ * is ISO unless the report says otherwise.
+ * @param {object|undefined} format the item's, settled
+ * @param {object|undefined} defaults the report's
+ * @returns {object}
+ */
+function todayFormat(format, defaults) {
+    if (format?.type === 'date' || format?.type === 'datetime') return format;
+    return { type: 'date', pattern: format?.pattern ?? defaults?.pattern ?? 'yyyy-MM-dd' };
 }
 
 

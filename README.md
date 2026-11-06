@@ -201,9 +201,8 @@ Totals can name the dataset they add up:
 The named dataset does not need a table of its own. Any array in the data can
 be totalled this way.
 
-One table per report can be grouped. Set *Group by* on that table. A layout
-with a report-wide *Group by* still groups its first table. The group header
-and footer bands are shared, which is why only one table can use them.
+Any number of tables can be grouped, each by a field of its own — see
+[Grouping](#grouping).
 
 For CSV, the viewer's export writes every table in the order they print. From
 code, `toCSV(pages, { table: 'refunds' })` writes one table, and
@@ -234,6 +233,258 @@ nothing to write); it embeds `data:` pictures only. `await toXLSXAsync(pages)`
 fetches URL pictures first, and `reportImageSources(pages)` lists the URLs it
 would fetch. Pass `{ report: false }` or `{ tables: false }` to leave a kind of
 sheet out, or `{ styled: false }` for plain data with bold headers.
+
+### Grouping
+
+Set *Group by* on a table and its rows are split into groups by that field.
+Each grouped table has its own group header, drawn above each group, and group
+footer, drawn under it, so two grouped tables can look different and total
+different things. In the layout file a table carries them as `grouping`:
+
+```json
+{
+  "type": "table", "id": "refunds", "dataset": "refunds",
+  "grouping": [{
+    "by": "reason",
+    "header": { "height": 24, "items": [ { "id": "reason", "type": "text", "value": "Reason: {reason}" } ] },
+    "footer": { "height": 20, "items": [ { "id": "subtotal", "type": "text", "value": "Subtotal {sum(amount)}" } ] }
+  }]
+}
+```
+
+Inside a group band, `{reason}` is the group's value and `{sum(amount)}` adds
+up that group's rows only. A group that runs over a page break prints its
+header again on the next page and its footer only once, where it ends. Either
+band may be `null`, but not both.
+
+#### Ordering groups, and a page per group
+
+By default, groups come in the order their values first appear in the data.
+Each level can change that, either in the layout file or with *Order groups*
+and *New page for each group* in the designer:
+
+- `"sort": "asc"` or `"desc"` orders that level's groups by value. Numbers
+  sort as numbers, so 9 comes before 10, and "Item 9" comes before "Item 10".
+  Inner levels are sorted within each outer group.
+- `"newPage": true` starts every group of that level on a new page, except the
+  table's first group. The page repeats the column labels and every level's
+  header. A group longer than a page still continues onto the next.
+
+#### Groups within groups
+
+A table can be grouped more than once — by region, and within each region by
+city. In the designer, select a grouped table and press *Group within each
+group*. Then type the field into *Then group by*. Each level can be moved out
+or removed from there. In the layout file, each level is one more entry in
+`grouping`, with the outermost first:
+
+```json
+"grouping": [
+  { "by": "region",
+    "header": { "height": 24, "items": [ { "id": "r", "type": "text", "value": "Region {region}" } ] },
+    "footer": { "height": 20, "items": [ { "id": "rt", "type": "text", "value": "Region total {sum(amount)}" } ] } },
+  { "by": "city",
+    "header": { "height": 20, "items": [ { "id": "c", "type": "text", "value": "{city}" } ] },
+    "footer": { "height": 20, "items": [ { "id": "ct", "type": "text", "value": "City total {sum(amount)}" } ] } }
+]
+```
+
+- Each inner group sits inside its outer one. "Oslo" under North and "Oslo"
+  under South are two separate groups.
+- Each level's aggregates cover its own group. The region footer adds up the
+  whole region, and the city footer adds up that city only.
+- Headers print outermost first where their groups start. Footers print
+  innermost first where their groups end. The last city of a region prints its
+  city footer and then the region footer.
+- The column labels head each outermost group, not every city.
+- A page that continues a group repeats every level's header, so it still shows
+  "North › Oslo". The footers that finish a group are kept on the same page as
+  its last row.
+- No two levels may group by the same field, and a table may be grouped at
+  most 8 levels deep (`MAX_GROUP_LEVELS`).
+- In CSV and XLSX exports, each level gets its own column. The columns are
+  named after the fields; pass `groupLabel: ['Region', 'City']` to name them
+  yourself.
+
+Layouts written before 2.0 group with a report-wide or per-table `groupBy` and
+the report's own *groupHeader* and *groupFooter* bands. They still work
+unchanged, and the designer moves them onto the table when it opens them.
+`normalizeGrouping(layout)` does the same from code.
+
+### Number and date formats
+
+Select a text item, or look at a table column's card. Then press its **Format**
+button to choose how its values print. You can also right-click a text item
+and choose **Format…**, or right-click a table cell and choose **Format
+"Amount" column…** to format the column under the pointer. The Format Editor
+offers:
+
+- **Number, Currency or Percent:** decimal places, digit groups (`1,234,567`,
+  Indian `12,34,567`, or none), how negatives show (`-1,234`, `(1,234)` or
+  `1,234-`), and how zero shows (`0.00`, `-` or blank). Currency also has a
+  symbol, placed before or after the number. Percent multiplies by 100, so
+  `0.125` prints as `12.50%`.
+- **Date or Date & time:** a layout such as `dd/MM/yyyy`, `dd-MMM-yyyy` or
+  `d MMMM yyyy`, or a pattern of your own built from `yyyy MM MMM dd HH hh mm
+  ss a`.
+- **As it comes:** no formatting, which is the default.
+
+A sample line shows real values as you choose. In the layout file, a format
+sits on the item or the column:
+
+```json
+{ "field": "amount", "label": "Amount", "format": { "type": "currency", "decimals": 0 } }
+```
+
+**The report's defaults.** How digits are grouped, the currency symbol and the
+date layout are set once for the whole report, under *Numbers and dates* on the
+report rail (`layout.format`). An item's format only stores what differs from
+them, so changing the report's defaults changes every format that didn't ask
+for something else. A new report is neutral: `1,234,567`, no symbol, and
+`2026-06-17`. **Use Indian** sets `₹`, `1,00,000` and `dd/MM/yyyy` in one
+click.
+
+```json
+"format": { "grouping": "indian", "symbol": "₹", "pattern": "dd/MM/yyyy" }
+```
+
+What it applies to:
+
+- **Table cells.** Each cell prints in its column's format, and row heights are
+  measured on the printed text.
+- **Text placeholders, totals and group totals.** In a text item such as
+  `Total {sum(amount)}`, every placeholder prints in the item's format, and the
+  words stay as typed. `{count()}` always prints as a plain count.
+- **`{today}`** prints in the report's date layout, or the item's own if it has
+  a date format.
+- **Dates** come from the data as written (`2026-06-17`), so they never shift a
+  day across time zones. Values that aren't the format's type (a name in a
+  number column, an impossible date) print as they are.
+- **Excel.** Numbers stay real numbers and dates become real Excel dates, each
+  shown with a matching Excel number format, so the workbook still adds up and
+  sorts. A text item that is a single placeholder, such as a grand total,
+  becomes a formatted number on the Report sheet. Excel has no lakh grouping,
+  so Indian grouping uses conditional formats (`[>=10000000]` and
+  `[>=100000]`). As a result, a negative number of a lakh or more shows
+  international grouping in Excel, and the "zero shows as" choice isn't carried
+  over.
+- **CSV** writes the values themselves (`100000`, `2026-06-17`) by default.
+  Pass `{ formatted: true }` to write what's printed.
+
+`formatValue(value, format, defaults)` and `excelNumberFormat(format, defaults)`
+are exported for hosts that need the same rules.
+
+### Calculated columns
+
+A column can show a calculation instead of a field: type it into the
+**Calculation** box on the column's card. The result is worked out for each row
+and stored under the column's field, so from then on it behaves like any other
+field. It's formatted and highlighted, totalled by `{sum(amount)}` in any band,
+grouped and sorted by, and exported to Excel and CSV.
+
+```json
+{ "field": "amount", "label": "Amount", "expression": "{qty} * {price}", "format": { "type": "currency" } }
+```
+
+| Calculation | Gives |
+|---|---|
+| `{qty} * {price}` | arithmetic on fields: `+ - * / %` and brackets |
+| `round({amount} * 0.18, 2)` | GST at 18%, to 2 places |
+| `{amount} + {tax}` | a column can use an earlier column's result |
+| `{amount} - avg({amount})` | how far each row is from the average |
+| `percentage({amount})` | each row's share of the table total |
+| `percentage({amount}, group)` | each row's share of its own group |
+| `percentage({qty}, 500)` | each row as a share of a target |
+| `max({qty}, 1)` / `abs({diff})` | the larger of two values / without the sign |
+
+- **Totals over the table:** `sum()`, `avg()`, `min()`, `max()` and `count()`
+  work over every row of the table, and can take a calculation themselves:
+  `sum({qty} * {price})`.
+- **Missing inputs:** if an input isn't a number (a blank, a name), or a value
+  is divided by zero, the result is blank rather than an error.
+- **Errors:** a calculation that can't be read is reported with what's wrong
+  and where, for example `expression ends where a value is expected`.
+- **Shares:** a column whose calculation is a `percentage()` prints as a
+  percentage unless it has a format of its own.
+- **Your data:** the rows you pass in are never changed; calculated values go
+  onto copies.
+
+### Percentages
+
+`{percentage(...)}` gives a value as a share of another, such as each
+product's share of total sales. It works in any band and prints as a
+percentage.
+
+| Placeholder | Means | Example |
+|---|---|---|
+| `{percentage(sum(total))}` | this group's sum ÷ the whole table's | `57.08%` |
+| `{percentage(sum(total), parent)}` | this group's sum ÷ the group outside it (nested grouping) | city as a share of its region |
+| `{percentage(sum(total), 50000)}` | ÷ a target | `112.40%` of target |
+| `{percentage(sum(total), max(total))}` | ÷ another aggregate over the whole table | |
+| `{percentage(1000)}` | a number ÷ the table's money column total | `0.09%` |
+| `{percentage(count())}` | this group's rows ÷ all rows | |
+
+- **The part** can be any aggregate (`sum`, `count`, `avg`, `min`, `max`) or a
+  plain number. **What it's divided by** is optional: leave it out for the
+  whole table's total, or give a number, another aggregate, or `parent`.
+- **A plain number** with nothing to divide by is taken as a share of the
+  table's money column: the first column formatted as currency, then as a
+  number, then the right-most column that holds numbers.
+- **In a report band** (not a group band), the part is the whole table, so
+  `{percentage(sum(total))}` is 100%. Give a target or another aggregate
+  instead.
+- **How it prints:** with 2 decimals by default. Give the text item a Percent
+  format to change the decimals or the negative style. It prints as a
+  percentage even inside a currency-formatted item.
+- **Dividing by zero:** a share of zero, or of a field with no numbers, prints
+  blank.
+- **Highlight rules** test the percentage as read (57.08), not the fraction.
+- **Excel:** a text item that is only a percentage goes into Excel as the
+  fraction (0.5708) with a `0.00%` format.
+- **Designer:** "Percentage of total" is in the placeholder tool next to Sum
+  and the other aggregates.
+
+### Conditional formatting
+
+Highlight values by what they are, like Crystal Reports' Highlighting Expert:
+show negative amounts in red, shade overdue invoices, mark totals over a
+target in green. Rules can go in three places:
+
+- **A table column**, under *Highlight* on its card, or by right-clicking a
+  cell and choosing *Highlight "Amount" column…*. A rule tests the cell's
+  value or another field of its row, and styles that cell.
+- **A table's rows**, under *Row highlight* on the table's rail, or *Highlight
+  rows…* on the right-click menu. A rule tests a field of the row and styles
+  every cell in it. A column's own rules are applied on top, so a red figure
+  in a shaded row is both.
+- **A text item**, under *Format → Highlight*. A rule tests the value it
+  prints (when the item is a single placeholder such as `{sum(amount)}`), or
+  any field of the data. In a group footer, it tests that group's own total.
+
+Each rule is a condition and a style:
+
+```json
+"highlight": [
+  { "when": { "op": "<", "value": 0 }, "style": { "color": "#b3261e", "fontWeight": "bold" } },
+  { "when": { "op": ">=", "value": 100000 }, "style": { "color": "#1d6b3a", "background": "#e6f4ea" } }
+],
+"rowHighlight": [
+  { "when": { "field": "status", "op": "=", "value": "Overdue" }, "style": { "background": "#fdecec" } }
+]
+```
+
+- **Rule order.** Rules are checked in order, and only the first one that
+  holds is used. The editor's ↑ button changes the order.
+- **Tests:** equals, is not, less/more than, at most/at least, between (both
+  ends included), contains, starts with, is empty, is not empty.
+- **How values compare.** Numbers compare as numbers (`"1200"` counts), dates
+  by their day, and text ignores case. A word is never ordered against a
+  number or a date, so `"Pending" >= 1000` doesn't hold.
+- **Styles:** text colour, fill, bold and italic. A rule changes only what it
+  names.
+- **Where it applies.** The page, its row heights (a bold cell is measured
+  bold) and both Excel sheets all use the same rules. Excel cells are styled
+  as printed; they aren't live Excel conditional formats.
 
 ### Images
 

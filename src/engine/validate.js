@@ -7,7 +7,12 @@
  */
 
 
-import { tablesOf, hasOwnGrouping } from './tables.js';
+import { tablesOf, hasOwnGrouping, levelsOf, MAX_GROUP_LEVELS, GROUP_SORTS } from './tables.js';
+import {
+    FORMAT_TYPES, GROUPINGS, NEGATIVES, ZEROS, SYMBOL_POSITIONS, MAX_DECIMALS
+} from './format.js';
+import { HIGHLIGHT_OPS, HIGHLIGHT_STYLE_KEYS } from './highlight.js';
+import { parseExpression } from './calculate.js';
 import { designHeight } from './measure.js';
 
 
@@ -74,6 +79,8 @@ export function validateLayout(json) {
         issues.push('layout.groupBy must be a field name or null');
     }
 
+    validateFormat(json.format, 'layout.format', issues, false);
+
     const seenTypes = new Set();
 
     json.bands.forEach((band, i) => {
@@ -114,12 +121,18 @@ export function validateLayout(json) {
 /**
  * What the tables of a report may be, together.
  *
- * Any number of them, each bound to its own dataset - but two things they may
- * not do, because the engine has no honest way to print them:
+ * Any number of them, each bound to its own dataset, and any number of them
+ * grouped - each through a `grouping` of its own, which carries the bands its
+ * groups are drawn with. What they may not do, because the engine has no
+ * honest way to print it:
  *
- *   Two grouped tables. groupHeader and groupFooter are the report's bands, so
- *   both tables would draw their groups with the same heading - and a subtotal
- *   in it would be summed over whichever table happened to be drawn.
+ *   Two tables grouped the older way. `groupBy` on a table borrows the report's
+ *   groupHeader and groupFooter, and there is one of each - so both tables
+ *   would draw their groups with the same heading. A second grouped table says
+ *   so with a `grouping` of its own.
+ *
+ *   One table grouped both ways. Which of the two it meant is not something to
+ *   guess at.
  *
  *   Two tables side by side. Each table splits across pages on its own, so the
  *   one on the left would run to page three before the one on the right began,
@@ -142,14 +155,17 @@ function validateTables(json, bands, issues) {
         if (table.dataset != null && typeof table.dataset !== 'string') {
             issues.push(`table "${table.id}".dataset must be a dataset name or null`);
         }
+
+        validateGrouping(table, issues);
     }
 
     const grouped = tables.filter(hasOwnGrouping);
 
     if (grouped.length > 1) {
         issues.push(
-            `${grouped.length} tables are grouped (${grouped.map(t => `"${t.id}"`).join(', ')}); ` +
-            `a report groups one, because groupHeader and groupFooter are shared`);
+            `${grouped.length} tables are grouped by groupBy (${grouped.map(t => `"${t.id}"`).join(', ')}); ` +
+            `only one can use the report's groupHeader and groupFooter - give the others ` +
+            `a grouping of their own`);
     }
 
     if (grouped.length > 0 && json.groupBy == null
@@ -157,6 +173,16 @@ function validateTables(json, bands, issues) {
         issues.push(
             `table "${grouped[0].id}" is grouped by "${grouped[0].groupBy}" but there is ` +
             `no groupHeader or groupFooter band to show it`);
+    }
+
+    /** layout.groupBy means the first table, unless a table names its own groupBy */
+    const first = tables[0];
+
+    if (json.groupBy != null && grouped.length === 0
+        && first && levelsOf(first).length > 0) {
+        issues.push(
+            `layout.groupBy groups the first table, "${first.id}", which already has a ` +
+            `grouping of its own; remove one of the two`);
     }
 
     for (const band of bands) {
@@ -179,6 +205,122 @@ function validateTables(json, bands, issues) {
             }
         }
     }
+}
+
+
+/**
+ * A table's own grouping: a list of levels, each a field and the bands its
+ * groups are drawn with.
+ *
+ *   "grouping": [{ "by": "region", "header": { "height": 30, "items": [] }, "footer": null }]
+ *
+ * Levels are outermost first; each after the first groups within the groups of
+ * the one before. Grouping twice by the same field is refused - every group of
+ * the inner level would be the whole of its outer group, drawn twice over.
+ *
+ * @param {object} table
+ * @param {string[]} issues
+ */
+function validateGrouping(table, issues) {
+    if (table.grouping == null) return;
+
+    const where = `table "${table.id}".grouping`;
+
+    if (!Array.isArray(table.grouping)) {
+        issues.push(`${where} must be a list of group levels, or null`);
+        return;
+    }
+
+    if (table.grouping.length > 0 && hasOwnGrouping(table)) {
+        issues.push(
+            `table "${table.id}" is grouped both by groupBy and by grouping; remove groupBy`);
+    }
+
+    if (table.grouping.length > MAX_GROUP_LEVELS) {
+        issues.push(
+            `${where} has ${table.grouping.length} levels; a table may be grouped at ` +
+            `${MAX_GROUP_LEVELS} at most`);
+    }
+
+    /** the level each field was first grouped by, to name a repeat against */
+    const seen = new Map();
+
+    table.grouping.forEach((level, n) => {
+        const at = `${where}[${n}]`;
+
+        if (level == null || typeof level !== 'object' || Array.isArray(level)) {
+            issues.push(`${at} must be an object with by, header and footer`);
+            return;
+        }
+
+        if (typeof level.by !== 'string' || level.by === '') {
+            issues.push(`${at}.by must be the name of the field to group by`);
+        } else if (seen.has(level.by)) {
+            issues.push(
+                `${at} groups by "${level.by}" again, as ${where}[${seen.get(level.by)}] ` +
+                `already does; group each level by a different field`);
+        } else {
+            seen.set(level.by, n);
+        }
+
+        if (level.sort != null && !GROUP_SORTS.includes(level.sort)) {
+            issues.push(
+                `${at}.sort must be ${GROUP_SORTS.map(s => `"${s}"`).join(' or ')}, or null ` +
+                `to keep the groups in the order they are first seen`);
+        }
+
+        if (level.newPage != null && typeof level.newPage !== 'boolean') {
+            issues.push(`${at}.newPage must be true or false`);
+        }
+
+        validateGroupBand(level.header, `${at}.header`, issues);
+        validateGroupBand(level.footer, `${at}.footer`, issues);
+
+        if (level.header == null && level.footer == null) {
+            issues.push(`${at} has neither a header nor a footer to show its groups`);
+        }
+    });
+}
+
+
+/**
+ * One of a table's group bands: a band in all but its place in the file, so
+ * its items are checked the same way. It may not hold a table - it is drawn
+ * once for every group, inside the table it belongs to.
+ *
+ * @param {*} band
+ * @param {string} where
+ * @param {string[]} issues
+ */
+function validateGroupBand(band, where, issues) {
+    if (band == null) return;
+
+    if (typeof band !== 'object' || Array.isArray(band)) {
+        issues.push(`${where} must be a band with items, or null`);
+        return;
+    }
+
+    if (band.height != null && !(typeof band.height === 'number' && band.height >= 0)) {
+        issues.push(`${where}.height must be a number of pixels`);
+    }
+
+    if (band.background != null && (typeof band.background !== 'string' || band.background === '')) {
+        issues.push(`${where}.background must be a colour, or null`);
+    }
+
+    if (!Array.isArray(band.items)) {
+        issues.push(`${where}.items must be an array`);
+        return;
+    }
+
+    band.items.forEach((item, j) => {
+        if (item?.type === 'table') {
+            issues.push(`${where}.items[${j}] is a table; a group band cannot hold one`);
+            return;
+        }
+
+        validateItem(item, `${where}.items[${j}]`, issues);
+    });
 }
 
 
@@ -231,6 +373,8 @@ function validateItem(item, where, issues) {
         if (typeof item.value !== 'string') {
             issues.push(`${where}.value must be a string`);
         }
+        validateFormat(item.format, `${where}.format`, issues, true);
+        validateHighlight(item.highlight, `${where}.highlight`, issues, false);
         return;
     }
 
@@ -275,7 +419,120 @@ function validateItem(item, where, issues) {
         if (col == null || typeof col.field !== 'string' || col.field === '') {
             issues.push(`${where}.columns[${k}].field must be a non-empty string`);
         }
+        validateFormat(col?.format, `${where}.columns[${k}].format`, issues, true);
+
+        if (col?.expression != null && col.expression !== '') {
+            const parsed = typeof col.expression === 'string'
+                ? parseExpression(col.expression)
+                : { error: 'must be text' };
+            if (parsed.error) issues.push(`${where}.columns[${k}].expression ${parsed.error}`);
+        }
+        validateHighlight(col?.highlight, `${where}.columns[${k}].highlight`, issues, false);
     });
+
+    validateHighlight(item.rowHighlight, `${where}.rowHighlight`, issues, true);
+}
+
+
+/**
+ * A list of highlight rules: each a condition and the style it gives.
+ *
+ * @param {*} rules
+ * @param {string} where
+ * @param {string[]} issues
+ * @param {boolean} needsField whether every rule must name a field - a row's
+ *   rules do, a row having no one value of its own to test
+ */
+function validateHighlight(rules, where, issues, needsField) {
+    if (rules == null) return;
+
+    if (!Array.isArray(rules)) {
+        issues.push(`${where} must be a list of rules, or null`);
+        return;
+    }
+
+    rules.forEach((rule, n) => {
+        const at = `${where}[${n}]`;
+        const when = rule?.when;
+
+        if (when == null || typeof when !== 'object') {
+            issues.push(`${at}.when must say what to test`);
+            return;
+        }
+
+        if (!HIGHLIGHT_OPS.includes(when.op)) {
+            issues.push(`${at}.when.op "${when.op}" is not one of: ${HIGHLIGHT_OPS.join(', ')}`);
+        }
+
+        if (when.field != null && (typeof when.field !== 'string' || when.field === '')) {
+            issues.push(`${at}.when.field must be the name of a field`);
+        } else if (needsField && when.field == null) {
+            issues.push(`${at}.when.field must name the field of the row to test`);
+        }
+
+        if (when.op === 'between' && (when.value == null || when.to == null)) {
+            issues.push(`${at}.when needs both value and to for between`);
+        }
+
+        const style = rule.style;
+        if (style == null || typeof style !== 'object' || Array.isArray(style)) {
+            issues.push(`${at}.style must be an object`);
+            return;
+        }
+
+        for (const key of Object.keys(style)) {
+            if (!HIGHLIGHT_STYLE_KEYS.includes(key)) {
+                issues.push(`${at}.style.${key} is not one of: ${HIGHLIGHT_STYLE_KEYS.join(', ')}`);
+            }
+        }
+    });
+}
+
+
+/**
+ * A number or date format - a text item's, a column's, or the report's own
+ * defaults, which have every key but `type`. Every key is optional; what is
+ * there has to be one of the things format.js knows.
+ *
+ * @param {*} format
+ * @param {string} where
+ * @param {string[]} issues
+ * @param {boolean} typed whether it may say a `type` - the report's defaults may not
+ */
+function validateFormat(format, where, issues, typed) {
+    if (format == null) return;
+
+    if (typeof format !== 'object' || Array.isArray(format)) {
+        issues.push(`${where} must be an object, or null`);
+        return;
+    }
+
+    const oneOf = (key, list) => {
+        if (format[key] != null && !list.includes(format[key])) {
+            issues.push(`${where}.${key} "${format[key]}" is not one of: ${list.join(', ')}`);
+        }
+    };
+
+    if (typed) oneOf('type', FORMAT_TYPES);
+    else if (format.type != null) {
+        issues.push(`${where}.type is an item's or a column's to say, not the report's`);
+    }
+
+    oneOf('grouping', GROUPINGS);
+    oneOf('negative', NEGATIVES);
+    oneOf('zero', ZEROS);
+    oneOf('symbolPosition', SYMBOL_POSITIONS);
+
+    if (format.decimals != null && !(Number.isInteger(format.decimals)
+        && format.decimals >= 0 && format.decimals <= MAX_DECIMALS)) {
+        issues.push(`${where}.decimals must be a whole number from 0 to ${MAX_DECIMALS}`);
+    }
+
+    for (const key of ['symbol', 'pattern']) {
+        if (format[key] != null && typeof format[key] !== 'string') {
+            issues.push(`${where}.${key} must be text`);
+        }
+    }
 }
 
 

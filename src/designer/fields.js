@@ -11,6 +11,10 @@
  * Nothing here invents a field the engine does not read.
  */
 
+import { levelsOf } from '../engine/tables.js';
+import { setGroupBy } from './grouping.js';
+import { formatValue, DATE_PATTERNS, CURRENCY_SYMBOLS } from '../engine/format.js';
+
 
 /**
  * Spec 10 left the font list open, and closes it here: web-safe families only.
@@ -107,7 +111,13 @@ export const COLUMN_FIELDS = [
     { key: 'field', label: 'Field', type: 'text' },
     { key: 'label', label: 'Label', type: 'text' },
     { key: 'width', label: 'Width', type: 'number', min: 1 },
-    { key: 'align', label: 'Align', type: 'choice', options: ALIGNMENTS }
+    { key: 'align', label: 'Align', type: 'choice', options: ALIGNMENTS },
+    {
+        key: 'expression', label: 'Calculation', type: 'text',
+        hint: 'Blank shows the field as it is. A calculation - {qty} * {price}, ' +
+            'round({amount} * 0.18, 2), percentage({amount}) - is worked out for ' +
+            "each row and saved under this column's field"
+    }
 ];
 
 
@@ -219,11 +229,7 @@ export function fieldsFor(item) {
                         hint: "The key in the data object whose rows this table " +
                             "draws. Blank reads the report's dataset"
                     },
-                    {
-                        key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
-                        hint: 'A field to group these rows by, or blank. One table ' +
-                            'in a report can be grouped'
-                    }
+                    GROUP_BY
                 ]
             },
             {
@@ -490,6 +496,11 @@ function pageFields(layout) {
  * @returns {object[]} `{ title, fields }` sections
  */
 export function reportFields(layout) {
+    /**
+     * No *Group by* here any more. Grouping is a table's own - each grouped
+     * table carries its field and the bands its groups are drawn with - so it
+     * is set on the table, where there is no question which one it means.
+     */
     if (!layout) return [];
 
     return [
@@ -501,11 +512,6 @@ export function reportFields(layout) {
                     key: 'dataset', label: 'Dataset', type: 'text', nullable: true,
                     hint: 'The key in the data object that drives the rows, ' +
                         'for every table that does not name its own'
-                },
-                {
-                    key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
-                    hint: 'A field name, or blank for no grouping. Groups the ' +
-                        'first table, unless a table sets its own'
                 }
             ]
         },
@@ -521,9 +527,70 @@ export function reportFields(layout) {
                 num('page.margin.bottom', 'Bottom', { min: 0 }),
                 num('page.margin.left', 'Left', { min: 0 })
             ]
+        },
+        {
+            /**
+             * What every number and date format in the report falls back on.
+             * A text item or a column says it is money or a date; how money
+             * and dates are written is said once, here.
+             */
+            title: 'Numbers and dates',
+            fields: [
+                {
+                    key: 'format.grouping', label: 'Digit groups', type: 'choice',
+                    options: [
+                        { value: 'international', label: '1,234,567' },
+                        { value: 'indian', label: '12,34,567 (Indian)' },
+                        { value: 'none', label: '1234567' }
+                    ]
+                },
+                {
+                    key: 'format.symbol', label: 'Currency', type: 'choice',
+                    options: CURRENCY_SYMBOLS, custom: true,
+                    hint: 'The symbol currency formats print; Custom… for one not listed'
+                },
+                {
+                    key: 'format.symbolPosition', label: 'Symbol goes', type: 'choice',
+                    options: [
+                        { value: 'before', label: 'Before ₹100' },
+                        { value: 'after', label: 'After 100 ₹' }
+                    ]
+                },
+                {
+                    key: 'format.pattern', label: 'Dates', type: 'choice',
+                    options: datePatternChoices(layout.format?.pattern),
+                    hint: 'How a date prints unless its own format says otherwise'
+                }
+            ],
+            actions: [{
+                action: 'format-india', label: 'Use Indian: ₹, 1,00,000, dd/MM/yyyy',
+                title: 'Indian digit groups, the rupee and day/month/year dates'
+            }]
         }
     ];
 }
+
+
+/**
+ * The date layouts a choice offers, each shown as the date it prints - ISO
+ * first, being the default. A pattern the report already has that is not one
+ * of them is offered too, so the choice can show it.
+ * @param {string|undefined} current
+ * @returns {{value: string, label: string}[]}
+ */
+export function datePatternChoices(current) {
+    const patterns = ['yyyy-MM-dd', ...DATE_PATTERNS.filter(p => p !== 'yyyy-MM-dd')];
+    if (typeof current === 'string' && current && !patterns.includes(current)) patterns.push(current);
+
+    return patterns.map(pattern => ({
+        value: pattern,
+        label: formatValue(SAMPLE_DATE, { type: 'date', pattern })
+    }));
+}
+
+
+/** the day the format choices are shown with */
+const SAMPLE_DATE = '2026-06-17';
 
 
 export function allReportFields(layout) {
@@ -535,6 +602,25 @@ export function allReportFields(layout) {
 export function allFields(item) {
     return fieldsFor(item).flatMap(section => section.fields);
 }
+
+
+/**
+ * A table's *Group by*: the field its own grouping splits the rows by.
+ *
+ * Derived rather than a path, because there is more to turning grouping on
+ * than one value - a table that was not grouped gets a header to show its
+ * groups in, and clearing the box takes the grouping away. setGroupBy is where
+ * that is decided. It rebuilds the rail when it turns grouping on or off,
+ * since that is when the table's group band controls come and go.
+ */
+const GROUP_BY = {
+    key: 'groupBy', label: 'Group by', type: 'text', nullable: true,
+    hint: 'A field to group these rows by, or blank. Each grouped table has ' +
+        'its own group header and footer',
+    read: (table) => levelsOf(table)[0]?.by ?? table.groupBy ?? null,
+    write: (table, value) => setGroupBy(table, value),
+    rebuilds: (table) => levelsOf(table).length > 0
+};
 
 
 function pathOf(key) {
@@ -564,6 +650,37 @@ export function readField(item, field) {
     }
 
     return node;
+}
+
+
+/**
+ * Takes a value off an item, so it is as if it had never been set - which for
+ * a colour is "none": a box with no fill, text in the stylesheet's colour.
+ *
+ * Removed rather than written as null, because absent is what an item that was
+ * never given one says, and the engine and the renderer read the two alike.
+ *
+ * @param {object} item mutated in place
+ * @param {object} field
+ * @returns {boolean} true when there was a value to take off
+ */
+export function clearField(item, field) {
+    if (field.read || field.write) return false;
+
+    const path = pathOf(field.key);
+    const last = path.pop();
+
+    let node = item;
+    for (const step of path) {
+        if (node?.[step] == null || typeof node[step] !== 'object') return false;
+        node = node[step];
+    }
+
+    /** a null standing in the file is already none */
+    if (node[last] == null) return false;
+
+    delete node[last];
+    return true;
 }
 
 

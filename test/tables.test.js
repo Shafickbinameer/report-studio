@@ -82,7 +82,10 @@ describe('which tables a report has', () => {
     /** every layout from before there could be two tables says it this way */
     it('reads a report-wide groupBy as the first table', () => {
         expect(groupingOf({ ...json, groupBy: 'name' }))
-            .toEqual({ table: tablesOf(json)[0], by: 'name' });
+            .toEqual({
+                table: tablesOf(json)[0], by: 'name', header: null, footer: null,
+                levels: [{ by: 'name', header: null, footer: null }]
+            });
     });
 
     it("prefers a table's own groupBy to the report's", () => {

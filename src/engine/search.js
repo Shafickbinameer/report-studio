@@ -7,6 +7,9 @@
  * vanilla preview and a future React Preview share one implementation.
  */
 
+import { fragmentBandsOf } from './tables.js';
+import { formatValue } from './format.js';
+
 
 /**
  * Every occurrence of {query} in a built report, in page order.
@@ -80,10 +83,14 @@ function collectTable(item, pageNO, bandType, needle, caseSensitive, matches) {
 
     /** a grouped table carries its rows inside per-group fragments */
     for (const fragment of (item.groups ?? [])) {
-        collectBand(fragment.headerBand, pageNO, 'groupHeader', needle, caseSensitive, matches);
+        const { headers, footers } = fragmentBandsOf(fragment);
+
+        for (const band of headers) {
+            collectBand(band, pageNO, 'groupHeader', needle, caseSensitive, matches);
+        }
         collectRows(fragment.rows, columns, item.id, pageNO, bandType, needle, caseSensitive, matches);
-        if (fragment.showFooter) {
-            collectBand(fragment.footerBand, pageNO, 'groupFooter', needle, caseSensitive, matches);
+        for (const band of footers) {
+            collectBand(band, pageNO, 'groupFooter', needle, caseSensitive, matches);
         }
     }
 }
@@ -92,7 +99,8 @@ function collectTable(item, pageNO, bandType, needle, caseSensitive, matches) {
 function collectRows(rows, columns, itemId, pageNO, bandType, needle, caseSensitive, matches) {
     for (const row of (rows ?? [])) {
         for (const column of columns) {
-            push(matches, row?.[column.field], {
+            /** what the page shows, so ₹1,00,000 is found as it is read */
+            push(matches, formatValue(row?.[column.field], column.format), {
                 pageNO, bandType, itemId, field: column.field
             }, needle, caseSensitive);
         }

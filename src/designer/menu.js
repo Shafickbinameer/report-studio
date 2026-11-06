@@ -32,10 +32,17 @@ export const MENU_EDGE_GAP = 8;
  * @param {boolean} [options.canPaste] whether the clipboard holds anything
  * @param {boolean} [options.canDuplicate] false when a copy of the selection
  *   would be one the report cannot hold
+ * @param {{label: string, index?: number}|null} [options.format] what a Format
+ *   entry would format, when what was right-clicked has values to format - a
+ *   text item, or the table column under the pointer; null offers none
+ * @param {{label: string, index?: number}|null} [options.highlight] the same,
+ *   for a Highlight entry
+ * @param {boolean} [options.rows] offer to highlight the table's rows
  * @returns {object[]} entries, in the order they are drawn
  */
 export function menuActions({
-    count = 0, canPaste = false, canDuplicate = true
+    count = 0, canPaste = false, canDuplicate = true, format = null, highlight = null,
+    rows = false
 } = {}) {
     const many = count > 1 ? ` ${count} items` : '';
 
@@ -44,12 +51,40 @@ export function menuActions({
         glyph: 'paste',
         label: 'Paste',
         hint: 'ctrl+V',
+        keys: 'Ctrl+V',
         disabled: !canPaste
     };
 
     if (count < 1) return [paste];
 
+    /** first, being about this item rather than about the clipboard */
+    const about = [
+        format && {
+            action: 'edit-format',
+            glyph: 'format',
+            label: format.label,
+            hint: 'number, currency, percent or date',
+            index: format.index
+        },
+        highlight && {
+            action: 'edit-highlight',
+            glyph: 'highlight',
+            label: highlight.label,
+            hint: 'colour values by what they are',
+            index: highlight.index
+        },
+        rows && {
+            action: 'edit-row-highlight',
+            glyph: 'highlight',
+            label: 'Highlight rows…',
+            hint: 'shade whole rows by a field'
+        }
+    ].filter(Boolean);
+
+    const formatting = about.length ? [...about, { separator: true }] : [];
+
     return [
+        ...formatting,
         {
             action: 'duplicate-item',
             glyph: 'duplicate',
@@ -57,13 +92,15 @@ export function menuActions({
                 ? `Duplicate${many}`
                 : 'This cannot be duplicated',
             hint: 'ctrl+D, or alt-drag',
+            keys: 'Ctrl+D',
             disabled: !canDuplicate
         },
         {
             action: 'copy-items',
             glyph: 'copy',
             label: `Copy${many}`,
-            hint: 'ctrl+C'
+            hint: 'ctrl+C',
+            keys: 'Ctrl+C'
         },
         paste,
         { separator: true },
@@ -72,6 +109,7 @@ export function menuActions({
             glyph: 'delete',
             label: `Delete${many}`,
             hint: 'del',
+            keys: 'Del',
             tone: 'danger'
         }
     ];
@@ -79,9 +117,10 @@ export function menuActions({
 
 
 /**
- * The pill's markup. Icon-only, like the bar and the tool strip: the label is
- * on the button for a screen reader and in the tooltip for everyone else, so
- * the pill stays small enough to open over the page without covering it.
+ * The menu's markup: one row per action - its icon, its name, and the keys
+ * that do the same from anywhere. Named rather than icon-only: a copy and a
+ * duplicate are two overlapping squares either way, and a menu is read, not
+ * recognised. The longer hint stays in the tooltip.
  *
  * @param {object[]} actions from menuActions
  * @returns {string} markup
@@ -92,10 +131,15 @@ export function drawMenu(actions) {
         : `<button type="button" role="menuitem"
                    class="dz-menu-item${one.tone ? ` is-${esc(one.tone)}` : ''}"
                    data-action="${esc(one.action)}"
+                   ${one.index != null ? `data-index="${esc(one.index)}"` : ''}
                    title="${esc(one.label)} (${esc(one.hint)})"
                    aria-label="${esc(one.label)}"
                    ${one.disabled ? 'disabled' : ''}
-            >${icon(one.glyph)}</button>`;
+            >${[
+                `<span class="dz-menu-icon" aria-hidden="true">${icon(one.glyph)}</span>`,
+                `<span class="dz-menu-label">${esc(one.label)}</span>`,
+                one.keys ? `<kbd class="dz-menu-keys">${esc(one.keys)}</kbd>` : ''
+            ].join('')}</button>`;
 
     return `<div class="dz-menu" data-role="menu" role="menu"
                  aria-label="Item actions">${actions.map(entry).join('')}</div>`;

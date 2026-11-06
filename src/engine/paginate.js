@@ -1,6 +1,11 @@
 
 import { pageRegions, bandZoneHeight } from './regions.js';
-import { designHeight, total, headerHeightFor } from './measure.js';
+import { levelsOf, groupFrame, fragmentBandsOf, startsPage } from './tables.js';
+import { designHeight, total, headerHeightFor, bandsHeight } from './measure.js';
+import { formatValue, percentFormat } from './format.js';
+import { PERCENTAGE, shownValue } from './group.js';
+import { soleKey } from './resolve.js';
+import { highlightFor } from './highlight.js';
 
 
 const REGEX = /\{([^{}]+)\}/g;
@@ -23,8 +28,6 @@ export function paginate(json) {
             pageHeader: paginateJSON.bands.find(b => b.type === "pageHeader"),
             pageFooter: paginateJSON.bands.find(b => b.type === "pageFooter"),
             detail: paginateJSON.bands.find(b => b.type === "detail"),
-            groupHeader: paginateJSON.bands.find(b => b.type === "groupHeader") || null,
-            groupFooter: paginateJSON.bands.find(b => b.type === "groupFooter") || null,
         }
     };
 
@@ -124,7 +127,7 @@ function calPages(bands, context) {
 
     // spreading the report header and footer from the context.assignedBands
     const { assignedBands, availableHeight } = context;
-    const { reportFooter, reportHeader, groupHeader, groupFooter, pageHeader, pageFooter } = assignedBands;
+    const { reportFooter, reportHeader, pageHeader, pageFooter } = assignedBands;
 
     /**
      * The detail zone of a continuation page - no report header, no report
@@ -310,7 +313,13 @@ function calPages(bands, context) {
 
                 place(calBand, { ...structuredClone(item), y: pageY(itemY) });
             }
-            else if (localBottom > detailZone() && item.type == "table") {
+            /**
+             * A table goes down the splitting path when it overflows - or when
+             * one of its groups has to start a page, which a table placed whole
+             * on the page it starts on would never do.
+             */
+            else if (item.type == "table"
+                && (localBottom > detailZone() || breaksPages(item))) {
 
                 /**
                  * Where the next slice of this table starts inside the band. The
@@ -328,13 +337,26 @@ function calPages(bands, context) {
 
                 // when the table has group
                 if (item.groups) {
-                    /**  reserved hgt for group table at least i a page we should fit this
-                    * table header, group header, min of one row and the group footer
-                    * also provide the table header hgt , group header and footer hgt
-                    */
-                    const grpHeaderHgt = groupHeader?.measuredHeight ?? 0;
-                    const grpFooterHgt = groupFooter?.measuredHeight ?? 0;
+                    /**
+                     * What a fragment draws around its rows - column labels, the
+                     * headers of every level it opens, the footers of every level
+                     * it closes - is groupFrame's to say, the same rule measure.js
+                     * sized the table by. A table grouped at one level frames every
+                     * fragment the same way; a nested one does not, so the frame
+                     * is asked for afresh for each slice rather than added up once.
+                     */
                     const tblHeaderHgt = item.headerMeasured ?? headerHeightFor(item);
+                    const levels = levelsOf(item);
+
+                    /** what the bands and labels around one fragment's rows cost */
+                    const frameOf = (grp, firstOnPage, ends) => {
+                        const frame = groupFrame(item, grp, firstOnPage, ends);
+                        return {
+                            frame,
+                            above: (frame.columnHeader ? tblHeaderHgt : 0) + bandsHeight(frame.headers),
+                            below: bandsHeight(frame.footers)
+                        };
+                    };
 
                     /** the tallest row anywhere in the table, since any group may hold it */
                     const tallest = Math.max(
@@ -342,19 +364,25 @@ function calPages(bands, context) {
                         ...(item.groups ?? []).flatMap(grp =>
                             heightsFor(item, grp.rows, grp.rowHeights)));
 
-                    const reservedSpace =
-                        tblHeaderHgt + grpHeaderHgt + tallest + grpFooterHgt;
+                    /**
+                     * The most a slice can need: the labels, every level's
+                     * header, one row and every level's footer - a group that is
+                     * the last of its region and of its city at once.
+                     */
+                    const reservedSpace = tblHeaderHgt + tallest
+                        + total(levels.map(level => level?.header?.measuredHeight ?? 0))
+                        + total(levels.map(level => level?.footer?.measuredHeight ?? 0));
 
                     /**
                      * same trap as the ungrouped path: if the minimum viable slice
-                     * (table header + group header + one row + group footer) is taller
-                     * than an empty page we would allocate pages forever.
+                     * (table header + group headers + one row + group footers) is
+                     * taller than an empty page we would allocate pages forever.
                      */
                     const sliceFitsAnyPage = reservedSpace <= freshPageHeight;
 
                     if (!sliceFitsAnyPage) {
                         console.warn(
-                            `Table "${item.id}": table header + group header + one row + group footer ` +
+                            `Table "${item.id}": table header + group headers + one row + group footers ` +
                             `(${reservedSpace}px) exceeds the ${freshPageHeight}px printable page. ` +
                             `Falling back to one row per page; rows will overflow their page.`
                         );
@@ -363,28 +391,29 @@ function calPages(bands, context) {
                     /**
                      * How many rows of a group fit in {room} px.
                      *
-                     * The group footer only prints on the fragment that finishes the
-                     * group, so it is reserved only when this page could actually
-                     * finish it. Without that the last slice of a group added
-                     * grpFooterHgt that nobody had budgeted for, and the detail band
-                     * grew past its zone straight over the page footer.
+                     * The group footers only print on the fragment that finishes
+                     * the group, so they are reserved only when this page could
+                     * actually finish it. Without that the last slice of a group
+                     * added footer height that nobody had budgeted for, and the
+                     * detail band grew past its zone straight over the page footer.
                      *
-                     * When the rows would fit but the footer would not, one row is
-                     * deliberately held back so the footer lands on the next page
+                     * When the rows would fit but the footers would not, one row is
+                     * deliberately held back so the footers land on the next page
                      * beside a row rather than alone.
                      * @param {number[]} heights the group's row heights, in order
                      * @param {number} from the first row of this group still unplaced
                      * @param {number} room px left in the detail zone below the table top
                      * @param {number} rowsLeft rows still unplaced in this group
+                     * @param {number} above labels and headers over this slice
+                     * @param {number} below footers under it, if it ends the group
                      * @returns {number} rows to place now, possibly 0
                      */
-                    const fitRows = (heights, from, room, rowsLeft) => {
-                        const body = room - grpHeaderHgt - tblHeaderHgt;
+                    const fitRows = (heights, from, room, rowsLeft, above, below) => {
+                        const body = room - above;
 
-                        const withFooter = rowsThatFit(
-                            heights, from, body - grpFooterHgt, rowsLeft);
+                        const withFooter = rowsThatFit(heights, from, body - below, rowsLeft);
 
-                        /** the group ends here, so its footer has to fit here too */
+                        /** the group ends here, so its footers have to fit here too */
                         if (rowsLeft <= withFooter) return rowsLeft;
 
                         return Math.min(
@@ -394,25 +423,37 @@ function calPages(bands, context) {
                     };
 
 
-                    /**
-                     * this groups variable helps us to know for current page how much groups are their
-                     */
+                    /** the fragments placed on the page being built */
                     let calGroups = [];
 
                     let calItemHeight = 0; // used to cal the item hgt
 
 
-
                     /**
-                     * Looping the group to allocate it to the bands
-                     * so while looping we will gonna loop every groups (grp A, grp B etc...)
-                     * at first push table and group header input the calBand
-                     * then push the can fit rows to the calBand
+                     * Each innermost group in turn - for a one-level table, each
+                     * group. A group that does not fit what is left of a page has
+                     * as many rows placed as do, and carries on at the top of the
+                     * next with its headers drawn again.
                      */
+                    for (const [n, grp] of item.groups.entries()) {
 
+                        /**
+                         * A group at a level that says `newPage` closes the page
+                         * the group before it is on, whatever room is left.
+                         */
+                        if (startsPage(item, grp, n) && calGroups.length > 0) {
+                            const dupItem = structuredClone(item);
 
-                    for (const grp of item.groups) {
+                            dupItem.groups = calGroups;
+                            dupItem.y = tableY;
+                            dupItem.measuredHeight = calItemHeight;
+                            place(calBand, dupItem);
 
+                            calBand = breakPage(calBand, band, itemY);
+                            calGroups = [];
+                            calItemHeight = 0;
+                            tableY = 0;
+                        }
 
                         let currIdx = 0;
                         const rowLen = grp.rows.length;
@@ -423,19 +464,24 @@ function calPages(bands, context) {
                             /** the table starts at tableY, so only what is below it is usable */
                             const roomHgt = detailZone() - tableY - calItemHeight;
 
+                            const firstOnPage = calGroups.length === 0;
+
                             /** a page we have already emptied cannot be emptied again - take the slice as is */
-                            const isFreshPage = calGroups.length === 0
+                            const isFreshPage = firstOnPage
                                 && calBand.items.length === 0
                                 && tableY === 0
                                 && detailZone() >= freshPageHeight;
 
+                            const { above } = frameOf(grp, firstOnPage, false);
+                            const { below } = frameOf(grp, firstOnPage, true);
+
                             /**
                              * Rows this page can take. fitRows reserves the group
-                             * footer whenever the group would end here, so the slice
-                             * it hands back always fits the detail zone.
+                             * footers whenever the group would end here, so the
+                             * slice it hands back always fits the detail zone.
                              */
                             let canFitRows = fitRows(
-                                heights, currIdx, roomHgt, rowLen - currIdx);
+                                heights, currIdx, roomHgt, rowLen - currIdx, above, below);
 
                             /**
                              * A page we have already emptied cannot be emptied again,
@@ -470,31 +516,12 @@ function calPages(bands, context) {
 
                             const hasMoreRows = currIdx < rowLen;
 
-                            const occHgt = total(slice)
-                                + (grpHeaderHgt + tblHeaderHgt)
-                                + (!hasMoreRows ? grpFooterHgt : 0);
+                            const { frame, above: drawnAbove, below: drawnBelow } =
+                                frameOf(grp, firstOnPage, !hasMoreRows);
 
-                            calItemHeight += occHgt;
+                            calItemHeight += total(slice) + drawnAbove + drawnBelow;
 
-                            /**
-                             * groupHeader / groupFooter are templates, not flow bands - they never
-                             * land on a page of their own. Resolve them per fragment here, where the
-                             * group's own rows and aggregates are in hand, so render/ only has to draw.
-                             */
-                            let grpFragment = {
-                                key: grp.key,
-                                rows: rows,
-                                rowHeights: slice,
-                                aggregates: grp.aggregates,
-                                showHeader: true,
-                                showFooter: !hasMoreRows,
-                                headerBand: resolveGroupBand(groupHeader, grp, rows[0]),
-                                footerBand: !hasMoreRows
-                                    ? resolveGroupBand(groupFooter, grp, rows[0])
-                                    : null
-                            }
-
-                            calGroups.push(grpFragment);
+                            calGroups.push(groupFragment(grp, frame, rows, slice, !hasMoreRows));
                         }
                     }
 
@@ -600,7 +627,7 @@ function calPages(bands, context) {
                  * enough to overflow.
                  */
                 const placed = item.type === "table" && item.groups
-                    ? { ...item, groups: wholeGroupFragments(item, groupHeader, groupFooter) }
+                    ? { ...item, groups: wholeGroupFragments(item) }
                     : item;
 
                 place(calBand, { ...structuredClone(placed), y: pageY(itemY) });
@@ -684,24 +711,70 @@ function anchorBands(pages) {
 }
 
 /**
+ * Whether any group of a table has to start a page of its own.
+ * @param {object} item a table
+ * @returns {boolean}
+ */
+function breaksPages(item) {
+    return Array.isArray(item.groups) && item.groups.some((grp, n) => startsPage(item, grp, n));
+}
+
+
+/**
  * Every group of a table that fits on one page, as unsplit fragments. Gives the
  * no-overflow path the same shape the splitting path produces.
- * @param {object} item the table item carrying groups
- * @param {object|null} groupHeader
- * @param {object|null} groupFooter
+ * @param {object} item the table item carrying groups, and its own group bands
  * @returns {object[]}
  */
-function wholeGroupFragments(item, groupHeader, groupFooter) {
-    return item.groups.map(grp => ({
+function wholeGroupFragments(item) {
+    return item.groups.map((grp, n) => groupFragment(
+        grp, groupFrame(item, grp, n === 0, true), grp.rows, grp.rowHeights, true));
+}
+
+
+/**
+ * One group's rows on one page, with the bands drawn around them resolved for
+ * that group - which is everything render/ needs to draw it.
+ *
+ *   showHeader    whether the table's column labels head this fragment
+ *   showFooter    whether this fragment ends its group
+ *   headerBands   the group headers over the rows, outermost first
+ *   footerBands   the group footers under them, innermost first
+ *   headerBand    the innermost level's header, when it is drawn here, and
+ *   footerBand    its footer: all of a one-level table's group bands, under
+ *                 the names they have always had
+ *
+ * Each band in the lists carries `level`, 0 for the outermost.
+ *
+ * @param {object} grp the innermost group, from group.js
+ * @param {{columnHeader: boolean, headers: object[], footers: object[]}} frame from groupFrame
+ * @param {object[]} rows the rows placed
+ * @param {number[]} rowHeights their heights
+ * @param {boolean} ends whether this is the group's last fragment
+ * @returns {object}
+ */
+function groupFragment(grp, frame, rows, rowHeights, ends) {
+    const innermost = (grp.levels?.length ?? 1) - 1;
+
+    const resolved = ({ level, band }) => resolveGroupBand(
+        band, grp.levels?.[level] ?? grp, rows[0], level);
+
+    const headerBands = frame.headers.map(resolved);
+    const footerBands = frame.footers.map(resolved);
+
+    return {
         key: grp.key,
-        rows: grp.rows,
-        rowHeights: grp.rowHeights,
+        path: grp.path ?? [grp.key],
+        rows,
+        rowHeights,
         aggregates: grp.aggregates,
-        showHeader: true,
-        showFooter: true,
-        headerBand: resolveGroupBand(groupHeader, grp, grp.rows[0]),
-        footerBand: resolveGroupBand(groupFooter, grp, grp.rows[0])
-    }));
+        showHeader: frame.columnHeader,
+        showFooter: ends,
+        headerBands,
+        footerBands,
+        headerBand: headerBands.find(band => band.level === innermost) ?? null,
+        footerBand: footerBands.find(band => band.level === innermost) ?? null
+    };
 }
 
 
@@ -709,15 +782,18 @@ function wholeGroupFragments(item, groupHeader, groupFooter) {
  * Fills in a groupHeader / groupFooter template for one group fragment.
  * Unlike the aggregate pass in group.js this keeps the literal text around a
  * placeholder, so "Subtotal: {sum(price)}" stays "Subtotal: 160".
- * @param {object|null} bandTemplate the shared groupHeader / groupFooter band
- * @param {object} grp the group being placed, carrying its aggregates
+ * @param {object|null} bandTemplate the table's own groupHeader / groupFooter band
+ * @param {object} grp the group the band is drawn for, carrying its aggregates -
+ *   for an outer level's band, that level's group
  * @param {object} sampleRow any row of the group - all share the groupBy value
+ * @param {number} [level=0] the level the band is drawn for
  * @returns {object|null} a resolved clone, or null when no template exists
  */
-function resolveGroupBand(bandTemplate, grp, sampleRow) {
+function resolveGroupBand(bandTemplate, grp, sampleRow, level = 0) {
     if (!bandTemplate) return null;
 
     const resolved = structuredClone(bandTemplate);
+    resolved.level = level;
 
     for (const item of resolved.items) {
         if (item.type !== "text") continue;
@@ -725,10 +801,26 @@ function resolveGroupBand(bandTemplate, grp, sampleRow) {
          * Build on `text`, not `value` - resolve.js has already put the root
          * data in and deliberately left everything group-scoped standing.
          */
-        item.text = (item.text ?? item.value).replace(
-            REGEX,
-            (match, key) => groupPlaceholder(match, key.trim(), grp, sampleRow)
-        );
+        const sole = soleKey(item.value);
+
+        item.text = (item.text ?? item.value).replace(REGEX, (match, key) => {
+            const found = groupPlaceholder(match, key.trim(), grp, sampleRow);
+
+            /** the value itself, for an item that prints nothing else - a subtotal */
+            if (sole === key.trim() && found.value !== undefined) {
+                item.raw = found.value;
+                if (found.share) item.rawFormat = percentFormat(item.format);
+            }
+
+            if (found.value === undefined) return found.text;
+            if (found.value == null) return '';
+            if (found.share) return formatValue(found.value, percentFormat(item.format));
+            return formatValue(found.value, found.count ? null : item.format);
+        });
+
+        /** a subtotal's rules, asked of this group's total; a field reads the group's row */
+        const lit = highlightFor(item.highlight, shownValue(item), sampleRow);
+        if (lit) item.highlighted = lit;
     }
 
     return resolved;
@@ -744,21 +836,24 @@ function resolveGroupBand(bandTemplate, grp, sampleRow) {
  * @param {string} key
  * @param {object} grp
  * @param {object} sampleRow
- * @returns {string}
+ * @returns {{text?: string, value?: *, count?: boolean}} `text` for a token
+ *   left standing, else the `value` it stands for - formatted by the caller
  */
 function groupPlaceholder(match, key, grp, sampleRow) {
-    if (PAGE_KEYS.includes(key)) return match;
+    if (PAGE_KEYS.includes(key)) return { text: match };
 
     const expr = key.match(/^(\w+)\((.*?)\)$/);
 
     if (expr) {
         const [, fn, field] = expr;
-        const value = grp.aggregates?.[field]?.[fn.trim()];
-        return value == null ? '' : String(value);
+        return {
+            value: grp.aggregates?.[field]?.[fn.trim()] ?? null,
+            count: fn.trim() === 'count',
+            share: fn.trim() === PERCENTAGE
+        };
     }
 
-    const value = sampleRow?.[key];
-    return value == null ? '' : String(value);
+    return { value: sampleRow?.[key] ?? null };
 }
 
 
@@ -857,8 +952,10 @@ function resolvePageKeys(band, pageNO, totalPages) {
 
         if (item.type === "table" && item.groups) {
             for (const fragment of item.groups) {
-                resolvePageKeys(fragment.headerBand, pageNO, totalPages);
-                resolvePageKeys(fragment.footerBand, pageNO, totalPages);
+                const { headers, footers } = fragmentBandsOf(fragment);
+                for (const groupBand of [...headers, ...footers]) {
+                    resolvePageKeys(groupBand, pageNO, totalPages);
+                }
             }
         }
     }

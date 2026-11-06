@@ -25,7 +25,6 @@ export function blankLayout() {
             margin: { top: 40, right: 40, bottom: 40, left: 40 }
         },
         dataset: null,
-        groupBy: null,
         bands: [
             { type: 'pageHeader', height: 60, items: [] },
             { type: 'detail', items: [] },

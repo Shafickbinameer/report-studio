@@ -8,6 +8,9 @@
  */
 
 import { textHeight } from './text-metrics.js';
+import { levelsOf, groupFrame } from './tables.js';
+import { formatValue } from './format.js';
+import { cellHighlight } from './highlight.js';
 
 
 /**
@@ -151,10 +154,17 @@ export function rowHeightsFor(item, rows) {
             const width = widths[index];
             if (!(width > 0)) continue;
 
-            const value = row?.[column.field];
-            if (value === null || value === undefined || value === '') continue;
+            /** measured as printed: ₹1,00,000.00 wraps where 100000 would not */
+            const value = formatValue(row?.[column.field], column.format);
+            if (value === '') continue;
 
-            tallest = Math.max(tallest, textHeight(String(value), width, font));
+            /** a bold highlight is wider, and may wrap where the plain text did not */
+            const lit = cellHighlight(item, column, row);
+            const drawn = lit?.fontWeight || lit?.fontStyle
+                ? { ...font, fontWeight: lit.fontWeight ?? font.fontWeight, fontStyle: lit.fontStyle ?? font.fontStyle }
+                : font;
+
+            tallest = Math.max(tallest, textHeight(String(value), width, drawn));
         }
 
         return tallest;
@@ -289,7 +299,8 @@ function measureItem(item, json) {
  */
 function measureTextItem(item) {
     const declared = item.h ?? 0;
-    const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0, item.style);
+    const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0,
+        item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : item.style);
     return Math.max(declared, wrapped);
 }
 
@@ -344,20 +355,25 @@ function measureTableItem(item, json) {
         return headerHgt + total(item.rowHeights);
     }
 
-    const groups = item.groups ?? [];
-    const grpHeaderHgt = bandHeight(json, 'groupHeader');
-    const grpFooterHgt = bandHeight(json, 'groupFooter');
+    /** every level's bands, so each carries the measuredHeight paginate.js reads */
+    for (const level of levelsOf(item)) {
+        groupBandHeight(level?.header, json);
+        groupBandHeight(level?.footer, json);
+    }
 
     let height = 0;
 
-    for (const group of groups) {
+    /** the table whole, on one page: only its first group is first on the page */
+    item.groups.forEach((group, n) => {
         group.rowHeights = rowHeightsFor(item, group.rows);
 
-        height += headerHgt
-            + grpHeaderHgt
+        const frame = groupFrame(item, group, n === 0, true);
+
+        height += (frame.columnHeader ? headerHgt : 0)
+            + bandsHeight(frame.headers)
             + total(group.rowHeights)
-            + grpFooterHgt;
-    }
+            + bandsHeight(frame.footers);
+    });
 
     return height;
 }
@@ -370,22 +386,33 @@ export function total(list) {
 
 
 /**
- * Height of a template band that never flows on its own (groupHeader /
- * groupFooter). It is measured here rather than read raw so a group band whose
- * text wraps is still accounted for.
- * @param {object} json
- * @param {string} type
+ * What a list of group bands from groupFrame is worth, by the heights measured
+ * onto them.
+ * @param {{band: object}[]} framed
  * @returns {number}
  */
-function bandHeight(json, type) {
-    const band = json.bands.find(b => b.type === type);
-    if (!band?.items) return 0;
+export function bandsHeight(framed) {
+    return total(framed.map(({ band }) => band?.measuredHeight ?? 0));
+}
 
-    let contentHeight = 0;
-    for (const item of band.items) {
-        const height = item.type === 'text' ? measureTextItem(item) : 0;
-        contentHeight = Math.max(contentHeight, (item.y ?? 0) + height);
-    }
 
-    return Math.max(band.height ?? 0, contentHeight);
+/**
+ * Height of a template band that never flows on its own - one of a grouped
+ * table's group bands. It is measured here rather than read raw so a group band
+ * whose text wraps is still accounted for.
+ *
+ * Measured with measureBand, the same as every other band, and the answer left
+ * on the band as measuredHeight. paginate.js reserves room for a group by that
+ * figure, so this has to be the same figure: a separate count of text items
+ * only, as there was, said a group band holding a box taller than its text was
+ * shorter here than it was there.
+ *
+ * @param {object|null} band
+ * @param {object} json
+ * @returns {number}
+ */
+function groupBandHeight(band, json) {
+    if (!Array.isArray(band?.items)) return 0;
+
+    return measureBand(band, json).measuredHeight;
 }

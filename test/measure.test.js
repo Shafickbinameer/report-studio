@@ -192,7 +192,8 @@ describe('measure - table height', () => {
         const out = measured(json, { items: groupedRows(['A', 'B'], 5) });
 
         /** per group: table header 32 + group header 22 + 5 x 28 + group footer 20 */
-        expect(out.bands[1].items[0].measuredHeight).toBe(2 * (32 + 22 + 140 + 20));
+        const detail = out.bands.find(b => b.type === 'detail');
+        expect(detail.items[0].measuredHeight).toBe(2 * (32 + 22 + 140 + 20));
     });
 });
 

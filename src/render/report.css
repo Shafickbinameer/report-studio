@@ -222,11 +222,6 @@
   border: none;
 }
 
-/* warm, so a group break reads differently from a column header */
-.page .group-header .group-band-cell {
-  background: var(--accent-soft, #fdf1e9);
-}
-
 .page .group-band-cell .band p {
   padding: 0 8px;
 }

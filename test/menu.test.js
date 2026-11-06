@@ -73,7 +73,46 @@ describe('menuActions', () => {
 });
 
 
+describe('menuActions, with something to format', () => {
+    it('puts Format first, ruled off from the rest', () => {
+        const list = menuActions({ count: 1, format: { label: 'Format…' } });
+
+        expect(list[0]).toMatchObject({ action: 'edit-format', label: 'Format…', glyph: 'format' });
+        expect(list[1].separator).toBe(true);
+        expect(actionsOf(list)).toEqual(
+            ['edit-format', 'duplicate-item', 'copy-items', 'paste-items', 'delete-item']);
+    });
+
+    it('carries the column it formats', () => {
+        const [format] = menuActions({ count: 1, format: { label: 'Format "Price" column…', index: 2 } });
+
+        expect(format.index).toBe(2);
+    });
+
+    it('offers no Format with nothing selected', () => {
+        expect(actionsOf(menuActions({ count: 0, format: { label: 'Format…' } })))
+            .toEqual(['paste-items']);
+    });
+});
+
+
 describe('drawMenu', () => {
+    it('names every action on its row, with its keys', () => {
+        const html = drawMenu(menuActions({ count: 1, canPaste: true }));
+
+        for (const [label, keys] of [['Duplicate', 'Ctrl+D'], ['Copy', 'Ctrl+C'],
+            ['Paste', 'Ctrl+V'], ['Delete', 'Del']]) {
+            expect(html).toContain(`<span class="dz-menu-label">${label}</span>`);
+            expect(html).toContain(`<kbd class="dz-menu-keys">${keys}</kbd>`);
+        }
+    });
+
+    it("carries a Format entry's column to the action", () => {
+        const html = drawMenu(menuActions({ count: 1, format: { label: 'F', index: 2 } }));
+
+        expect(html).toMatch(/data-action="edit-format"\s+data-index="2"/);
+    });
+
     it('draws a menu of buttons, each named for a screen reader', () => {
         const html = drawMenu(menuActions({ count: 1, canPaste: true }));
 

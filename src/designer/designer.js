@@ -17,7 +17,7 @@ import { allFields, allReportFields, fieldsFor, reportFields } from './fields.js
 import { blankLayout, isEmptyLayout } from './blank.js';
 import {
     drawSheet, selectionBox, selectionBoxes, bandUnder, bandBox, drawGuides,
-    guideLines, guideNubs
+    guideLines, guideNubs, designZones, zoneStyle
 } from './canvas.js';
 import { attachEditing } from './select.js';
 import {
@@ -32,7 +32,11 @@ import {
 } from '../preview/viewer.js';
 import { buildPages } from '../engine/index.js';
 import { drawProblems, sameIssues } from './toast.js';
-import { askColumns, askReport, askName, askData, askToken, askDiscard } from './dialog.js';
+import {
+    askColumns, askReport, askName, askData, askToken, askDiscard, askFormat, askHighlight
+} from './dialog.js';
+import { INDIAN_DEFAULTS, effectiveFormat } from '../engine/format.js';
+import { availableFields } from './tokens.js';
 import { sampleData, completeData } from './sample-data.js';
 import { drawPreview } from './preview.js';
 import { createHistory } from './history.js';
@@ -42,6 +46,10 @@ import {
     moveItemToBand, createText, createTable, createLine, createBox, createImage, addColumn,
     removeColumn, targetBand, canAddTable
 } from './structure.js';
+import {
+    openLayout, copyGroupDesign, groupBandsIn, parseBandKey,
+    addGroupLevel, removeGroupLevel, moveGroupLevelOut
+} from './grouping.js';
 
 
 /** the raster formats the renderer will draw from a data: URI; see imageSrc */
@@ -198,7 +206,12 @@ export function createDesigner({
          */
         rulers: false,
 
-        layout: isEmptyLayout(layout) ? blankLayout() : layout,
+        /**
+         * A layout grouped the older way has its grouping moved onto its
+         * table here, once - every control in the designer edits a table's
+         * own grouping. Any other layout is the host's own object, untouched.
+         */
+        layout: isEmptyLayout(layout) ? blankLayout() : openLayout(layout),
         /**
          * The selected items, oldest first, as `{ band, id }` - the band type
          * and the item id, because ids are only unique within a band
@@ -396,6 +409,29 @@ export function createDesigner({
             /** a table's height is its rows', so it is never written here */
             if (item.type !== 'table') drawn.style.height = `${item.h}px`;
         }
+
+        if (boxes.some(({ item }) => item.type === 'table')) patchTableZones();
+    }
+
+
+    /**
+     * A grouped table's group bands are drawn inside it, as zones of their own
+     * on top of it - so a table being dragged or resized takes them along, and
+     * their names in the gutter with them.
+     */
+    function patchTableZones() {
+        const margin = state.layout.page.margin;
+
+        for (const z of designZones(state.layout)) {
+            if (!z.table) continue;
+
+            const key = cssEscape(z.type);
+            const zone = canvas.querySelector(`.dz-zone[data-band-type="${key}"]`);
+            if (zone) zone.setAttribute('style', zoneStyle(z, margin));
+
+            const tag = canvas.querySelector(`[data-band-tag="${key}"]`);
+            if (tag) tag.style.top = `${z.top + margin.top}px`;
+        }
     }
 
 
@@ -424,7 +460,7 @@ export function createDesigner({
 
         panel.innerHTML = many > 1
             ? drawManyPanel(selectedItems())
-            : (selected() ? drawPanel(selected()) : drawReportPanel(state.layout));
+            : (selected() ? drawPanel(selected(), state.layout) : drawReportPanel(state.layout));
     }
 
 
@@ -556,7 +592,7 @@ export function createDesigner({
      * nothing draws an outline round empty space.
      */
     function replaceLayout(next, { id: nextId, dirty }) {
-        state.layout = next;
+        state.layout = openLayout(next);
         state.selection = [];
 
         /** another report is another design; its pages have not been run yet */
@@ -738,8 +774,9 @@ export function createDesigner({
      *
      * @param {number} clientX
      * @param {number} clientY
+     * @param {Element|null} [target] what was right-clicked, for which column
      */
-    function openMenu(clientX, clientY) {
+    function openMenu(clientX, clientY, target = null) {
         closeMenu();
 
         main.insertAdjacentHTML('beforeend', drawMenu(menuActions({
@@ -747,10 +784,12 @@ export function createDesigner({
             canPaste: state.clipboard.length > 0,
             /** should canAddTable ever say no, a copy of a table is what it refuses */
             canDuplicate: canAddTable(state.layout)
-                || !selectedItems().some(item => item.type === 'table')
+                || !selectedItems().some(item => item.type === 'table'),
+            ...aboutTarget(target)
         })));
 
         menu = main.querySelector('[data-role="menu"]');
+        menu.addEventListener('keydown', onMenuArrows);
 
         /**
          * Bound to the pill, not to the page area: a delegated listener out
@@ -799,7 +838,7 @@ export function createDesigner({
             setSelection(null);
         }
 
-        openMenu(event.clientX, event.clientY);
+        openMenu(event.clientX, event.clientY, event.target);
     }
 
 
@@ -812,6 +851,92 @@ export function createDesigner({
         /** closed first: what follows redraws, and a stale pill would outlive it */
         closeMenu();
         act(node.dataset.action, node.dataset);
+    }
+
+
+    /**
+     * What a Format entry in the menu would format: the text item that was
+     * right-clicked, or the column of the table cell under the pointer. One
+     * item only - a format is one item's, and a choice made for six would be
+     * a different edit from the one the editor describes.
+     *
+     * @param {Element|null} target
+     * @returns {{label: string, index?: number}|null}
+     */
+    function formatTarget(target) {
+        if (state.selection.length !== 1) return null;
+
+        const item = selected();
+        if (item?.type === 'text') return { label: 'Format…' };
+        if (item?.type !== 'table') return null;
+
+        const index = columnUnder(target);
+        if (index === null) return null;
+
+        const column = item.columns[index];
+        return { label: `Format "${column.label || column.field}" column…`, index };
+    }
+
+
+    /**
+     * The table column under the pointer: a data cell or a heading, not a
+     * group band's full-width row - or null.
+     * @param {Element|null} target
+     * @returns {number|null}
+     */
+    function columnUnder(target) {
+        const cell = target?.closest?.('td, th');
+        if (!cell || cell.classList.contains('group-band-cell')) return null;
+
+        return selected()?.columns?.[cell.cellIndex] ? cell.cellIndex : null;
+    }
+
+
+    /**
+     * What the menu's entries about the item itself act on: Format and
+     * Highlight for a text item or the column under the pointer, and the
+     * table's rows for a table.
+     * @param {Element|null} target
+     * @returns {{format: object|null, highlight: object|null, rows: boolean}}
+     */
+    function aboutTarget(target) {
+        const format = formatTarget(target);
+        const item = state.selection.length === 1 ? selected() : null;
+
+        let highlight = null;
+        if (item?.type === 'text') highlight = { label: 'Highlight…' };
+        if (format && item?.type === 'table') {
+            const column = item.columns[format.index];
+            highlight = { label: `Highlight "${column.label || column.field}" column…`, index: format.index };
+        }
+
+        return { format, highlight, rows: item?.type === 'table' };
+    }
+
+
+    /**
+     * Up and down move through the menu, as in any other. Stopped here, on the
+     * menu: on their way to the document they would nudge the selection too.
+     */
+    function onMenuArrows(event) {
+        const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const items = [...menu.querySelectorAll('button:not([disabled])')];
+        if (!items.length) return;
+
+        const at = items.indexOf(menu.ownerDocument.activeElement);
+        const next = {
+            ArrowDown: (at + 1) % items.length,
+            ArrowUp: (at - 1 + items.length) % items.length,
+            Home: 0,
+            End: items.length - 1
+        }[event.key];
+
+        items[next].focus();
     }
 
 
@@ -899,7 +1024,8 @@ export function createDesigner({
             }
 
             case 'add-table': {
-                const type = targetBand(state.layout, primary());
+                /** never onto a group band, which is drawn inside a table */
+                const type = targetBand(state.layout, primary(), { table: true });
                 if (!type) return;
 
                 if (!canAddTable(state.layout)) return;
@@ -1018,6 +1144,115 @@ export function createDesigner({
 
                 state.selection = [];
                 restructured(`delete:${gone}`);
+                return;
+            }
+
+            case 'copy-grouping':
+                if (item?.type !== 'table' || !data?.from) return;
+
+                if (copyGroupDesign(state.layout, item.id, data.from)) {
+                    /** whatever was selected on the bands just replaced is gone */
+                    state.selection = state.selection.filter(one => itemAt(one));
+                    restructured(`grouping:copy:${item.id}`);
+                }
+                return;
+
+            case 'edit-format': {
+                /** a text item's own format, or one of a table's columns' */
+                const isColumn = data?.index != null && item?.type === 'table';
+                const owner = isColumn ? item.columns?.[Number(data.index)] : item;
+                if (!owner || (!isColumn && item?.type !== 'text')) return;
+
+                const name = isColumn ? (owner.label || owner.field || 'column') : item.id;
+                const where = primary();
+
+                askFormat(root, owner.format, state.layout.format, { title: `Format: ${name}` })
+                    .then(answer => {
+                        if (!answer) return;
+
+                        /**
+                         * Still the same item, holding the same column - an undo
+                         * while the dialog was up swaps in a different layout.
+                         */
+                        if (itemAt(where) !== item) return;
+                        if (isColumn && !item.columns?.includes(owner)) return;
+
+                        if (answer.format) owner.format = answer.format;
+                        else delete owner.format;
+
+                        restructured(`format:${item.id}${isColumn ? `:${data.index}` : ''}`);
+                    });
+                return;
+            }
+
+            case 'edit-highlight':
+            case 'edit-row-highlight': {
+                const rows = action === 'edit-row-highlight';
+                const isColumn = !rows && data?.index != null && item?.type === 'table';
+                const owner = isColumn ? item.columns?.[Number(data.index)] : item;
+
+                if (!owner) return;
+                if (rows ? item.type !== 'table' : (!isColumn && item.type !== 'text')) return;
+
+                const key = rows ? 'rowHighlight' : 'highlight';
+                const name = rows ? `${item.id} rows`
+                    : isColumn ? (owner.label || owner.field || 'column') : item.id;
+
+                /** what a rule may test: a table's columns, or the data's fields */
+                const fields = item.type === 'table'
+                    ? (item.columns ?? []).map(c => c.field).filter(Boolean)
+                    : availableFields(state.layout);
+
+                const where = primary();
+
+                askHighlight(root, owner[key], {
+                    title: `Highlight: ${name}`,
+                    fields: isColumn ? fields.filter(f => f !== owner.field) : fields,
+                    rows,
+                    format: isColumn || item.type === 'text' ? effectiveFormat(owner.format, state.layout.format) : null
+                }).then(answer => {
+                    if (!answer) return;
+                    if (itemAt(where) !== item) return;
+                    if (isColumn && !item.columns?.includes(owner)) return;
+
+                    if (answer.rules) owner[key] = answer.rules;
+                    else delete owner[key];
+
+                    restructured(`highlight:${item.id}${isColumn ? `:${data.index}` : rows ? ':rows' : ''}`);
+                });
+                return;
+            }
+
+            case 'format-india':
+                state.layout.format = { ...(state.layout.format ?? {}), ...INDIAN_DEFAULTS };
+                restructured('format:report:india');
+                return;
+
+            case 'add-group-level':
+                if (item?.type !== 'table') return;
+
+                if (addGroupLevel(item) !== -1) restructured(`grouping:add-level:${item.id}`);
+                return;
+
+            case 'remove-group-level':
+            case 'move-group-level-out': {
+                if (item?.type !== 'table') return;
+
+                const level = Number(data?.level);
+                const done = action === 'remove-group-level'
+                    ? removeGroupLevel(item, level)
+                    : moveGroupLevelOut(item, level);
+
+                if (done) {
+                    /**
+                     * A table's group band keys name levels by position, so
+                     * once levels move or go a selection on one of them may
+                     * point at another level's band - or at none.
+                     */
+                    state.selection = state.selection
+                        .filter(one => parseBandKey(one.band)?.table !== item.id);
+                    restructured(`grouping:${action}:${item.id}:${level}`);
+                }
                 return;
             }
 
@@ -1419,7 +1654,8 @@ export function createDesigner({
 
     /** whether an item is still in the layout - undo can take it while a dialog is open */
     function itemStillThere(item) {
-        return (state.layout.bands ?? []).some(band => (band.items ?? []).includes(item));
+        const bands = [...(state.layout.bands ?? []), ...groupBandsIn(state.layout).map(g => g.band)];
+        return bands.some(band => (band.items ?? []).includes(item));
     }
 
 
@@ -1450,6 +1686,12 @@ export function createDesigner({
 
         const trimmed = String(raw).trim();
 
+        /**
+         * A table's group band is sized in pixels only: it is drawn inside the
+         * table, once per group, where a share of the page means nothing.
+         */
+        if (parseBandKey(type) && /%$/.test(trimmed)) return;
+
         if (trimmed === '') delete band.height;
         else if (/^-?[\d.]+\s*%$/.test(trimmed)) band.height = trimmed;
         else if (Number.isFinite(Number(trimmed))) band.height = Number(trimmed);
@@ -1458,6 +1700,34 @@ export function createDesigner({
         /** the rail is not rebuilt - the box being typed into is in it */
         draw();
         record(`band-height:${type}`);
+    }
+
+
+    /**
+     * A group band's background, or none. Only a table's group bands take one:
+     * they are drawn inside the table, where a shaded "Region North" row is
+     * how a reader finds where each group starts.
+     *
+     * @param {string} type a group band key
+     * @param {string|null} color a #rrggbb, or null for none
+     */
+    function setBandFill(type, color) {
+        if (!parseBandKey(type)) return;
+
+        const band = findBand(state.layout, type);
+        if (!band) return;
+
+        if (color) {
+            if (band.background === color) return;
+            band.background = color;
+        } else {
+            if (band.background == null) return;
+            delete band.background;
+        }
+
+        /** the rail is not rebuilt - a colour picker may still be open in it */
+        draw();
+        record(`band-fill:${type}`);
     }
 
 
@@ -1621,13 +1891,44 @@ export function createDesigner({
          */
         changed: (key, { rebuild = false } = {}) => {
             draw();
-            if (rebuild) drawRail();
+            if (rebuild) redrawRailKeepingFocus();
             record(key);
         },
         act,
         toggleBand,
-        setBandHeight
+        setBandHeight,
+        setBandFill
     });
+
+    /**
+     * Rebuilds the rail without taking the focus out of the control being
+     * typed in.
+     *
+     * *Group by* changes the rail's shape on the letter that turns grouping on
+     * - the table's group band controls appear - and that letter is rarely the
+     * last one. So the field that had the focus gets it back, caret and all,
+     * and the rest of the word goes where it was being typed.
+     */
+    function redrawRailKeepingFocus() {
+        const active = doc.activeElement;
+        const key = panel.contains(active) ? active?.dataset?.field : null;
+        const caret = key && typeof active.selectionStart === 'number'
+            ? [active.selectionStart, active.selectionEnd]
+            : null;
+
+        drawRail();
+
+        if (!key) return;
+
+        const again = panel.querySelector(`[data-field="${cssEscape(key)}"]:not([data-column])`);
+        if (!again) return;
+
+        again.focus();
+        if (caret && typeof again.setSelectionRange === 'function') {
+            try { again.setSelectionRange(...caret); } catch { /* not a text control */ }
+        }
+    }
+
 
     /** the bar and the footer both carry actions; the rail wires its own */
     function onChromeClick(event) {

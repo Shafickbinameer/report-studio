@@ -20,8 +20,15 @@ export { search, searchPages } from './search.js';
 export { pageRegions, bandZoneHeight, resolveHeight, DEFAULT_BAND_HEIGHTS } from './regions.js';
 export { toCSV, toReportCSV, reportFilename, reportTables } from './csv.js';
 export { toXLSX, toXLSXAsync, reportImageSources, XLSX_MIME } from './xlsx.js';
-export { tablesOf, datasetOf, groupingOf } from './tables.js';
+export {
+    tablesOf, datasetOf, groupingOf, groupingsOf, groupBandsOf, levelsOf, isGrouped, normalizeGrouping,
+    fragmentBandsOf, MAX_GROUP_LEVELS
+} from './tables.js';
 export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
+export {
+    formatValue, describeFormat, excelNumberFormat, DEFAULT_FORMAT, INDIAN_DEFAULTS
+} from './format.js';
+export { highlightFor, cellHighlight, describeHighlight } from './highlight.js';
 
 
 /**

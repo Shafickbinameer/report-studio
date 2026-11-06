@@ -16,9 +16,13 @@
  *   |  pageHeader             |   anchored zones, from pageRegions()
  *   |  reportHeader           |
  *   |  - - - - - - - - - - -  |
- *   |    groupHeader          |   the repeating unit, stacked inside
  *   |    detail               |   whatever the detail region has left
- *   |    groupFooter          |
+ *   |     +- table -------+   |
+ *   |     | headings      |   |
+ *   |     | groupHeader   |   |   a grouped table's own group bands, drawn
+ *   |     | rows          |   |   inside it, where each group prints them
+ *   |     | groupFooter   |   |
+ *   |     +---------------+   |
  *   |  - - - - - - - - - - -  |
  *   |  reportFooter           |
  *   |  pageFooter             |   pinned to the bottom edge
@@ -28,9 +32,10 @@
 import { pageRegions, bandZoneHeight } from '../engine/regions.js';
 import { items, esc } from '../render/items.js';
 import {
-    SAMPLE_ROWS, designHeight, itemBox, resizableAxes, handlesFor
+    SAMPLE_ROWS, designHeight, itemBox, resizableAxes, handlesFor, levelStrips
 } from './geometry.js';
 import { ticksFor, guidesOf } from './rulers.js';
+import { groupBandKey, bandLabel } from './grouping.js';
 
 
 /** zones that own a strip of the page, drawn top to bottom */
@@ -59,9 +64,40 @@ function designItem(item) {
     }
 
     if (item.type === 'table') {
+        const strips = levelStrips(item);
+
+        if (!strips.length) {
+            return {
+                ...item,
+                row: sampleRows(item.columns),
+                measuredHeight: designHeight(item)
+            };
+        }
+
+        /**
+         * A grouped table is drawn as one of its groups, through the same
+         * markup a printed group is - headings, group headers, rows, group
+         * footers; every level's, where a group that starts and ends every
+         * level draws them. The group bands are left empty here: each is drawn
+         * over its row as a zone of its own, so what is on it can be selected
+         * and dragged like anything on any other band.
+         */
+        const room = (strip) => ({
+            height: strip.h, level: strip.level, items: [],
+            /** shaded as it will print, so the design shows where groups start */
+            background: strip.band?.background ?? null
+        });
+        const of = (kind) => strips.filter(s => s.kind === kind).map(room);
+
         return {
             ...item,
-            row: sampleRows(item.columns),
+            groups: [{
+                showHeader: true,
+                showFooter: true,
+                headerBands: of('groupHeader'),
+                footerBands: of('groupFooter'),
+                rows: sampleRows(item.columns)
+            }],
             measuredHeight: designHeight(item)
         };
     }
@@ -73,17 +109,31 @@ function designItem(item) {
 /**
  * Where every band sits on the design page, in printable-area coordinates.
  *
- * groupHeader and groupFooter own no zone of their own - at print time they are
- * drawn inside the detail table, once per group. Here they are stacked at the
- * top and bottom of the detail region, which is where they land on the page and
- * makes the repeating unit legible.
+ * A table's group header and footer are drawn inside the table, once per group,
+ * so that is where they are designed: each is a zone of its own laid over the
+ * table, as wide as it is, between the column headings and the rows and below
+ * the rows. They move and resize with their table, and an item on one is as
+ * wide as it can print.
+ *
+ * A report's own groupHeader and groupFooter - which only a layout in the
+ * older form still has, once nothing is grouped by them - belong to no table,
+ * and are stacked at the top and bottom of the detail region as they always
+ * were, so they can be found and removed.
+ *
+ * A zone's `type` is the key the rest of the designer addresses its band by:
+ * the band type, or for a table's group band `groupHeader:<table id>` - which
+ * zone also carries as `kind`, `table` and the `label` the gutter shows.
+ * Every zone has a `left` and `width` as well as a `top` and `height`; a
+ * band zone runs the printable width, a table's group zone runs its table's.
  *
  * @param {object} layout
- * @returns {object[]} `{ type, top, height, band }`, in draw order
+ * @returns {object[]} `{ type, top, left, height, width, band }`, in draw order -
+ *   a table's group zones last, so they lie over the band their table is on
  */
 export function designZones(layout) {
     const { page } = layout;
     const contentHeight = page.height - page.margin.top - page.margin.bottom;
+    const width = page.width - page.margin.left - page.margin.right;
 
     const byType = Object.fromEntries(
         (layout.bands || []).map(b => [b.type, b]));
@@ -96,46 +146,71 @@ export function designZones(layout) {
     });
 
     const zones = [];
+    const wide = (type, top, height, band) => ({ type, top, left: 0, height, width, band });
 
     for (const type of PAGE_ZONES) {
         const region = regions[type];
         if (region && byType[type]) {
-            zones.push({ type, ...region, band: byType[type] });
+            zones.push(wide(type, region.top, region.height, byType[type]));
         }
     }
 
     const detail = regions.detail;
-    const groupHeader = byType.groupHeader;
-    const groupFooter = byType.groupFooter;
 
-    const headHeight = groupHeader ? bandZoneHeight(groupHeader, contentHeight) : 0;
-    const footHeight = groupFooter ? bandZoneHeight(groupFooter, contentHeight) : 0;
+    /** the report's own group bands, from a layout in the older form */
+    const height = (kind) => byType[kind] ? bandZoneHeight(byType[kind], contentHeight) : 0;
+    const headHeight = height('groupHeader');
+    const footHeight = height('groupFooter');
 
-    if (groupHeader) {
-        zones.push({
-            type: 'groupHeader', top: detail.top,
-            height: headHeight, band: groupHeader
-        });
+    if (byType.groupHeader) {
+        zones.push(wide('groupHeader', detail.top, headHeight, byType.groupHeader));
     }
 
     if (byType.detail) {
-        zones.push({
-            type: 'detail',
-            top: detail.top + headHeight,
-            height: Math.max(detail.height - headHeight - footHeight, 0),
-            band: byType.detail
-        });
+        zones.push(wide('detail', detail.top + headHeight,
+            Math.max(detail.height - headHeight - footHeight, 0), byType.detail));
     }
 
-    if (groupFooter) {
-        zones.push({
-            type: 'groupFooter',
-            top: detail.top + detail.height - footHeight,
-            height: footHeight, band: groupFooter
-        });
+    if (byType.groupFooter) {
+        zones.push(wide('groupFooter', detail.top + detail.height - footHeight,
+            footHeight, byType.groupFooter));
+    }
+
+    /** then each grouped table's, over the zone of whichever band holds it */
+    for (const host of [...zones]) {
+        for (const item of (host.band.items || [])) {
+            if (item?.type === 'table') zones.push(...tableZones(item, host));
+        }
     }
 
     return zones;
+}
+
+
+/**
+ * A grouped table's group zones, placed inside the table on its band's zone.
+ *
+ * @param {object} table
+ * @param {object} host the zone of the band the table is on
+ * @returns {object[]}
+ */
+function tableZones(table, host) {
+    return levelStrips(table).map(({ kind, level, band, y, h }) => {
+        const key = groupBandKey(kind, table.id, level);
+
+        return {
+            type: key,
+            kind,
+            level,
+            table: table.id,
+            label: bandLabel(key),
+            top: host.top + (table.y ?? 0) + y,
+            left: host.left + (table.x ?? 0),
+            height: h,
+            width: table.w ?? 0,
+            band
+        };
+    });
 }
 
 
@@ -157,7 +232,7 @@ function zone(z, margin) {
 
     return `
     <div class="band dz-zone" data-band-type="${esc(z.type)}"
-         style="position:absolute;top:${z.top + margin.top}px;left:${margin.left}px;right:${margin.right}px;height:${z.height}px">
+         style="${zoneStyle(z, margin)}">
         ${items(drawn)}
     </div>`;
 }
@@ -249,10 +324,20 @@ export function guideLines(layout) {
 }
 
 
+/**
+ * Where a zone is drawn on the page. Exported for the live drag, which moves a
+ * table's group zones with their table without rebuilding the sheet.
+ */
+export function zoneStyle(z, margin) {
+    return `position:absolute;top:${z.top + margin.top}px;left:${z.left + margin.left}px;` +
+        `width:${z.width}px;height:${z.height}px`;
+}
+
+
 /** the band name, in the gutter beside the page rather than over the design */
 function tag(z, margin) {
     return `<span class="dz-tag" data-band-tag="${esc(z.type)}"
-                  style="top:${z.top + margin.top}px">${esc(z.type)}</span>`;
+                  style="top:${z.top + margin.top}px">${esc(z.label ?? z.type)}</span>`;
 }
 
 
@@ -281,7 +366,7 @@ export function selectionBox(layout, selection) {
         item,
         box: {
             ...box,
-            x: box.x + margin.left,
+            x: box.x + zone.left + margin.left,
             y: box.y + zone.top + margin.top
         }
     };
@@ -400,18 +485,18 @@ export function bandBox(layout, bandType) {
     const margin = layout.page.margin;
 
     return {
-        left: margin.left,
+        left: zone.left + margin.left,
         top: zone.top + margin.top,
-        w: layout.page.width - margin.left - margin.right,
+        w: zone.width,
         h: zone.height,
 
         /**
          * Where the band starts inside the printable area, which is what the
          * rulers measure and therefore what a guide's position means. `originX`
-         * is zero and stays in the object anyway: a caller converting one axis
-         * and not the other is the bug this is here to make impossible.
+         * is zero for every band that runs the page's width, and a table's
+         * group band starts where its table does.
          */
-        originX: 0,
+        originX: zone.left,
         originY: zone.top
     };
 }
@@ -472,40 +557,71 @@ export function drawGuides(band, lines = [], gaps = []) {
  * @returns {number|null} null when the report has no such band
  */
 export function absoluteTop(layout, bandType, y) {
-    const zone = designZones(layout).find(z => z.type === bandType);
-    return zone ? zone.top + y : null;
+    return absolutePoint(layout, bandType, 0, y)?.y ?? null;
 }
 
 
 /**
- * Which band a printable-area y falls in.
+ * The printable-area position of a point inside a band - both axes, because a
+ * table's group band does not start at the page's left edge.
  *
- * The zones tile the page - whatever a missing band would have taken is
- * absorbed by the detail (see regions.js) - so any point on the sheet is in
- * exactly one of them. A point off the top or bottom is clamped to the nearest
- * rather than returned as nothing, because dragging an item slightly past the
- * edge is a gesture towards that band, not a gesture at nothing.
+ * @param {object} layout
+ * @param {string} bandType
+ * @param {number} x band-relative
+ * @param {number} y band-relative
+ * @returns {{x: number, y: number}|null} null when the report has no such band
+ */
+export function absolutePoint(layout, bandType, x, y) {
+    const zone = designZones(layout).find(z => z.type === bandType);
+    return zone ? { x: zone.left + x, y: zone.top + y } : null;
+}
+
+
+/**
+ * Which band a point in the printable area falls in.
+ *
+ * The page-wide zones tile the page - whatever a missing band would have taken
+ * is absorbed by the detail (see regions.js) - so any point on the sheet is in
+ * one of them. A table's group zone lies over one of those, and a point inside
+ * it is on the group band: it is the one drawn on top. A point off the top or
+ * bottom is clamped to the nearest page-wide zone rather than returned as
+ * nothing, because dragging an item slightly past the edge is a gesture towards
+ * that band, not a gesture at nothing.
  *
  * @param {object} layout
  * @param {number} top
+ * @param {number|null} [left] without one, only the page-wide zones count
+ * @param {object} [options]
+ * @param {boolean} [options.groupZones] false to look past tables' group zones
  * @returns {string|null} a band type, or null for a report with no bands
  */
-export function bandAtOffset(layout, top) {
+export function bandAtOffset(layout, top, left = null, { groupZones = true } = {}) {
     const zones = designZones(layout);
     if (!zones.length) return null;
 
-    const ordered = [...zones].sort((a, b) => a.top - b.top);
+    const across = zones.filter(z => !z.table);
 
-    for (const zone of ordered) {
-        if (top >= zone.top && top < zone.top + zone.height) return zone.type;
-    }
+    const inside = (z) =>
+        top >= z.top && top < z.top + z.height &&
+        (z.table ? left != null && left >= z.left && left < z.left + z.width : true);
 
+    const hit = (groupZones ? zones : across).filter(inside);
+    if (hit.length) return hit.at(-1).type;
+
+    if (!across.length) return null;
+
+    const ordered = [...across].sort((a, b) => a.top - b.top);
     return top < ordered[0].top ? ordered[0].type : ordered.at(-1).type;
 }
 
 
 /**
- * Where an item would land if it were dropped where it currently sits.
+ * Where an item would land if it were dropped where it currently sits - the
+ * band under its top-left corner.
+ *
+ * A table is never over a group band, even its own: a group band cannot hold
+ * one, and a table whose headings are switched off starts on its own group
+ * header.
  *
  * @param {object} layout
  * @param {string} bandType the band it is in now
@@ -513,6 +629,8 @@ export function bandAtOffset(layout, top) {
  * @returns {string|null} the band type under it
  */
 export function bandUnder(layout, bandType, item) {
-    const top = absoluteTop(layout, bandType, item?.y ?? 0);
-    return top === null ? null : bandAtOffset(layout, top);
+    const at = absolutePoint(layout, bandType, item?.x ?? 0, item?.y ?? 0);
+    if (!at) return null;
+
+    return bandAtOffset(layout, at.y, at.x, { groupZones: item?.type !== 'table' });
 }

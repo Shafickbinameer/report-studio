@@ -3,7 +3,8 @@
  */
 
 import type {
-    Band, BandType, Layout, PaginatedReport, Page, ReportData, TableItem, TextStyle
+    Band, BandType, FormatDefaults, GroupBand, GroupFragment, GroupLevel, Layout, PaginatedReport,
+    HighlightRule, Page, ReportData, TableColumn, TableItem, TextStyle, ValueFormat
 } from './layout.js';
 
 export type * from './layout.js';
@@ -19,7 +20,11 @@ export function buildPages(layout: Layout, data: ReportData): PaginatedReport;
 
 /** stage 1 of buildPages: fills in placeholders from the data */
 export function resolve(layout: Layout, data: ReportData): Layout;
-/** stage 2: splits the grouped table's rows into groups */
+/**
+ * stage 2: binds each table to its rows and splits every grouped table's rows
+ * into groups. Grouping written the older way comes out as each table's own
+ * `grouping` - see normalizeGrouping.
+ */
 export function group(resolved: Layout, data: ReportData): Layout;
 /** stage 3: measures text and table rows */
 export function measure(grouped: Layout): Layout;
@@ -87,10 +92,16 @@ export interface CSVOptions {
     header?: boolean;
     /** prepend the group key on a grouped table; default true */
     groupColumn?: boolean;
-    /** default `'Group'` */
-    groupLabel?: string;
+    /**
+     * the group column's heading; default `'Group'`. A list names one column
+     * per level of a nested grouping, whose columns are otherwise named after
+     * the fields they group by
+     */
+    groupLabel?: string | string[];
     /** stop cells starting `=`, `+`, `-` or `@` running as formulas; default true */
     neutraliseFormulas?: boolean;
+    /** write each cell as printed, ₹1,00,000.00, rather than its value; default false */
+    formatted?: boolean;
 }
 
 export type ReportCSVOptions = Pick<CSVOptions, 'delimiter' | 'newline' | 'neutraliseFormulas'>;
@@ -122,8 +133,12 @@ export interface XLSXOptions {
     reportSheetName?: string;
     /** prepend the group key on a grouped table's sheet; default true */
     groupColumn?: boolean;
-    /** default `'Group'` */
-    groupLabel?: string;
+    /**
+     * the group column's heading; default `'Group'`. A list names one column
+     * per level of a nested grouping, whose columns are otherwise named after
+     * the fields they group by
+     */
+    groupLabel?: string | string[];
 }
 
 /**
@@ -161,8 +176,81 @@ export function tablesOf(layout: Layout): TableItem[];
 /** the dataset a table reads: its own, or the layout's */
 export function datasetOf(table: TableItem, layout: Layout): string | null;
 
-/** the grouped table and its field, or null when nothing is grouped */
-export function groupingOf(layout: Layout): { table: TableItem; by: string } | null;
+/** a grouped table, its field, and the bands its groups are drawn with */
+export interface TableGrouping {
+    table: TableItem;
+    by: string;
+    header: GroupBand | Band | null;
+    footer: GroupBand | Band | null;
+    /** every level, outermost first; the fields above are the first's */
+    levels: Array<{ by: string; header: GroupBand | Band | null; footer: GroupBand | Band | null }>;
+}
+
+/** every grouped table, in the order they are drawn, either way it is grouped */
+export function groupingsOf(layout: Layout): TableGrouping[];
+
+/** the first grouped table, or null when nothing is grouped */
+export function groupingOf(layout: Layout): TableGrouping | null;
+
+/** the text a value prints as, under a format and the report's defaults */
+export function formatValue(value: unknown, format?: ValueFormat | null, defaults?: FormatDefaults | null): string;
+
+/** a format in one line, such as "Currency · ₹12,34,567.89" */
+export function describeFormat(format?: ValueFormat | null, defaults?: FormatDefaults | null): string;
+
+/** the Excel number format code that shows a value as formatValue prints it, or null */
+export function excelNumberFormat(format?: ValueFormat | null, defaults?: FormatDefaults | null): string | null;
+
+/** international digit groups, no symbol, ISO dates */
+export const DEFAULT_FORMAT: Readonly<Required<ValueFormat>>;
+
+/** the style the first rule that holds gives a value, or null */
+export function highlightFor(
+    rules: HighlightRule[] | null | undefined, value: unknown, row?: Record<string, unknown> | null
+): HighlightRule['style'] | null;
+
+/** a table cell's style: its row's rules, then its column's own on top */
+export function cellHighlight(
+    table: TableItem, column: TableColumn, row: Record<string, unknown>
+): HighlightRule['style'] | null;
+
+/** "None", "1 rule", "3 rules" */
+export function describeHighlight(rules: HighlightRule[] | null | undefined): string;
+
+/** ₹, 1,00,000 and dd/MM/yyyy - what the designer's one-click Indian button sets */
+export const INDIAN_DEFAULTS: Readonly<FormatDefaults>;
+
+/** the most levels a table may be grouped at; validateLayout refuses more */
+export const MAX_GROUP_LEVELS: number;
+
+/** a table's grouping levels as the layout states them; empty when it has none */
+export function levelsOf(table: TableItem): GroupLevel[];
+
+/** whether a table is grouped, by `grouping` or by the older `groupBy` */
+export function isGrouped(table: TableItem): boolean;
+
+/**
+ * the bands one level of a table's groups are drawn with - the outermost's
+ * when no level is named - from a layout past normalizeGrouping
+ */
+export function groupBandsOf(
+    table: TableItem, level?: number
+): { header: GroupBand | null; footer: GroupBand | null };
+
+/**
+ * a built group fragment's bands in drawing order: headers outermost first,
+ * footers innermost first
+ */
+export function fragmentBandsOf(
+    fragment: GroupFragment
+): { headers: Array<GroupBand & { level?: number }>; footers: Array<GroupBand & { level?: number }> };
+
+/**
+ * A copy of a layout with grouping written one way only: `layout.groupBy`,
+ * `table.groupBy` and the report's groupHeader/groupFooter bands become that
+ * table's own `grouping`. Idempotent; the layout given is not changed.
+ */
+export function normalizeGrouping<T extends Layout>(layout: T): T;
 
 /** width of one line of text, in pixels */
 export function measureText(text: string, style?: TextStyle): number;
