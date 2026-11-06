@@ -44,10 +44,15 @@ const STYLES = [
     { label: 'Italic', value: 'italic' }
 ];
 
+/**
+ * A choice with an `icon` on every option can be drawn as a row of glyph
+ * buttons rather than a dropdown, as a design tool draws text alignment - the
+ * field asks for that with `segmented`. The label is still each button's name.
+ */
 const ALIGNMENTS = [
-    { label: 'Left', value: 'left' },
-    { label: 'Centre', value: 'center' },
-    { label: 'Right', value: 'right' }
+    { label: 'Left', value: 'left', icon: 'alignLeft' },
+    { label: 'Centre', value: 'center', icon: 'alignCenter' },
+    { label: 'Right', value: 'right', icon: 'alignRight' }
 ];
 
 const IMAGE_FITS = [
@@ -57,8 +62,8 @@ const IMAGE_FITS = [
 ];
 
 const ORIENTATIONS = [
-    { label: 'Horizontal', value: 'horizontal' },
-    { label: 'Vertical', value: 'vertical' }
+    { label: 'Horizontal', value: 'horizontal', icon: 'horizontal' },
+    { label: 'Vertical', value: 'vertical', icon: 'vertical' }
 ];
 
 /**
@@ -80,6 +85,16 @@ const LINE_STYLES = [
 const RULE_STYLES = [...LINE_STYLES, { label: 'None', value: 'none' }];
 
 
+/**
+ * Two hints for the rail's layout, which say nothing about the value:
+ *
+ *   short  a letter drawn inside the box in place of a label above it, as X,
+ *          Y, W and H are in every design tool. The full label is still there
+ *          for a screen reader and a tooltip
+ *   half   the control takes one of the rail's two columns rather than both.
+ *          Numbers and colours always do; a choice or a text box asks, when
+ *          what it holds is short enough to read at half the width
+ */
 const num = (key, label, extra = {}) =>
     ({ key, label, type: 'number', ...extra });
 
@@ -108,10 +123,10 @@ function maxRuleWidth(item) {
  * readField and writeField need, since they walk a path on whatever they get.
  */
 export const COLUMN_FIELDS = [
-    { key: 'field', label: 'Field', type: 'text' },
-    { key: 'label', label: 'Label', type: 'text' },
+    { key: 'field', label: 'Field', type: 'text', half: true },
+    { key: 'label', label: 'Label', type: 'text', half: true },
     { key: 'width', label: 'Width', type: 'number', min: 1 },
-    { key: 'align', label: 'Align', type: 'choice', options: ALIGNMENTS },
+    { key: 'align', label: 'Align', type: 'choice', options: ALIGNMENTS, half: true, segmented: true },
     {
         key: 'expression', label: 'Calculation', type: 'text',
         hint: 'Blank shows the field as it is. A calculation - {qty} * {price}, ' +
@@ -137,10 +152,10 @@ export function fieldsFor(item) {
     const box = {
         title: 'Position and size',
         fields: [
-            num('x', 'X'),
-            num('y', 'Y'),
-            num('w', 'Width', { min: 1 }),
-            ...(item.type === 'table' ? [] : [num('h', 'Height', { min: 1 })])
+            num('x', 'X', { short: 'X' }),
+            num('y', 'Y', { short: 'Y' }),
+            num('w', 'Width', { min: 1, short: 'W' }),
+            ...(item.type === 'table' ? [] : [num('h', 'Height', { min: 1, short: 'H' })])
         ]
     };
 
@@ -152,7 +167,7 @@ export function fieldsFor(item) {
                 fields: [
                     {
                         key: 'style.borderStyle', label: 'Style', type: 'choice',
-                        options: RULE_STYLES
+                        options: RULE_STYLES, half: true
                     },
                     num('style.borderWidth', 'Width', { min: 1 }),
                     { key: 'style.borderColor', label: 'Colour', type: 'color' },
@@ -205,12 +220,12 @@ export function fieldsFor(item) {
                 fields: [
                     {
                         key: 'orientation', label: 'Runs', type: 'choice',
-                        options: ORIENTATIONS
+                        options: ORIENTATIONS, half: true, segmented: true
                     },
                     num('style.thickness', 'Thickness', { min: 1 }),
                     {
                         key: 'style.lineStyle', label: 'Style', type: 'choice',
-                        options: LINE_STYLES
+                        options: LINE_STYLES, half: true
                     },
                     { key: 'style.color', label: 'Colour', type: 'color' }
                 ]
@@ -271,7 +286,7 @@ export function fieldsFor(item) {
                     },
                     {
                         key: 'style.borderStyle', label: 'Borders', type: 'choice',
-                        options: RULE_STYLES
+                        options: RULE_STYLES, half: true
                     },
                     num('style.borderWidth', 'Border width', {
                         min: 1,
@@ -303,9 +318,9 @@ export function fieldsFor(item) {
             fields: [
                 { key: 'style.fontFamily', label: 'Font', type: 'choice', options: FONT_STACKS },
                 num('style.fontSize', 'Size', { min: 1 }),
-                { key: 'style.fontWeight', label: 'Weight', type: 'choice', options: WEIGHTS },
-                { key: 'style.fontStyle', label: 'Style', type: 'choice', options: STYLES },
-                { key: 'style.align', label: 'Align', type: 'choice', options: ALIGNMENTS },
+                { key: 'style.fontWeight', label: 'Weight', type: 'choice', options: WEIGHTS, half: true },
+                { key: 'style.fontStyle', label: 'Style', type: 'choice', options: STYLES, half: true },
+                { key: 'style.align', label: 'Align', type: 'choice', options: ALIGNMENTS, half: true, segmented: true },
                 { key: 'style.color', label: 'Colour', type: 'color' }
             ]
         }
@@ -470,9 +485,11 @@ function pageFields(layout) {
         label: 'Orientation',
         type: 'choice',
         rebuilds: true,
+        half: true,
+        segmented: true,
         options: [
-            { value: 'portrait', label: 'Portrait' },
-            { value: 'landscape', label: 'Landscape' }
+            { value: 'portrait', label: 'Portrait', icon: 'portrait' },
+            { value: 'landscape', label: 'Landscape', icon: 'landscape' }
         ],
         read: (target) => orientationOf(target.page),
         write: (target, value) => setOrientation(target, value)

@@ -180,10 +180,10 @@ describe('viewer - control layout', () => {
     it('renders each control exactly once', () => {
         mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
-        for (const role of ['prev', 'next', 'current', 'export', 'query', 'export-confirm']) {
+        for (const role of ['prev', 'next', 'current', 'export', 'query', 'export-menu']) {
             expect(document.querySelectorAll(`[data-role="${role}"]`), role).toHaveLength(1);
         }
-        expect(document.querySelectorAll('input[name="export-format"]')).toHaveLength(3);
+        expect(document.querySelectorAll('[data-role="export-menu"] [data-format]')).toHaveLength(3);
     });
 });
 
@@ -273,15 +273,19 @@ describe('viewer - paging', () => {
     });
 });
 
-describe('viewer - export dialog', () => {
+describe('viewer - export menu', () => {
     let clicked;
 
-    const pick = (format) => {
-        const input = [...document.querySelectorAll('input[name="export-format"]')]
-            .find(i => i.value === format);
-        input.checked = true;
-        input.dispatchEvent(new Event('change'));
-        return input;
+    const menu = () => el('export-menu');
+    const item = (format) => menu().querySelector(`[data-format="${format}"]`);
+    const note = (format) => el(`export-note-${format}`).textContent;
+
+    /** a key pressed where the focus is, as a browser delivers it */
+    const press = (key, extra = {}) => {
+        const target = document.activeElement ?? document.body;
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...extra });
+        target.dispatchEvent(event);
+        return event;
     };
 
     beforeEach(() => {
@@ -300,15 +304,30 @@ describe('viewer - export dialog', () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         expect(viewer.exportOpen).toBe(false);
-        expect(el('export-modal').hidden).toBe(true);
+        expect(menu().hidden).toBe(true);
+        expect(el('export').getAttribute('aria-expanded')).toBe('false');
     });
 
-    it('opens on the Export button', () => {
+    it('opens under the Export button, as a menu', () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
+
         expect(viewer.exportOpen).toBe(true);
-        expect(el('export-modal').hidden).toBe(false);
+        expect(menu().hidden).toBe(false);
+        expect(menu().getAttribute('role')).toBe('menu');
+        expect(el('export').getAttribute('aria-haspopup')).toBe('menu');
+        expect(el('export').getAttribute('aria-expanded')).toBe('true');
+        expect(el('export').closest('.export-menu').contains(menu())).toBe(true);
+    });
+
+    it('closes again on a second click of the button', () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        el('export').click();
+        el('export').click();
+
+        expect(viewer.exportOpen).toBe(false);
     });
 
     it('exports nothing merely by opening', () => {
@@ -319,67 +338,57 @@ describe('viewer - export dialog', () => {
         expect(clicked).toHaveLength(0);
     });
 
-    it('offers PDF, CSV and Excel', () => {
+    it('offers PDF, CSV and Excel, in that order', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
         el('export').click();
 
-        const values = [...document.querySelectorAll('input[name="export-format"]')]
-            .map(i => i.value);
-        expect(values).toEqual(['pdf', 'csv', 'xlsx']);
+        const items = [...menu().querySelectorAll('[role="menuitem"]')];
+        expect(items.map(i => i.dataset.format)).toEqual(['pdf', 'csv', 'xlsx']);
+        expect(items.map(i => i.querySelector('.format-name').textContent)).toEqual(['PDF', 'CSV', 'Excel']);
     });
 
-    it('starts on PDF', () => {
+    it('puts the focus on PDF, the first in the list', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
         el('export').click();
 
-        const checked = [...document.querySelectorAll('input[name="export-format"]')]
-            .find(i => i.checked);
-        expect(checked.value).toBe('pdf');
+        expect(document.activeElement).toBe(item('pdf'));
     });
 
-    it('describes the chosen format', () => {
+    it('says what each format will make', () => {
         const { paginated } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
         el('export').click();
 
-        expect(el('export-summary').textContent)
-            .toContain(`${paginated.pages.length} pages`);
-
-        pick('csv');
-        expect(el('export-summary').textContent).toContain('spec.csv');
-
-        pick('xlsx');
-        expect(el('export-summary').textContent).toContain('spec.xlsx');
+        expect(note('pdf')).toContain(`${paginated.pages.length} pages`);
+        expect(note('csv')).toContain('spec.csv');
+        expect(note('xlsx')).toContain('spec.xlsx');
     });
 
-    it('prints when PDF is confirmed', () => {
+    it('prints when PDF is chosen', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        pick('pdf');
-        el('export-confirm').click();
+        item('pdf').click();
 
         expect(window.print).toHaveBeenCalledOnce();
         expect(clicked).toHaveLength(0);
     });
 
-    it('downloads when CSV is confirmed', () => {
+    it('downloads when CSV is chosen', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        pick('csv');
-        el('export-confirm').click();
+        item('csv').click();
 
         expect(clicked).toHaveLength(1);
         expect(clicked[0].download).toBe('spec.csv');
         expect(window.print).not.toHaveBeenCalled();
     });
 
-    it('downloads a workbook when Excel is confirmed', () => {
+    it('downloads a workbook when Excel is chosen', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        pick('xlsx');
-        el('export-confirm').click();
+        item('xlsx').click();
 
         expect(clicked).toHaveLength(1);
         expect(clicked[0].download).toBe('spec.xlsx');
@@ -424,65 +433,91 @@ describe('viewer - export dialog', () => {
         }
     });
 
-    it('closes after exporting', () => {
+    it('closes after exporting, and gives the focus back to the button', () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        el('export-confirm').click();
+        item('csv').click();
 
         expect(viewer.exportOpen).toBe(false);
+        expect(document.activeElement).toBe(el('export'));
     });
 
-    it('closes before the print dialog opens, so the overlay is not printed', () => {
+    it('closes before the print dialog opens, so the menu is not printed', () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         window.print = vi.fn(() => {
-            expect(el('export-modal').hidden).toBe(true);
+            expect(menu().hidden).toBe(true);
         });
 
         viewer.openExport();
-        el('export-confirm').click();
+        item('pdf').click();
         expect(window.print).toHaveBeenCalledOnce();
     });
 
-    it('cancels without exporting', () => {
+    it('exports from code: the format asked for, or PDF', () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        viewer.confirmExport('csv');
+        expect(clicked[0].download).toBe('spec.csv');
+
+        viewer.confirmExport();
+        expect(window.print).toHaveBeenCalledOnce();
+    });
+
+    it('closes on a press anywhere else, exporting nothing', async () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        el('export-cancel').click();
+        /** the outside listener is added on the next tick */
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        el('viewport').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
 
         expect(viewer.exportOpen).toBe(false);
         expect(window.print).not.toHaveBeenCalled();
         expect(clicked).toHaveLength(0);
     });
 
-    it('closes on the backdrop', () => {
+    it('closes on Escape, back to the button', () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        el('export-backdrop').click();
+        press('Escape');
 
         expect(viewer.exportOpen).toBe(false);
-    });
-
-    it('closes on Escape', () => {
-        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
-
-        el('export').click();
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-
-        expect(viewer.exportOpen).toBe(false);
+        expect(document.activeElement).toBe(el('export'));
         expect(window.print).not.toHaveBeenCalled();
     });
 
-    it('confirms on Enter', () => {
+    it('moves through the formats with the arrow keys, round from the end', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        el('export-modal').dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        press('ArrowDown');
+        expect(document.activeElement).toBe(item('csv'));
 
-        expect(window.print).toHaveBeenCalledOnce();
+        press('ArrowDown');
+        expect(document.activeElement).toBe(item('xlsx'));
+
+        press('ArrowDown');
+        expect(document.activeElement).toBe(item('pdf'));
+
+        press('ArrowUp');
+        expect(document.activeElement).toBe(item('xlsx'));
+
+        press('Home');
+        expect(document.activeElement).toBe(item('pdf'));
+    });
+
+    it('opens from the button on the down arrow', () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        el('export').focus();
+        press('ArrowDown');
+
+        expect(viewer.exportOpen).toBe(true);
+        expect(document.activeElement).toBe(item('pdf'));
     });
 
     it('prints on the Print button', () => {
@@ -514,7 +549,7 @@ describe('viewer - export dialog', () => {
         expect(document.querySelectorAll('mark.hit')).toHaveLength(0);
     });
 
-    it('opens the export on ctrl+X', () => {
+    it('opens the export menu on ctrl+X', () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         document.dispatchEvent(
@@ -543,42 +578,15 @@ describe('viewer - export dialog', () => {
         expect(viewer.exportOpen).toBe(true);
     });
 
-    it('swallows paging keys while it is open', () => {
+    it('keeps the arrow keys from paging the report while it is open', () => {
         mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
         el('export').click();
+        press('ArrowRight');
+        press('ArrowDown');
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
 
         expect(visible()[0].id).toBe('page-1');
-    });
-
-    it('moves focus into the dialog and back out again', () => {
-        mountReport({ items: rows(12), customer: { name: 'Anand' } });
-        const opener = el('export');
-
-        opener.focus();
-        opener.click();
-        expect(el('export-modal').contains(document.activeElement)).toBe(true);
-
-        el('export-cancel').click();
-        expect(document.activeElement).toBe(opener);
-    });
-
-    it('keeps Tab inside the dialog', () => {
-        mountReport({ items: rows(12), customer: { name: 'Anand' } });
-        el('export').click();
-
-        const focusable = [...el('export-modal').querySelectorAll('button, input')]
-            .filter(n => !n.disabled);
-
-        focusable.at(-1).focus();
-        el('export-modal').dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
-        expect(document.activeElement).toBe(focusable[0]);
-
-        el('export-modal').dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
-        expect(document.activeElement).toBe(focusable.at(-1));
     });
 
     it('releases the object url it created', () => {
@@ -586,8 +594,7 @@ describe('viewer - export dialog', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        pick('csv');
-        el('export-confirm').click();
+        item('csv').click();
         vi.runAllTimers();
 
         expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
@@ -598,8 +605,7 @@ describe('viewer - export dialog', () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
-        pick('csv');
-        el('export-confirm').click();
+        item('csv').click();
 
         expect(document.querySelectorAll('a[download]')).toHaveLength(0);
     });
@@ -641,7 +647,7 @@ describe('viewer - export dialog', () => {
         });
 
         viewer.openExport();
-        el('export-confirm').click();
+        item('pdf').click();
 
         expect(window.print).toHaveBeenCalledOnce();
 
@@ -650,7 +656,7 @@ describe('viewer - export dialog', () => {
     });
 });
 
-describe('viewer - export dialog with nothing to export', () => {
+describe('viewer - export menu with nothing to export', () => {
     /**
      * A rule and a panel and nothing else. A report with no table but with text
      * still exports - the CSV is the report's lines now, not only its rows - so
@@ -660,21 +666,30 @@ describe('viewer - export dialog with nothing to export', () => {
         bands: [band('detail', [line('rule'), box('panel', { y: 30 })])]
     });
 
+    const item = (format) => el('export-menu').querySelector(`[data-format="${format}"]`);
+
     beforeEach(() => {
         window.print = vi.fn();
         URL.createObjectURL = vi.fn(() => 'blob:fake');
         URL.revokeObjectURL = vi.fn();
     });
 
-    it('disables the CSV option for a report with no table', () => {
+    it('disables CSV and Excel for a report that writes nothing', () => {
         mountReport({}, noTableLayout());
         el('export').click();
 
-        const csv = [...document.querySelectorAll('input[name="export-format"]')]
-            .find(i => i.value === 'csv');
+        for (const format of ['csv', 'xlsx']) {
+            expect(item(format).disabled, format).toBe(true);
+            expect(item(format).getAttribute('aria-disabled'), format).toBe('true');
+            expect(item(format).classList.contains('is-unavailable'), format).toBe(true);
+        }
+    });
 
-        expect(csv.disabled).toBe(true);
-        expect(csv.closest('.format').classList.contains('is-unavailable')).toBe(true);
+    it('says why, where the file name would be', () => {
+        mountReport({}, noTableLayout());
+        el('export').click();
+
+        expect(el('export-note-csv').textContent).toContain('nothing to write');
     });
 
     it('offers CSV for a report with text but no table', () => {
@@ -683,35 +698,28 @@ describe('viewer - export dialog with nothing to export', () => {
         }));
         el('export').click();
 
-        const csv = [...document.querySelectorAll('input[name="export-format"]')]
-            .find(i => i.value === 'csv');
-
-        expect(csv.disabled).toBe(false);
+        expect(item('csv').disabled).toBe(false);
     });
 
     it('leaves PDF available', () => {
         mountReport({}, noTableLayout());
         el('export').click();
 
-        const pdf = [...document.querySelectorAll('input[name="export-format"]')]
-            .find(i => i.value === 'pdf');
-
-        expect(pdf.disabled).toBe(false);
-        expect(el('export-confirm').disabled).toBe(false);
+        expect(item('pdf').disabled).toBe(false);
+        expect(document.activeElement).toBe(item('pdf'));
     });
 
-    it('explains why CSV is unavailable', () => {
-        mountReport({}, noTableLayout());
+    it('steps over what it cannot export', () => {
+        const { viewer } = mountReport({}, noTableLayout());
         el('export').click();
 
-        const csv = [...document.querySelectorAll('input[name="export-format"]')]
-            .find(i => i.value === 'csv');
-        csv.checked = true;
-        csv.dispatchEvent(new Event('change'));
+        document.activeElement.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+        expect(document.activeElement).toBe(item('pdf'));
 
-        /** the selection falls back rather than sitting on a disabled option */
-        expect(csv.checked).toBe(false);
-        expect(el('export-summary').textContent).toContain('page');
+        /** and asked for from code, a format with nothing to write does nothing */
+        viewer.confirmExport('csv');
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
     });
 });
 
@@ -955,6 +963,28 @@ describe('viewer - search', () => {
         viewer.find('');
 
         expect(mount.textContent).toBe(before);
+    });
+
+    it('keeps a table cell its one line of text while a match in it is marked', () => {
+        /**
+         * A cell is a flex column, and every child of one is a block - so a
+         * cell split into text, mark, text stacked the three on separate
+         * lines. Its text stays in a single inline run instead.
+         */
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        viewer.find('row-2');
+        const inCells = [...document.querySelectorAll('.cell mark.hit')];
+        expect(inCells.length).toBeGreaterThan(0);
+
+        for (const mark of inCells) {
+            const cell = mark.closest('.cell');
+            expect(mark.parentElement.classList.contains('hit-run')).toBe(true);
+            expect(cell.childNodes).toHaveLength(1);
+        }
+
+        viewer.find('');
+        expect(document.querySelectorAll('.hit-run')).toHaveLength(0);
     });
 
     it('disables the match buttons when there is no query', () => {

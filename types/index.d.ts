@@ -296,9 +296,15 @@ export interface ViewerHandle {
      * from URLs fetches them first, so its download starts a moment later
      */
     downloadXLSX(): boolean;
+    /** opens the export menu under the toolbar's Export button */
     openExport(): void;
     closeExport(): void;
-    confirmExport(): void;
+    /**
+     * exports in a format and closes the menu: the one named, or the item the
+     * keyboard is on, or PDF. Does nothing for a format the report has
+     * nothing to write in
+     */
+    confirmExport(format?: 'pdf' | 'csv' | 'xlsx'): void;
     setZoom(zoom: number): void;
     zoomIn(): void;
     zoomOut(): void;
@@ -308,6 +314,7 @@ export interface ViewerHandle {
     readonly page: number;
     readonly pageCount: number;
     readonly zoom: number;
+    /** whether the export menu is open */
     readonly exportOpen: boolean;
 }
 

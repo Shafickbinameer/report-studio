@@ -19,8 +19,8 @@
   --dz-bar-height: 56px;
   /* wide enough for "reportHeader", the longest band name */
   --dz-gutter: 96px;
-  /* room for a label column and a control column side by side, unwrapped */
-  --dz-panel: 304px;
+  /* two columns of about 112px and a 16px margin either side, as a design tool's inspector */
+  --dz-panel: 264px;
   --dz-foot-height: 44px;
   /* how far the floating tools sit off the bottom edge, as the pager does */
   --dz-foot-offset: 20px;
@@ -555,22 +555,50 @@
 
 /* ---------------- the properties rail ---------------- */
 
+/**
+ * Laid out the way a design tool's inspector is, Figma's in particular:
+ *
+ *   - sections divided by a hairline rule, never boxed or carded
+ *   - a two-column grid, so X sits beside Y and W beside H, and a control
+ *     either takes one column (.is-half) or the whole row
+ *   - boxes 24px tall with a soft grey fill and no border, which outline
+ *     themselves on hover and take the accent ring on focus
+ *   - a letter inside the box where a letter says enough (X, Y, W, H), and a
+ *     small grey label above it where one does not
+ *   - grey everywhere else, so the accent is only ever the thing in hand
+ *
+ * Everything is scoped to .dz-panel: the dialogs and the Format editor draw
+ * .dz-field too, and keep their own look.
+ */
 .dz-panel {
+  --rail-x: 16px;
+  --field-h: 24px;
+  --field-bg: var(--surface-muted);
+  --field-radius: 5px;
+
   flex: none;
   width: var(--dz-panel);
   overflow-y: auto;
-  padding: 16px 20px 32px;
+  padding: 0 0 32px;
 
   background: var(--surface);
   border-left: 1px solid var(--border);
 
   font-family: "Instrument Sans", system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 16px;
   color: var(--ink);
 }
 
+/* while a number is being scrubbed, the whole rail says so with the cursor */
+.dz-panel.is-scrubbing,
+.dz-panel.is-scrubbing * {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+
 .dz-panel-empty {
-  padding: 24px 4px;
+  padding: 24px var(--rail-x);
   text-align: center;
   color: var(--ink-soft);
 }
@@ -579,186 +607,317 @@
   margin-bottom: 6px;
 }
 
+/* what is selected: its glyph, its id, and what kind of thing it is */
 .dz-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding-bottom: 12px;
-  margin-bottom: 4px;
+  height: 40px;
+  padding: 0 var(--rail-x);
+
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
-.dz-panel-type {
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  font-size: 10px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+.dz-panel-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-soft);
 }
 
 .dz-panel-id {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dz-panel-type {
+  flex: none;
+  margin-left: auto;
   color: var(--ink-soft);
-  font-family: "Courier Prime", monospace;
+}
+
+/* ---- sections: a hairline between them, and a two-column grid inside ---- */
+
+.dz-panel .dz-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px var(--rail-x) 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dz-panel .dz-section:last-child {
+  border-bottom: none;
+}
+
+/* the whole row unless a control asks for half of it */
+.dz-panel .dz-section > *,
+.dz-panel .dz-column-body > *,
+.dz-panel .dz-group-level > * {
+  grid-column: 1 / -1;
+}
+
+.dz-panel .dz-section > .is-half,
+.dz-panel .dz-column-body > .is-half,
+.dz-panel .dz-group-level > .is-half {
+  grid-column: auto;
+}
+
+/* sentence case and the ink colour, as a design tool titles its sections */
+.dz-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 36px;
+}
+
+.dz-section-head h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dz-section-tools {
+  display: flex;
+  gap: 2px;
+  /* so the glyph, not its button, lines up with the boxes' right edge */
+  margin-right: -4px;
+}
+
+/* ---- fields ---- */
+
+.dz-panel .dz-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+
+.dz-panel .dz-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+/* a number's label is the handle it is dragged by */
+.dz-panel .dz-scrub {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+/* there for a screen reader, and for the tests that read labels, not for eyes */
+.dz-panel .dz-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* every box in the rail: grey, borderless, 24px */
+.dz-panel .dz-field input:not([type="checkbox"]):not([type="color"]):not([type="radio"]),
+.dz-panel .dz-choice-trigger,
+.dz-panel .dz-input,
+.dz-panel .dz-format,
+.dz-panel .dz-band-height {
+  width: 100%;
+  height: var(--field-h);
+  min-height: var(--field-h);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--field-radius);
+  background-color: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* a box holding a prefix or a swatch draws the box; what is inside it does not */
+.dz-panel .dz-input {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.dz-panel .dz-field .dz-input input:not([type="checkbox"]):not([type="color"]):not([type="radio"]) {
+  flex: 1;
+  min-width: 0;
+  height: calc(var(--field-h) - 2px);
+  min-height: 0;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: transparent;
+}
+
+.dz-input-prefix {
+  flex: none;
+  width: 24px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.dz-panel .dz-field input:not([type="checkbox"]):not([type="color"]):not([type="radio"]):hover,
+.dz-panel .dz-choice-trigger:hover,
+.dz-panel .dz-input:hover,
+.dz-panel .dz-format:hover,
+.dz-panel .dz-band-height:hover {
+  border-color: var(--border);
+}
+
+/* the box in hand turns to paper and takes the ring */
+.dz-panel .dz-field input:not([type="checkbox"]):not([type="color"]):not([type="radio"]):focus-visible,
+.dz-panel .dz-choice-trigger:focus-visible,
+.dz-panel .dz-choice-trigger[aria-expanded="true"],
+.dz-panel .dz-input:focus-within,
+.dz-panel .dz-format:focus-visible,
+.dz-panel .dz-band-height:focus-visible {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background-color: var(--surface);
+}
+
+/* the box inside a ringed box does not ring again */
+.dz-panel .dz-field .dz-input input:not([type="checkbox"]):not([type="color"]):not([type="radio"]):focus-visible {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* no spinners: arrow keys step, and the label scrubs */
+.dz-panel input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-panel input[type="number"]::-webkit-inner-spin-button,
+.dz-panel input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/**
+ * A choice is a button over a select that is still the control (see
+ * choiceBox). The select is kept out of sight and out of the tab order; the
+ * button is the box, with a chevron of our own.
+ */
+.dz-choice {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.dz-choice .dz-choice-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dz-panel .dz-choice-trigger {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  padding-right: 22px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23667080' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 9px 6px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.dz-choice-value {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dz-section {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.dz-section:last-child {
-  border-bottom: none;
-}
-
-.dz-section h3 {
-  margin-bottom: 14px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
 /**
- * Label left, control right, on one line. Two lines per field would make the
- * rail twice as tall as the page it describes.
- *
- * The label column is a fixed width rather than a share, so every control in
- * the rail starts at the same x and the eye can run straight down them.
+ * The listbox a choice opens - the shared dark menu, fixed to the window and
+ * placed by attachPanel so the chosen item sits over the button. It lives in
+ * the designer rather than the rail, so it takes the rail's type here.
  */
-.dz-field {
-  display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 12px;
-  row-gap: 6px;
-  margin-bottom: 12px;
-}
+.dz-listbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  max-height: min(360px, calc(100vh - 16px));
+  overflow-y: auto;
+  scrollbar-width: thin;
 
-.dz-field:last-child {
-  margin-bottom: 0;
-}
-
-.dz-field label {
-  color: var(--ink-soft);
-}
-
-/* the value box and its hint take the full width instead */
-.dz-field-textarea {
-  grid-template-columns: 1fr;
-  gap: 4px;
-}
-
-.dz-field input,
-.dz-field select,
-.dz-field textarea {
-  width: 100%;
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-}
-
-.dz-field textarea {
-  font-family: "Courier Prime", monospace;
-  resize: vertical;
-  line-height: 1.4;
-}
-
-.dz-field input[type="number"] {
-  font-variant-numeric: tabular-nums;
-}
-
-.dz-field input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  min-height: 0;
-  justify-self: start;
-  accent-color: var(--accent-strong);
-}
-
-/* a swatch, not a bar: a rail-wide block of black reads as a control's border */
-.dz-field input[type="color"] {
-  width: 48px;
-  height: 30px;
-  padding: 2px;
-  justify-self: start;
-  cursor: pointer;
-}
-
-/**
- * A colour control: the swatch, then either "None" or the button that takes
- * the colour off. The input stays underneath the none swatch, so a click on it
- * still opens the picker.
- */
-.dz-swatch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  justify-self: start;
-}
-
-.dz-swatch-well {
-  position: relative;
-  display: block;
-  width: 48px;
-  height: 30px;
-}
-
-.dz-swatch-well input[type="color"] {
-  display: block;
-}
-
-/* white with a red slash through it: the usual way of saying "no colour" */
-.dz-swatch.is-none .dz-swatch-well::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background:
-    linear-gradient(to top right,
-      transparent calc(50% - 1px),
-      var(--danger) calc(50% - 1px),
-      var(--danger) calc(50% + 1px),
-      transparent calc(50% + 1px)),
-    var(--surface);
-  pointer-events: none;
-}
-
-.dz-swatch-none {
-  display: none;
-  color: var(--ink-soft);
+  font-family: "Instrument Sans", system-ui, sans-serif;
   font-size: 11px;
 }
 
-.dz-swatch.is-none .dz-swatch-none {
-  display: inline;
-}
-
-.dz-swatch .dz-swatch-clear {
-  margin-left: 0;
-}
-
-.dz-swatch.is-none .dz-swatch-clear {
-  display: none;
-}
-
 /**
- * A switch reads as the box and then what it does, on one line - with the
- * label in the 100px column, "New page for each group" wrapped into three.
+ * The shared menu sets its figures tabular, for the zoom list's percentages.
+ * A choice's items are words and samples - "(1,234)", "17 Jun 2026" - which
+ * tabular figures spread out until they read as typewriter text.
  */
+.dz-listbox .dropdown-item {
+  font-variant-numeric: normal;
+}
+
+/* a dialog's choices open at the dialog's type size, not the rail's */
+.dz-listbox.is-roomy {
+  font-size: 12px;
+}
+
+.dz-listbox.is-roomy .dropdown-item {
+  min-height: 28px;
+}
+
+/* a square that fills with ink when ticked */
+.dz-panel input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  margin: 0;
+  border: 1px solid var(--ink-soft);
+  border-radius: 3px;
+  background: var(--surface) center / 10px 10px no-repeat;
+  cursor: pointer;
+}
+
+.dz-panel input[type="checkbox"]:checked {
+  border-color: var(--ink);
+  background-color: var(--ink);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.2l2 2 4-4.4' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.dz-panel input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+/* a switch is the box and then what it does, on one line */
 .dz-panel .dz-field-toggle {
-  grid-template-columns: auto 1fr;
-  column-gap: 10px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: var(--field-h);
 }
 
 .dz-panel .dz-field-toggle input[type="checkbox"] {
@@ -766,23 +925,13 @@
 }
 
 .dz-panel .dz-field-toggle label {
+  flex: 1;
   color: var(--ink);
   cursor: pointer;
 }
 
-.dz-field input:focus-visible,
-.dz-field select:focus-visible,
-.dz-field textarea:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: -1px;
-  border-color: var(--accent-strong);
-}
-
-.dz-hint {
-  grid-column: 1 / -1;
-  color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.4;
+.dz-panel .dz-field-toggle .dz-hint {
+  flex-basis: 100%;
 }
 
 /**
@@ -791,12 +940,583 @@
  * pushed the controls apart until none could be read at a glance. The band
  * list's one-line notes stay, being part of what each row says.
  */
+.dz-panel .dz-hint {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .dz-panel .dz-field > .dz-hint {
   display: none;
 }
 
 .dz-panel .dz-field:focus-within > .dz-hint {
   display: block;
+}
+
+/* ---- colours: chip, hex, and a minus to take the colour off ---- */
+
+.dz-panel .dz-swatch.dz-input {
+  position: relative;
+  gap: 8px;
+  padding-left: 6px;
+}
+
+/* the gap to the hex is the chip's, so no padding rule has to win for it */
+.dz-panel .dz-swatch-well {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgb(34 39 44 / .12);
+}
+
+.dz-panel .dz-swatch-well input[type="color"] {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.dz-panel .dz-swatch-well input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.dz-panel .dz-swatch-well input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 3px;
+}
+
+.dz-panel .dz-swatch-well input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: 3px;
+}
+
+/* white with a red slash through it: the usual way of saying "no colour" */
+.dz-panel .dz-swatch.is-none .dz-swatch-well::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background:
+    linear-gradient(to top right,
+      transparent calc(50% - .75px),
+      var(--danger) calc(50% - .75px),
+      var(--danger) calc(50% + .75px),
+      transparent calc(50% + .75px)),
+    var(--surface);
+  pointer-events: none;
+}
+
+.dz-panel .dz-hex {
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-panel .dz-hex::placeholder {
+  color: var(--ink-soft);
+  text-transform: none;
+}
+
+/**
+ * The minus shows on the row being pointed at, as a design tool's does - and
+ * floats over the box's empty right end rather than taking a slot in the row,
+ * which a six-digit hex needs all of at half the rail's width.
+ */
+.dz-panel .dz-swatch.dz-input .dz-swatch-clear {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  opacity: 0;
+}
+
+.dz-panel .dz-swatch.dz-input:hover .dz-swatch-clear,
+.dz-panel .dz-swatch.dz-input:focus-within .dz-swatch-clear {
+  opacity: 1;
+}
+
+.dz-panel .dz-swatch.dz-input.is-none .dz-swatch-clear {
+  display: none;
+}
+
+/* a group band's fill: the chip alone, beside the band's height */
+.dz-panel .dz-band-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dz-panel .dz-band-fill .dz-swatch-clear {
+  width: 18px;
+  height: 18px;
+}
+
+/* the clear button keeps its place, so the height box never moves */
+.dz-panel .dz-band-fill.is-none .dz-swatch-clear {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+/* ---- buttons ---- */
+
+/* glyph buttons: no frame until pointed at */
+.dz-panel .dz-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 0;
+  border: 0;
+  border-radius: var(--field-radius);
+  background: none;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.dz-panel .dz-icon:hover {
+  background: var(--field-bg);
+  color: var(--ink);
+}
+
+.dz-panel .dz-icon:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+}
+
+/* a secondary button: hairline outline on paper, centred */
+.dz-panel .dz-add-row {
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dz-panel .dz-add-row:hover {
+  border-color: var(--border);
+  border-style: solid;
+  background: var(--field-bg);
+  color: var(--ink);
+}
+
+.dz-panel .dz-add-row:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+}
+
+/* a format's summary is a box like any other, with its Edit on the right */
+.dz-panel .dz-format {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dz-panel .dz-format-edit {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.dz-panel .dz-format:hover .dz-format-edit {
+  color: var(--accent-ink);
+}
+
+/* ---- the value box ---- */
+
+.dz-panel .dz-brace {
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-soft);
+  line-height: 20px;
+}
+
+.dz-panel .dz-brace:hover {
+  background: var(--field-bg);
+  color: var(--accent-ink);
+}
+
+.dz-panel .dz-value textarea {
+  border-color: transparent;
+  border-radius: var(--field-radius);
+}
+
+.dz-panel .dz-value textarea:hover {
+  border-color: var(--border);
+}
+
+.dz-panel .dz-value textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+}
+
+/* the layer behind carries the box's fill, since the textarea is see-through */
+.dz-panel .dz-value-marks {
+  border-radius: var(--field-radius);
+  background: var(--field-bg);
+}
+
+.dz-panel .dz-value:focus-within .dz-value-marks {
+  background: var(--surface);
+}
+
+/* ---- the stored picture ---- */
+
+.dz-image {
+  display: grid;
+  gap: 8px;
+}
+
+.dz-image-thumb,
+.dz-image-none {
+  box-sizing: border-box;
+  width: 100%;
+  height: 80px;
+  border-radius: var(--field-radius);
+  background: var(--field-bg);
+}
+
+.dz-image-thumb {
+  object-fit: contain;
+}
+
+.dz-image-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+
+.dz-image-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* nothing is being added by these two, so the plus goes */
+.dz-image-actions .dz-add-row::before {
+  content: none;
+}
+
+/* ---- a table's columns ---- */
+
+/* rows that open, as layers do, packed closer than the section's controls */
+.dz-panel .dz-columns {
+  row-gap: 2px;
+}
+
+.dz-column-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 2px 0 4px;
+  border-radius: var(--field-radius);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dz-column-head::-webkit-details-marker {
+  display: none;
+}
+
+.dz-column-head:hover {
+  background: var(--field-bg);
+}
+
+.dz-column-head:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+}
+
+/* a chevron that points at the column's controls once they are showing */
+.dz-column-caret {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 6 10'%3E%3Cpath d='M1 1l4 4-4 4' fill='none' stroke='%23667080' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 5px 8px no-repeat;
+  transition: transform .12s ease;
+}
+
+.dz-column[open] > .dz-column-head .dz-column-caret {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dz-column-caret {
+    transition: none;
+  }
+}
+
+.dz-column-number {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--field-bg);
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-column-head:hover .dz-column-number {
+  background: var(--surface);
+}
+
+.dz-column-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dz-column-width {
+  flex: none;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* remove waits on the right until the column is pointed at */
+.dz-panel .dz-column-head .dz-icon {
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+}
+
+.dz-panel .dz-column-head:hover .dz-icon,
+.dz-panel .dz-column-head:focus-within .dz-icon,
+.dz-panel .dz-column-head .dz-icon:focus-visible {
+  opacity: 1;
+}
+
+/* open, the column's controls on the rail's grid */
+.dz-column-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px 0 12px;
+}
+
+/* ---- a row of glyph buttons ---- */
+
+/* a choice of a few, each a glyph, the chosen one raised on paper */
+.dz-segmented {
+  display: flex;
+  gap: 2px;
+  height: var(--field-h);
+  padding: 2px;
+  border-radius: var(--field-radius);
+  background: var(--field-bg);
+}
+
+.dz-seg {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* the radio stays, unseen, over its glyph: it is what takes the click and the keys */
+.dz-seg input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dz-seg-glyph {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  border-radius: 3px;
+  color: var(--ink-soft);
+}
+
+.dz-seg-glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dz-seg:hover .dz-seg-glyph {
+  color: var(--ink);
+}
+
+.dz-seg input:checked + .dz-seg-glyph {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.dz-seg input:focus-visible + .dz-seg-glyph {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
+}
+
+/* ---- the band list ---- */
+
+/* a row per band, as a layer list is: tick, name, then its height */
+.dz-band-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+  min-height: 28px;
+}
+
+.dz-band-row.has-fill {
+  grid-template-columns: minmax(0, 1fr) auto 52px;
+}
+
+.dz-band-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.dz-band-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* an inactive band is legible but plainly off */
+.dz-band-row.is-on .dz-band-name {
+  color: var(--ink);
+}
+
+.dz-panel .dz-band-height {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dz-band-height-none {
+  color: var(--ink-soft);
+  font-size: 10px;
+  text-align: right;
+}
+
+.dz-band-row .dz-hint {
+  grid-column: 1 / -1;
+  padding: 0 0 4px 22px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+/* ---- a table's grouping levels ---- */
+
+/**
+ * A level is a block on the rail's grid, under a row naming it - the levels of
+ * a nested grouping read as separate things, each with its own field, order,
+ * page breaks and bands, rather than one run of controls.
+ */
+.dz-panel .dz-group-level {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.dz-panel .dz-group-level + .dz-group-level {
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.dz-group-level-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 24px;
+}
+
+.dz-group-level-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.dz-group-level-name b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* the move and remove buttons together on the right, not pushed apart */
+.dz-group-level-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+/* ---- several items selected ---- */
+
+.dz-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.dz-selected li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--field-radius);
+}
+
+.dz-selected li:hover {
+  background: var(--field-bg);
+}
+
+.dz-selected-type {
+  flex: none;
+  width: 36px;
+  color: var(--ink-soft);
+}
+
+.dz-selected-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------- the tool footer ---------------- */
@@ -1001,199 +1721,6 @@
   color: var(--accent-ink);
 }
 
-/* the stored picture, small, with what can be done to it underneath */
-.dz-image {
-  display: grid;
-  gap: 6px;
-}
-
-.dz-image-thumb,
-.dz-image-none {
-  box-sizing: border-box;
-  width: 100%;
-  height: 72px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--backdrop);
-}
-
-.dz-image-thumb {
-  object-fit: contain;
-}
-
-.dz-image-none {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-style: dashed;
-  color: var(--ink-soft);
-}
-
-.dz-image-actions {
-  display: flex;
-  gap: 6px;
-}
-
-/* nothing is being added by these two, so the plus goes */
-.dz-image-actions .dz-add-row::before {
-  content: none;
-}
-
-/* a column is a card, because four controls will not sit on one rail-wide row */
-.dz-column {
-  margin-bottom: 10px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--backdrop);
-}
-
-.dz-column-head {
-  display: flex;
-  align-items: center;
-  margin-bottom: 6px;
-  color: var(--ink-soft);
-  font-size: 10px;
-  letter-spacing: .06em;
-}
-
-.dz-column .dz-field:last-child {
-  margin-bottom: 0;
-}
-
-/* ---------------- the band list ---------------- */
-
-.dz-band-row {
-  display: grid;
-  grid-template-columns: 1fr 64px;
-  align-items: center;
-  column-gap: 10px;
-  row-gap: 2px;
-  padding: 6px 0;
-}
-
-.dz-band-name {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  color: var(--ink-soft);
-}
-
-/* an inactive band is legible but plainly off */
-.dz-band-row.is-on .dz-band-name {
-  color: var(--ink);
-}
-
-.dz-band-name input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent-strong);
-}
-
-.dz-band-height {
-  width: 100%;
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.dz-band-height:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: -1px;
-}
-
-.dz-band-height-none {
-  color: var(--ink-soft);
-  font-size: 10px;
-  text-align: right;
-}
-
-.dz-band-row .dz-hint {
-  grid-column: 1 / -1;
-  padding-left: 21px;
-  font-size: 10px;
-}
-
-/* ---------------- a table's grouping levels ---------------- */
-
-/**
- * A card per level, as a column is a card: the levels of a nested grouping
- * read as separate things, each with its own field, order, page breaks and
- * bands, rather than one run of controls.
- */
-.dz-group-level {
-  margin-bottom: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--backdrop);
-}
-
-.dz-group-level-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.dz-group-level-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-soft);
-  font-size: 10px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.dz-group-level-name b {
-  color: var(--ink);
-  font-family: "Courier Prime", monospace;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-/* the move and remove buttons together on the right, not pushed apart */
-.dz-group-level-actions {
-  display: flex;
-  flex: none;
-  gap: 2px;
-}
-
-.dz-group-level-actions .dz-icon {
-  margin-left: 0;
-}
-
-/* less the card's own padding, so its controls line up with the rail's */
-.dz-group-level .dz-field:not(.dz-field-toggle) {
-  grid-template-columns: 88px minmax(0, 1fr);
-}
-
-.dz-group-level .dz-band-row:last-child {
-  padding-bottom: 0;
-}
-
-/* the grouping section's buttons sit clear of the cards above them */
-.dz-grouping .dz-add-row {
-  margin-top: 4px;
-}
-
-.dz-grouping .dz-add-row + .dz-add-row {
-  margin-top: 8px;
-}
-
 /* ---------------- the corner ---------------- */
 
 /**
@@ -1301,6 +1828,13 @@
 
 /* ---------------- the dialog ---------------- */
 
+/**
+ * The designer's dialogs take the rail's look a size up: grey borderless
+ * boxes 32px tall that outline themselves on hover and take the accent ring
+ * on focus, labels small and grey above them, choices that open the shared
+ * menu. The card, its title bar and its footer are shared/modal.css.
+ */
+
 /* wide enough for a report name to be read in full */
 .modal-card.is-roomy {
   width: min(560px, calc(100vw - 32px));
@@ -1315,17 +1849,71 @@
  * because of it. Narrow is now the exception, and it asks for itself by name.
  */
 .modal-card .dz-field {
+  display: grid;
   grid-template-columns: 1fr;
   gap: 6px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .modal-card .dz-field label {
   color: var(--ink-soft);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+  font-size: 11px;
+}
+
+/* every box in a dialog */
+.modal-card .dz-field input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+.modal-card .dz-hl-rule input[type="text"],
+.modal-card .dz-choice-trigger {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-color: var(--surface-muted);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.modal-card .dz-field input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):hover,
+.modal-card .dz-hl-rule input[type="text"]:hover,
+.modal-card .dz-choice-trigger:hover {
+  border-color: var(--border);
+}
+
+.modal-card .dz-field input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus-visible,
+.modal-card .dz-hl-rule input[type="text"]:focus-visible,
+.modal-card .dz-choice-trigger:focus-visible,
+.modal-card .dz-choice-trigger[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background-color: var(--surface);
+}
+
+.modal-card input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-card input[type="number"]::-webkit-inner-spin-button,
+.modal-card input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* a choice: the box, with the same chevron as the rail's */
+.modal-card .dz-choice-trigger {
+  display: flex;
+  align-items: center;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23667080' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 9px 6px;
+  text-align: left;
+  cursor: pointer;
 }
 
 /* a count is two digits; a box the width of the card would be absurd */
@@ -1338,10 +1926,29 @@
 
 .modal-card .dz-field-count label {
   font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
   color: var(--ink);
+}
+
+/* glyph buttons in a dialog: no frame until pointed at, as in the rail */
+.modal-card .dz-icon {
+  width: 28px;
+  height: 28px;
+  margin-left: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+.modal-card .dz-icon:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.modal-card .dz-icon:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
 }
 
 /* ---------------- the bar's controls ---------------- */
@@ -1431,12 +2038,12 @@
  */
 .modal-card .dz-field-picker .dropdown-trigger,
 .modal-card .dz-field-picker .dropdown-item {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .modal-card .dz-field-picker .dropdown-trigger {
-  height: 38px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 10px;
 }
 
 /**
@@ -1448,7 +2055,7 @@
  * so it clips rather than pushing the menu wider than the trigger under it.
  */
 .modal-card .dz-field-picker .dropdown-item {
-  padding: 9px 12px 9px 8px;
+  padding: 6px 12px 6px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1488,11 +2095,13 @@
 }
 
 .dz-payload {
+  display: block;
   width: 100%;
+  margin-top: 12px;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--backdrop);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface-muted);
   color: var(--ink);
 
   font-family: "Courier Prime", monospace;
@@ -1502,10 +2111,15 @@
   resize: vertical;
 }
 
+.dz-payload:hover {
+  border-color: var(--border);
+}
+
 .dz-payload:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: -1px;
+  outline: none;
   border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background: var(--surface);
 }
 
 /**
@@ -1717,41 +2331,6 @@
   outline-style: dashed;
 }
 
-.dz-selected {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-  padding: 0;
-  list-style: none;
-  max-height: 30vh;
-  overflow-y: auto;
-}
-
-.dz-selected li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--backdrop);
-}
-
-.dz-selected-type {
-  color: var(--ink-soft);
-  font-size: 10px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.dz-selected-id {
-  font-family: "Courier Prime", monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------------- the value box ---------------- */
 
 .dz-field-top {
@@ -1939,38 +2518,38 @@ a.dz-tool[aria-disabled="true"]:hover {
   width: min(480px, calc(100vw - 32px));
 }
 
-/**
- * The dialog sits outside the rail, so its controls inherited the page's 16px
- * and towered over their 10px labels. 13px, as the other dialogs' choices are.
- */
-.dz-format-card .dz-field select,
-.dz-format-card .dz-field input[type="text"],
-.dz-format-card .dz-field input[type="number"] {
-  min-height: 32px;
-  padding: 5px 8px;
-  font-size: 13px;
-}
-
 .dz-format-types {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
   margin: 0 0 16px;
   padding: 0;
   border: 0;
 }
 
 .dz-format-types legend {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  padding: 0;
   color: var(--ink-soft);
-  font-size: 10px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 
-/* a type is a pill; the radio inside stays for the keyboard and for forms */
+/**
+ * The type is a row of buttons in a grey track, the chosen one raised on
+ * paper - a design tool's segmented control. The radio inside each stays for
+ * the keyboard and for the form.
+ */
+.dz-format-track {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+/* sized to their names, so "Date & time" is read whole beside "Date" */
 .dz-format-type {
   position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   cursor: pointer;
 }
 
@@ -1981,33 +2560,37 @@ a.dz-tool[aria-disabled="true"]:hover {
 }
 
 .dz-format-type span {
-  display: inline-block;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  flex: 1;
+  padding: 6px 8px;
+  overflow: hidden;
+  border-radius: 6px;
   color: var(--ink-soft);
   font-size: 12px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dz-format-type:hover span {
-  border-color: var(--accent);
+  color: var(--ink);
 }
 
 .dz-format-type input:checked + span {
-  border-color: var(--accent-strong);
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(34, 39, 44, .08);
 }
 
 .dz-format-type input:focus-visible + span {
   outline: 2px solid var(--accent-strong);
-  outline-offset: 1px;
+  outline-offset: -1px;
 }
 
 .dz-format-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  column-gap: 14px;
+  column-gap: 12px;
 }
 
 .dz-format-group[hidden] {
@@ -2017,6 +2600,7 @@ a.dz-tool[aria-disabled="true"]:hover {
 .dz-format-group .modal-summary {
   grid-column: 1 / -1;
   margin-top: 0;
+  margin-bottom: 12px;
   font-size: 11px;
 }
 
@@ -2031,16 +2615,14 @@ a.dz-tool[aria-disabled="true"]:hover {
   gap: 12px;
   margin-top: 4px;
   padding: 12px;
-  border-radius: 6px;
-  background: var(--backdrop);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
 }
 
 .dz-format-sample-label {
   flex: none;
   color: var(--ink-soft);
-  font-size: 10px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 
 .dz-format-sample-values {
@@ -2074,42 +2656,36 @@ a.dz-tool[aria-disabled="true"]:hover {
   width: min(640px, calc(100vw - 32px));
 }
 
-/* the dialog's own buttons and notes at the rules' size, not the page's 16px */
-.dz-highlight-card .dz-add-row {
-  height: 34px;
-  font-size: 13px;
-}
-
+/**
+ * The rules are a list, as a design tool lists layers or fills: each a row
+ * across the whole card, ruled off from the next, rather than a card of its
+ * own. The list scrolls inside the dialog once there are many.
+ */
 .dz-hl-rules {
   display: grid;
-  gap: 10px;
   max-height: 55vh;
-  margin-bottom: 12px;
+  margin: -16px calc(-1 * var(--modal-x)) 12px;
   overflow-y: auto;
 }
 
 /**
- * A rule is a card on a three-column grid - its label, its controls, its own
- * buttons - the same for every rule, so each control sits under the matching
- * one in the rule above whatever the label says or the test needs.
+ * A rule is three columns - its label, its controls, its own buttons - the
+ * same for every rule, so each control sits under the matching one in the rule
+ * above whatever the label says or the test needs.
  */
 .dz-hl-rule {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 56px;
+  grid-template-columns: 64px minmax(0, 1fr) 60px;
   align-items: center;
   column-gap: 12px;
-  row-gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--backdrop);
+  row-gap: 8px;
+  padding: 14px var(--modal-x);
+  border-bottom: 1px solid var(--border);
 }
 
 .dz-hl-label {
   color: var(--ink-soft);
   font-size: 11px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
 }
 
 /**
@@ -2138,127 +2714,171 @@ a.dz-tool[aria-disabled="true"]:hover {
 .dz-hl-and {
   flex: none;
   color: var(--ink-soft);
-  font-size: 12px;
 }
 
 .dz-hl-novalue {
   color: var(--ink-soft);
-  font-size: 12px;
   font-style: italic;
-}
-
-/* every control one height, one border, one type size */
-.dz-hl-rule select,
-.dz-hl-rule input[type="text"] {
-  width: 100%;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-}
-
-.dz-hl-rule select:focus-visible,
-.dz-hl-rule input[type="text"]:focus-visible,
-.dz-hl-toggle:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: -1px;
-  border-color: var(--accent-strong);
 }
 
 .dz-hl-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 2px;
 }
 
-.dz-hl-actions .dz-icon,
 .dz-hl-slot {
-  width: 24px;
-  height: 24px;
-  margin-left: 0;
+  width: 28px;
+  height: 28px;
 }
 
 /* the style line: colours, then weight and slant, then the sample at the end */
 .dz-hl-style {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   min-width: 0;
 }
 
+/**
+ * A colour is a grey box like the others: the chip, what it colours, and a
+ * minus to take it off - a design tool's fill row. The swatch's own wrapper
+ * steps aside (display: contents) so the three line up in that order.
+ */
 .dz-hl-color {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 4px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--surface-muted);
 }
 
-.dz-hl-color-label {
-  color: var(--ink-soft);
-  font-size: 12px;
+.dz-hl-color:hover {
+  border-color: var(--border);
+}
+
+.dz-hl-color:focus-within {
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background: var(--surface);
 }
 
 .dz-hl-rule .dz-swatch {
-  gap: 2px;
+  display: contents;
 }
 
-.dz-hl-rule .dz-swatch-well,
-.dz-hl-rule .dz-swatch-well input[type="color"] {
-  width: 40px;
-  height: 32px;
+.dz-hl-color-label {
+  order: 1;
+  color: var(--ink);
+  font-size: 12px;
 }
 
-.dz-hl-rule .dz-swatch-well input[type="color"] {
-  padding: 3px;
-  border: 1px solid var(--border);
+.dz-hl-rule .dz-swatch-well {
+  position: relative;
+  display: block;
+  flex: none;
+  order: 0;
+  width: 16px;
+  height: 16px;
+  overflow: hidden;
   border-radius: 4px;
-  background: var(--surface);
+  box-shadow: inset 0 0 0 1px rgba(34, 39, 44, .12);
+}
+
+.dz-hl-rule .dz-swatch-well input[type="color"] {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
 }
 
+.dz-hl-rule .dz-swatch-well input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.dz-hl-rule .dz-swatch-well input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 4px;
+}
+
+.dz-hl-rule .dz-swatch-well input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: 4px;
+}
+
+/* white with a red slash through it: the usual way of saying "no colour" */
+.dz-hl-rule .dz-swatch.is-none .dz-swatch-well::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background:
+    linear-gradient(to top right,
+      transparent calc(50% - .75px),
+      var(--danger) calc(50% - .75px),
+      var(--danger) calc(50% + .75px),
+      transparent calc(50% + .75px)),
+    var(--surface);
+  pointer-events: none;
+}
+
 /**
- * The clear button keeps its place when there is no colour to clear, so the
- * fill, the toggles and the sample never shift from one rule to the next.
+ * The minus keeps its place when there is no colour to clear, so the fill,
+ * the toggles and the sample never shift from one rule to the next.
  */
+.dz-hl-rule .dz-swatch-clear {
+  order: 2;
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+}
+
 .dz-hl-rule .dz-swatch.is-none .dz-swatch-clear {
-  display: inline-flex;
   visibility: hidden;
 }
 
-.dz-hl-rule .dz-swatch-clear {
-  width: 20px;
-  height: 20px;
-  margin-left: 0;
-}
-
+/* bold and italic: two glyph buttons in a grey track, the one on raised */
 .dz-hl-toggles {
   display: inline-flex;
-  gap: 4px;
+  gap: 2px;
+  height: 32px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--surface-muted);
 }
 
 .dz-hl-toggle {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
+  width: 28px;
+  height: 28px;
+  border: 0;
   border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink);
+  background: none;
+  color: var(--ink-soft);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
 
 .dz-hl-toggle:hover {
-  border-color: var(--accent);
+  color: var(--ink);
 }
 
 .dz-hl-toggle[aria-pressed="true"] {
-  border-color: var(--accent-strong);
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(34, 39, 44, .08);
+}
+
+.dz-hl-toggle:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -1px;
 }
 
 /* what the rule does to a value, in the rule's own style, at the line's end */
@@ -2272,40 +2892,35 @@ a.dz-tool[aria-disabled="true"]:hover {
   padding: 0 10px;
   overflow: hidden;
   border: 1px dashed var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--surface);
   font-family: "Courier Prime", monospace;
   font-size: 13px;
   white-space: nowrap;
 }
 
-/* a group band's row: its name, its background, its height */
-.dz-band-row.has-fill {
-  grid-template-columns: 1fr auto 64px;
-}
-
-.dz-band-fill .dz-swatch-well,
-.dz-band-fill .dz-swatch-well input[type="color"] {
-  width: 36px;
-  height: 28px;
-}
-
-.dz-band-fill .dz-swatch-well input[type="color"] {
-  padding: 2px;
+/* add a rule: a secondary button, as the footer's are */
+.dz-highlight-card .dz-add-row {
+  width: auto;
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--surface);
-  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-/* the clear button keeps its place, so the height box never moves */
-.dz-band-fill.is-none .dz-swatch-clear {
-  display: inline-flex;
-  visibility: hidden;
+.dz-highlight-card .dz-add-row:hover {
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--ink);
 }
 
-.dz-band-fill .dz-swatch-clear {
-  width: 18px;
-  height: 18px;
-  margin-left: 0;
+.dz-highlight-card .dz-add-row:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }

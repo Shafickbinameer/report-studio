@@ -1,5 +1,5 @@
 /**
- * The viewer's chrome: toolbar, pager, search field, export dialog, and how a
+ * The viewer's chrome: toolbar, pager, search field, export menu, and how a
  * page is presented on screen.
  *
  * Split out of styles.css because the viewer is opened from two places. The
@@ -39,13 +39,17 @@
  * application embedding one in a panel beside its own chrome. They are laid out
  * inside the mount now, so the viewer is a component rather than a screen.
  */
+/**
+ * The ground is a shade darker than the paper, as a design tool's canvas is,
+ * so a white page reads as a sheet lying on it rather than as more of it.
+ */
 .report-viewer {
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--backdrop);
+  background: var(--surface-muted);
 }
 
 /* display: flex above outranks the browser's [hidden], so a hidden viewer would stay up */
@@ -105,9 +109,27 @@
   display: block;
 }
 
+/**
+ * Lifted off the canvas by a shadow rather than outlined by report.css's
+ * border - how a design tool shows a frame. The border stays in the box (as
+ * transparent) so the page measures what the engine paginated.
+ */
+.report-viewer .page {
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgba(34, 39, 44, .06),
+    0 2px 6px rgba(34, 39, 44, .06),
+    0 12px 32px rgba(34, 39, 44, .10);
+}
+
 
 /* ---------------- the floating pager ---------------- */
 
+/**
+ * A floating toolbar, as a design tool's bottom bar is: paper, a hairline, a
+ * soft shadow, glyph buttons with no frame until pointed at, and the page box
+ * the grey box every field in the product is.
+ */
 .report-viewer .pager {
   position: absolute;
   left: 50%;
@@ -117,59 +139,75 @@
 
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: var(--pager-height);
-  padding: 0 8px;
+  gap: 4px;
+  height: 44px;
+  padding: 0 6px;
 
   background: var(--surface);
   border: 1px solid var(--border);
-  /* a pill, to read as floating rather than as a docked strip */
-  border-radius: 999px;
-  box-shadow: 0 4px 16px rgba(34, 39, 44, .12);
+  border-radius: 12px;
+  box-shadow:
+    0 2px 6px rgba(34, 39, 44, .06),
+    0 10px 28px rgba(34, 39, 44, .14);
 
   font-family: "Instrument Sans", system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ink);
 }
 
 .report-viewer .pager button {
-  min-width: 30px;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
   background: none;
   color: var(--ink);
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
 }
 
 .report-viewer .pager button:hover:not(:disabled) {
+  background: var(--surface-muted);
+}
+
+.report-viewer .pager button:active:not(:disabled) {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .report-viewer .pager button:disabled {
-  opacity: .38;
+  opacity: .35;
   cursor: default;
 }
 
 .report-viewer .pager input {
   height: 28px;
   padding: 0 6px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--surface-muted);
   color: var(--ink);
   font: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
-.report-viewer .pager input:focus-visible,
+.report-viewer .pager input:hover {
+  border-color: var(--border);
+}
+
+.report-viewer .pager input:focus-visible {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background: var(--surface);
+}
+
 .report-viewer .pager button:focus-visible {
   outline: 2px solid var(--accent-strong);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 
@@ -187,13 +225,19 @@
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   font-family: "Instrument Sans", system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ink);
   z-index: 10;
 }
 
+/**
+ * Laid out as a design tool's top bar: 48px, the name on the left, the tools
+ * for the thing being looked at in the middle, and what is done with it on
+ * the right - every button a glyph with no frame until pointed at, except the
+ * one that does the thing, which takes the accent.
+ */
 .report-viewer .toolbar-row {
-  height: var(--bar-height);
+  height: 48px;
 
   /**
    * Three columns, not a flex row: the outer two share the slack equally, so
@@ -204,13 +248,13 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 16px;
-  padding: 0 16px;
+  padding: 0 12px 0 16px;
 }
 
 .report-viewer .toolbar-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 /**
@@ -226,9 +270,9 @@
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 20px;
   color: var(--ink);
   white-space: nowrap;
 }
@@ -237,12 +281,17 @@
  * The monogram, not the wordmark: the text beside it is the report's name
  * rather than the product's, so the mark is the only thing saying whose viewer
  * this is and it has to sit in a square beside a line of type.
+ *
+ * Inline-block, so it takes its size inside the block the ellipsis needs -
+ * as a plain inline box it had no width, and was never seen.
  */
 .report-viewer .toolbar-brand::before {
   content: "";
-  flex: none;
-  width: 26px;
-  height: 26px;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  vertical-align: -5px;
 
   background-image: var(--brand-icon);
   background-repeat: no-repeat;
@@ -255,42 +304,55 @@
   justify-self: center;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .report-viewer .toolbar-save {
   justify-self: end;
 }
 
+/* a glyph button: no frame, a grey ground when pointed at */
 .report-viewer .toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-width: 32px;
   height: 32px;
   padding: 0 8px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--surface);
+  background: none;
   color: var(--ink);
   font: inherit;
-  font-size: 15px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
 }
 
 .report-viewer .toolbar button:hover:not(:disabled) {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--surface-muted);
 }
 
 .report-viewer .toolbar button:disabled {
-  opacity: .38;
+  opacity: .35;
   cursor: default;
 }
 
+.report-viewer .toolbar-save {
+  gap: 6px;
+}
+
 .report-viewer .toolbar-save button {
-  min-width: 0;
-  padding: 0 14px;
-  font-size: 12px;
+  padding: 0 12px;
+  font-weight: 500;
   white-space: nowrap;
+}
+
+/* Print: its glyph and its name, the glyph a shade quieter */
+.report-viewer .toolbar-save [data-role="print"] svg {
+  margin-left: -2px;
+  color: var(--ink-soft);
 }
 
 /**
@@ -315,7 +377,50 @@
 /* the accent alone is 2:1 on this surface - the ring uses the darker mix */
 .report-viewer .toolbar button:focus-visible {
   outline: 2px solid var(--accent-strong);
-  outline-offset: 1px;
+  outline-offset: -2px;
+}
+
+/**
+ * Zoom is one control in a grey track - minus, the level, plus - as a design
+ * tool groups it, rather than three boxes side by side.
+ */
+.report-viewer .toolbar-zoom {
+  gap: 0;
+  height: 32px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.report-viewer .toolbar-zoom > button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--ink-soft);
+}
+
+.report-viewer .toolbar-zoom > button:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--ink);
+}
+
+.report-viewer .toolbar-zoom .dropdown-trigger {
+  min-width: 76px;
+  height: 28px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.report-viewer .toolbar-zoom .dropdown-trigger:hover {
+  border-color: transparent;
+  background: var(--border);
+}
+
+.report-viewer .toolbar-zoom .dropdown-trigger[aria-expanded="true"] {
+  background: var(--surface);
 }
 
 .report-viewer .page-of {
@@ -344,24 +449,31 @@
 }
 
 /**
- * The field is the control: it carries the border, the background and the focus
+ * The field is the control: it carries the ground, the outline and the focus
  * ring, so the count and the match arrows sit inside the box with the text.
+ * A grey box like every field in the product, with a magnifier drawn into it -
+ * drawn, not an element, so the field holds only what it is tested to hold.
  */
 .report-viewer .search-field {
   display: flex;
   align-items: center;
   gap: 2px;
-  width: min(380px, 44vw);
+  width: min(360px, 40vw);
   height: 32px;
-  padding: 0 4px 0 10px;
-  border: 1px solid var(--border);
+  padding: 0 4px 0 32px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--surface-muted) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='7' cy='7' r='4.25' fill='none' stroke='%23667080' stroke-width='1.5'/%3E%3Cpath d='M10.25 10.25 13.5 13.5' stroke='%23667080' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat 10px center / 14px 14px;
+}
+
+.report-viewer .search-field:hover {
+  border-color: var(--border);
 }
 
 .report-viewer .search-field:focus-within {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 1px;
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background-color: var(--surface);
 }
 
 .report-viewer .search-field input[type="search"] {
@@ -373,6 +485,10 @@
   background: none;
   color: var(--ink);
   font: inherit;
+}
+
+.report-viewer .search-field input[type="search"]::placeholder {
+  color: var(--ink-soft);
 }
 
 /* the wrapper shows the ring, so the input must not draw a second one */
@@ -390,17 +506,18 @@
   border: none;
   border-radius: 4px;
   background: none;
-  font-size: 12px;
+  color: var(--ink-soft);
 }
 
 .report-viewer .search-field button:hover:not(:disabled) {
-  background: var(--accent-soft);
+  background: var(--border);
+  color: var(--ink);
 }
 
 .report-viewer .hits {
   flex: none;
   min-width: 62px;
-  padding-right: 2px;
+  padding-right: 4px;
   text-align: right;
   font-size: 11px;
   color: var(--ink-soft);
@@ -418,16 +535,23 @@
 /**
  * Two levels: every hit on the page is tinted, the one you are standing on
  * takes the accent outright. accent-soft is too close to the paper to see.
+ *
+ * No padding: a mark sits inside a line the engine measured, and padding made
+ * it taller and wider than the words it covers - in a table cell, enough to
+ * push the rest of the text onto a line the cell has no room for. The ring is
+ * a shadow instead, which takes no room.
  */
 .report-viewer mark.hit {
+  padding: 0;
+  border-radius: 2px;
   background: var(--accent-tint);
+  box-shadow: 0 0 0 1px var(--accent-tint);
   color: inherit;
-  padding: 5px;
 }
 
 .report-viewer mark.hit.is-focused {
   background: var(--accent);
-  outline: 1px solid var(--accent-ink);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 2px var(--accent-ink);
 }
 
 /**
@@ -470,6 +594,10 @@
   .report-viewer .search-field {
     width: 100%;
   }
+
+  .report-viewer .toolbar-save [data-role="print"] span {
+    display: none;
+  }
 }
 
 @media print {
@@ -486,6 +614,7 @@
   .report-viewer .page {
     display: block;
     border: none;
+    box-shadow: none;
     transform: none;
 
     /**
@@ -506,63 +635,152 @@
   }
 }
 
-/* ---------------- export dialog ---------------- */
+/* ---------------- the export menu ---------------- */
 
-/* the dialog shell is shared/modal.css; these are the export format cards */
-.report-viewer .modal-formats {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/**
+ * Export opens a menu under itself rather than a dialog over the report: the
+ * format is the only thing to decide, so it is decided in one click, where the
+ * button is. Drawn as every list in the product is (shared/dropdown.css) -
+ * paper, a hairline, the accent on the item under the pointer or the keys -
+ * and laid out as a design tool's export menu: a heading, then a row per
+ * format with what it will make underneath its name.
+ */
+.report-viewer .export-menu {
+  position: relative;
 }
 
-.report-viewer .format {
+/* the chevron says the button opens something, and turns while it is open */
+.report-viewer .toolbar-save [data-role="export"] svg {
+  margin-right: -4px;
+  transition: transform .12s ease;
+}
+
+.report-viewer .toolbar-save [data-role="export"][aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-viewer .toolbar-save [data-role="export"] svg {
+    transition: none;
+  }
+}
+
+/* under the button, its right edge on the button's, since it sits at the bar's end */
+.report-viewer .export-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  flex-direction: column;
+  gap: 2px;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow:
+    0 2px 6px rgba(34, 39, 44, .06),
+    0 12px 32px rgba(34, 39, 44, .16);
+}
+
+.report-viewer .export-list[hidden] {
+  display: none;
+}
+
+.report-viewer .export-heading {
+  padding: 6px 8px 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+/* a format: its file glyph, its name over what it makes, and its shortcut */
+.report-viewer .export-list .format {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.3;
+  text-align: left;
   cursor: pointer;
 }
 
-.report-viewer .format:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.report-viewer .export-list .format:hover:not(:disabled),
+.report-viewer .export-list .format:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: var(--ink);
 }
 
-/* the selected card uses the darker mix on its border so the state is legible */
-.report-viewer .format:has(input:checked) {
-  border-color: var(--accent-strong);
-  background: var(--accent-soft);
+.report-viewer .format-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
 }
 
-.report-viewer .format:has(input:focus-visible) {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 1px;
-}
-
-.report-viewer .format.is-unavailable {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-.report-viewer .format input {
-  margin-top: 2px;
-  accent-color: var(--accent-strong);
+/* on the accent, the glyph's tile turns to paper so it still reads as a tile */
+.report-viewer .export-list .format:hover:not(:disabled) .format-icon,
+.report-viewer .export-list .format:focus-visible .format-icon {
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .report-viewer .format-body {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .report-viewer .format-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .report-viewer .format-note {
-  font-size: 12px;
+  overflow: hidden;
+  font-size: 11px;
   color: var(--ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-viewer .export-list .format:hover:not(:disabled) .format-note,
+.report-viewer .export-list .format:focus-visible .format-note {
+  color: var(--ink);
+}
+
+.report-viewer .format-keys {
+  flex: none;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.report-viewer .export-list .format:hover:not(:disabled) .format-keys,
+.report-viewer .export-list .format:focus-visible .format-keys {
+  color: var(--ink);
+}
+
+/* a format with nothing to write: listed, so its absence is explained, but plainly off */
+.report-viewer .export-list .format.is-unavailable {
+  opacity: .5;
+  cursor: not-allowed;
 }

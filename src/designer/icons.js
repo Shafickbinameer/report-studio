@@ -117,6 +117,19 @@ export const ICONS = {
                      <path d="M2.25 13.75h11.5"/>`),
 
     /** a disk: the shutter above, the label below */
+    /** text alignment: three rules, ragged on the side the text is not set to */
+    alignLeft: wrap(`<path d="M2.75 4h10.5M2.75 8h6.5M2.75 12h8.5"/>`),
+    alignCenter: wrap(`<path d="M2.75 4h10.5M4.75 8h6.5M3.75 12h8.5"/>`),
+    alignRight: wrap(`<path d="M2.75 4h10.5M6.75 8h6.5M4.75 12h8.5"/>`),
+
+    /** which way a line runs */
+    horizontal: wrap(`<path d="M2.5 8h11"/>`),
+    vertical: wrap(`<path d="M8 2.5v11"/>`),
+
+    /** a sheet stood up, and the same sheet on its side */
+    portrait: wrap(`<rect x="4.25" y="2.25" width="7.5" height="11.5" rx="1"/>`),
+    landscape: wrap(`<rect x="2.25" y="4.25" width="11.5" height="7.5" rx="1"/>`),
+
     save: wrap(`<path d="M2.75 3.25h8.5l2.5 2.5v7a.5.5 0 0 1-.5.5h-11
                          a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5z"/>
                 <path d="M5 3.25v3.5h5.5v-3.5M5 13.25V9.5h6v3.75"/>`)

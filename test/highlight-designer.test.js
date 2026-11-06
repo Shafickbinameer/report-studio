@@ -292,3 +292,58 @@ describe('highlight from the right-click menu', () => {
         expect(dialog().querySelector('h2').textContent).toBe('Highlight: tbl rows');
     });
 });
+
+
+describe('the editor drawn as a design tool draws a dialog', () => {
+    const trigger = (n, key) => ruleCards()[n].querySelector(`[data-key="${key}"]`)
+        .closest('.dz-choice').querySelector('.dz-choice-trigger');
+    const openList = () => [...root().querySelectorAll('.dz-listbox')].find(l => !l.hidden);
+
+    it('closes from the × in its title bar, keeping the rules as they were', async () => {
+        openOnColumn();
+        set(0, 'value', '5');
+
+        const close = dialog().querySelector('[data-role="close"]');
+        expect(close.getAttribute('aria-label')).toBe('Close');
+
+        close.click();
+        await settle();
+
+        expect(dialog()).toBeNull();
+        expect(item('tbl').columns[2].highlight).toBeUndefined();
+    });
+
+    it('opens a test from the shared list, and the rule takes it', () => {
+        openOnColumn();
+
+        trigger(0, 'op').click();
+        expect(openList()).toBeDefined();
+        expect(openList().classList.contains('is-roomy')).toBe(true);
+
+        [...openList().querySelectorAll('[role="option"]')]
+            .find(o => o.textContent.trim() === 'is between').click();
+
+        expect(ruleCards()[0].querySelector('[data-key="op"]').value).toBe('between');
+        expect(ruleCards()[0].querySelector('[data-key="to"]')).not.toBeNull();
+        expect(trigger(0, 'op').textContent.trim()).toBe('is between');
+    });
+
+    it('hands the focus from the hidden select to the button standing for it', () => {
+        openOnColumn();
+
+        /** what the editor does after redrawing a rule for a new test */
+        set(0, 'op', 'empty');
+
+        expect(document.activeElement).toBe(trigger(0, 'op'));
+    });
+
+    it('takes its list with it when it closes', async () => {
+        openOnColumn();
+        const before = root().querySelectorAll('.dz-listbox').length;
+
+        dialog().querySelector('[data-role="close"]').click();
+        await settle();
+
+        expect(root().querySelectorAll('.dz-listbox').length).toBe(before - 1);
+    });
+});

@@ -9,6 +9,13 @@
  * environment the specs run in, and a stubbed showModal would test the stub
  * instead of the behaviour.
  *
+ * Laid out the way a design tool lays out a dialog, Figma's in particular, in
+ * the product's own palette: a rounded card lifted by its shadow rather than
+ * outlined, a title bar ruled off from the body, a footer ruled off below it
+ * with the buttons on the right, and the accent kept for the one button that
+ * does the thing. The markup is a title, a body and a .modal-actions row; the
+ * bars are drawn from those, so no dialog had to be rewritten for them.
+ *
  * What is NOT here: anything about what a particular dialog contains. The
  * export format cards stay with the preview, and the designer's own fields stay
  * with the designer.
@@ -25,6 +32,7 @@
   display: grid;
   place-items: center;
   font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 12px;
   color: var(--ink);
 }
 
@@ -32,53 +40,110 @@
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(34, 39, 44, .45);
+  background: rgba(34, 39, 44, .32);
 }
 
 .modal-card {
+  --modal-x: 16px;
+
   position: relative;
   width: min(420px, calc(100vw - 32px));
-  padding: 20px;
-  border: 1px solid var(--border);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 0 var(--modal-x) var(--modal-x);
+  border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 12px 40px rgba(34, 39, 44, .22);
+  box-shadow:
+    0 0 0 1px rgba(34, 39, 44, .08),
+    0 2px 6px rgba(34, 39, 44, .06),
+    0 20px 48px rgba(34, 39, 44, .22);
 }
 
+/**
+ * The title is the dialog's title bar: ruled off from the body, across the
+ * whole card, sticky while a long dialog scrolls under it. Room is left on
+ * the right for the close button, which sits in it.
+ */
 .modal-card h2 {
-  margin-bottom: 14px;
-  font-size: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  margin: 0 calc(-1 * var(--modal-x)) var(--modal-x);
+  padding: 0 48px 0 var(--modal-x);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
   font-weight: 600;
+}
+
+/* the ×: a glyph button in the title bar, as a design tool's dialog has */
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.modal-close:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
 }
 
 .modal-summary {
   min-height: 18px;
-  margin: 12px 2px 0;
+  margin: 12px 0 0;
   font-size: 12px;
+  line-height: 1.5;
   color: var(--ink-soft);
 }
 
+/**
+ * The footer: ruled off from the body across the whole card, the buttons on
+ * the right. Negative margins take it to the card's edges, whatever it sits
+ * in - a form, or the card itself.
+ */
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
+  margin: 20px calc(-1 * var(--modal-x)) calc(-1 * var(--modal-x));
+  padding: 12px var(--modal-x);
+  border-top: 1px solid var(--border);
 }
 
 .modal-actions button {
-  height: 34px;
-  padding: 0 16px;
+  height: 32px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .modal-actions button:hover:not(:disabled) {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--surface-muted);
 }
 
 /* dark ink on the accent, never white: 7.25:1 against 2.08:1 */

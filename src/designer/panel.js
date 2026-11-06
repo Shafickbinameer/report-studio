@@ -29,13 +29,60 @@ import { levelsOf, MAX_GROUP_LEVELS } from '../engine/tables.js';
 import { describeFormat } from '../engine/format.js';
 import { describeHighlight } from '../engine/highlight.js';
 import { esc, imageSrc } from '../render/items.js';
+import { icon } from './icons.js';
+import { choiceBox, showChoice, refreshChoices, attachChoices } from './choice.js';
 
 
 /**
  * The rail describes what a thing is; what you can do to it lives in the pill
  * that opens on a right-click, beside the item rather than at the edge of the
  * screen. See menu.js.
+ *
+ * It is laid out the way a design tool's inspector is: sections divided by a
+ * rule rather than boxed, a two-column grid that pairs X with Y and W with H,
+ * borderless boxes that only outline themselves on hover, and the label inside
+ * the box wherever a letter says enough. Every number's label can be dragged
+ * sideways to change it, as in Figma.
  */
+
+
+/**
+ * The row across the top of the rail: what is selected, by its glyph and id.
+ * @param {string} type shown under the id, and what the tests read
+ * @param {string} [name]
+ * @param {string} [glyph] markup for the icon
+ * @returns {string} markup
+ */
+function panelHead(type, name, glyph = '') {
+    return `
+    <div class="dz-panel-head">
+        ${glyph ? `<span class="dz-panel-icon">${glyph}</span>` : ''}
+        ${name != null ? `<span class="dz-panel-id">${esc(name)}</span>` : ''}
+        <span class="dz-panel-type">${esc(type)}</span>
+    </div>`;
+}
+
+
+/**
+ * A section's title, with any buttons that act on the section as a whole on
+ * the right of it - where the + that adds a row sits in a design tool.
+ * @param {string} title
+ * @param {string} [actions] markup
+ * @returns {string} markup
+ */
+function sectionHead(title, actions = '') {
+    return `
+    <div class="dz-section-head">
+        <h3>${esc(title)}</h3>
+        ${actions ? `<span class="dz-section-tools">${actions}</span>` : ''}
+    </div>`;
+}
+
+
+/** a + drawn rather than typed, so it sits on the same grid as the glyphs */
+const PLUS = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+    aria-hidden="true" focusable="false"><path d="M8 3.5v9M3.5 8h9"/></svg>`;
 
 
 /**
@@ -47,28 +94,25 @@ import { esc, imageSrc } from '../render/items.js';
  */
 export function drawPanel(item, layout = null) {
     return `
-    <div class="dz-panel-head">
-        <span class="dz-panel-type">${esc(item.type)}</span>
-        <span class="dz-panel-id">${esc(item.id)}</span>
-    </div>
+    ${panelHead(item.type, item.id, icon(item.type))}
     ${sections(item, fieldsFor(item))}
     ${item.type === 'text' ? `
         <section class="dz-section">
-            <h3>Format</h3>
+            ${sectionHead('Format')}
             <div class="dz-field dz-field-format">
-                <label>Values</label>
+                <label class="dz-label">Values</label>
                 ${formatButton(item, layout)}
             </div>
             <div class="dz-field dz-field-format">
-                <label>Highlight</label>
+                <label class="dz-label">Highlight</label>
                 ${highlightButton(item.highlight, 'edit-highlight')}
             </div>
         </section>` : ''}
     ${item.type === 'table' ? `
         <section class="dz-section">
-            <h3>Row highlight</h3>
+            ${sectionHead('Row highlight')}
             <div class="dz-field dz-field-format">
-                <label>Rows</label>
+                <label class="dz-label">Rows</label>
                 ${highlightButton(item.rowHighlight, 'edit-row-highlight')}
             </div>
         </section>` : ''}
@@ -103,7 +147,7 @@ function grouping(table, layout) {
 
     return `
     <section class="dz-section dz-bands dz-grouping">
-        <h3>Grouping</h3>
+        ${sectionHead('Grouping')}
         ${levels.map((level, n) => groupLevel(scope, table, level, n, levels.length)).join('')}
         ${levels.length < MAX_GROUP_LEVELS ? `
             <button type="button" class="dz-add-row" data-action="add-group-level"
@@ -160,7 +204,7 @@ function groupLevel(scope, table, level, n, depth) {
         </div>
         ${n > 0 ? `
             <div class="dz-field dz-field-text">
-                <label for="${id}">Then group by</label>
+                <label class="dz-label" for="${id}">Then group by</label>
                 <input type="text" id="${id}" data-group-level="${n}"
                        value="${esc(by)}" spellcheck="false">
                 <p class="dz-hint">A field to group each group above by</p>
@@ -206,11 +250,8 @@ function levelOptions(level, n) {
 
     return `
     <div class="dz-field dz-field-choice">
-        <label for="${id}-sort">Order groups</label>
-        <select id="${id}-sort" data-group-option="sort" data-level="${n}">
-            ${SORT_CHOICES.map(o => `<option value="${o.value}"${o.value === sort ? ' selected' : ''}
-                >${esc(o.label)}</option>`).join('')}
-        </select>
+        <label class="dz-label" id="${id}-sort-label" for="${id}-sort">Order groups</label>
+        ${choiceBox(`${id}-sort`, `data-group-option="sort" data-level="${n}"`, SORT_CHOICES, sort)}
     </div>
     <div class="dz-field dz-field-toggle">
         <label for="${id}-page">New page for each group</label>
@@ -235,9 +276,7 @@ function levelOptions(level, n) {
  */
 export function drawManyPanel(items) {
     return `
-    <div class="dz-panel-head">
-        <span class="dz-panel-type">${items.length} items</span>
-    </div>
+    ${panelHead(`${items.length} items`)}
 
     <section class="dz-section">
         <ul class="dz-selected">
@@ -263,10 +302,7 @@ export function drawManyPanel(items) {
  */
 export function drawReportPanel(layout) {
     return `
-    <div class="dz-panel-head">
-        <span class="dz-panel-type">report</span>
-        <span class="dz-panel-id">${esc(layout.name ?? 'Untitled')}</span>
-    </div>
+    ${panelHead('report', layout.name ?? 'Untitled', icon('open'))}
     ${sections(layout, reportFields(layout))}
     ${bands(layout)}`;
 }
@@ -275,7 +311,7 @@ export function drawReportPanel(layout) {
 function sections(target, list) {
     return list.map(section => `
         <section class="dz-section">
-            <h3>${esc(section.title)}</h3>
+            ${sectionHead(section.title)}
             ${section.fields.map(field => control(target, field)).join('')}
             ${(section.actions ?? []).map(a => `
                 <button type="button" class="dz-add-row dz-section-action"
@@ -343,20 +379,43 @@ function control(target, field, extra = '') {
      * by hand is the one part of this format nobody should have to do twice -
      * and a placeholder is only a placeholder if both braces are there.
      */
+    /**
+     * A number with a short label carries it inside the box, and the label
+     * proper is kept for screen readers and the tests that read it. Any
+     * number's visible label - inside or above - is the handle that scrubs it.
+     */
+    const inside = field.type === 'number' && field.short;
+    const scrub = field.type === 'number' ? ' dz-scrub' : '';
+
     const label = field.type === 'textarea'
         ? `<span class="dz-field-top">
-               <label for="${id}">${esc(field.label)}</label>
+               <label class="dz-label" for="${id}">${esc(field.label)}</label>
                <button type="button" class="dz-brace" data-action="insert-brace"
                        data-for="${esc(field.key)}"
                        title="Wrap the selected text in braces, or insert a pair"
                        aria-label="Insert a placeholder">{&nbsp;}</button>
            </span>`
-        : `<label for="${id}">${esc(field.label)}</label>`;
+        /**
+         * A row of glyph buttons is named by its radiogroup instead: a label
+         * for its first button would choose Left whenever "Align" was clicked.
+         */
+        : `<label class="dz-label${inside ? ' dz-sr' : scrub}" id="${id}-label"${field.segmented ? '' : ` for="${id}"`}
+                  ${scrub ? 'title="Drag sideways to change"' : ''}>${esc(field.label)}</label>`;
+
+    const half = field.half || field.type === 'number' || field.type === 'color';
+
+    const box = inside
+        ? `<span class="dz-input">
+               <span class="dz-input-prefix dz-scrub" aria-hidden="true"
+                     title="${esc(field.label)} - drag sideways to change">${esc(field.short)}</span>
+               ${input(id, bind, field, value)}
+           </span>`
+        : input(id, bind, field, value);
 
     return `
-    <div class="dz-field dz-field-${field.type}">
+    <div class="dz-field dz-field-${field.type}${half ? ' is-half' : ''}">
         ${label}
-        ${input(id, bind, field, value)}
+        ${box}
         ${field.hint ? `<p class="dz-hint">${esc(field.hint)}</p>` : ''}
     </div>`;
 }
@@ -381,9 +440,11 @@ function input(id, bind, field, value) {
             </div>`;
 
         case 'choice':
-            return field.custom ? customChoice(id, bind, field, value) : `<select id="${id}" ${bind}>${field.options.map(o =>
-                `<option value="${esc(o.value)}"${o.value === value ? ' selected' : ''}
-                    >${esc(o.label)}</option>`).join('')}</select>`;
+            if (field.segmented) return segmented(id, bind, field, value);
+
+            return field.custom
+                ? customChoice(id, bind, field, value)
+                : choiceBox(id, bind, field.options, value);
 
         case 'color':
             return colorInput(id, bind, field, value);
@@ -465,12 +526,37 @@ function customChoice(id, bind, field, value) {
 
     return `
     <span class="dz-choice-custom">
-        <select id="${id}" ${bind}>${[...field.options, { value: CUSTOM_CHOICE, label: 'Custom…' }]
-            .map(o => `<option value="${esc(o.value)}"${o.value === selected ? ' selected' : ''}
-                >${esc(o.label)}</option>`).join('')}</select>
+        ${choiceBox(id, bind, [...field.options, { value: CUSTOM_CHOICE, label: 'Custom…' }], selected)}
         <input type="text" ${bind} data-custom="true" value="${esc(listed ? '' : value ?? '')}"
                spellcheck="false" maxlength="6" aria-label="${esc(field.label)}, custom"
                placeholder="such as CHF"${listed ? ' hidden' : ''}>
+    </span>`;
+}
+
+
+/**
+ * A short choice as a row of glyph buttons - text alignment, which way a line
+ * runs, which way up the page is - as a design tool draws them.
+ *
+ * Radio buttons under the glyphs rather than buttons that act: a radio is
+ * already a choice of one, reports through the same change event a select
+ * does, and brings the arrow keys with it. The first carries the id, so the
+ * field's label still names the group.
+ *
+ * @returns {string} markup
+ */
+function segmented(id, bind, field, value) {
+    const name = id;
+
+    return `
+    <span class="dz-segmented" role="radiogroup" aria-label="${esc(field.label)}">
+        ${field.options.map((o, n) => `
+            <label class="dz-seg" title="${esc(o.label)}">
+                <input type="radio" ${n === 0 ? `id="${id}"` : ''} name="${esc(name)}" ${bind}
+                       value="${esc(o.value)}"${o.value === value ? ' checked' : ''}
+                       aria-label="${esc(o.label)}">
+                <span class="dz-seg-glyph">${icon(o.icon) || esc(o.label)}</span>
+            </label>`).join('')}
     </span>`;
 }
 
@@ -491,16 +577,63 @@ function customChoice(id, bind, field, value) {
 function colorInput(id, bind, field, value) {
     const none = value == null || value === '';
 
+    /**
+     * Beside the chip, the colour as hex - which is also a box it can be typed
+     * into, as a fill is in a design tool. It is not bound to the field itself:
+     * half a hex code is not a colour, so it writes through the picker once
+     * what is typed is one. See onHex.
+     */
     return `
-    <span class="dz-swatch${none ? ' is-none' : ''}">
+    <span class="dz-swatch dz-input${none ? ' is-none' : ''}">
         <span class="dz-swatch-well">
             <input type="color" id="${id}" ${bind} value="${esc(none ? '#000000' : value)}">
         </span>
-        <span class="dz-swatch-none" aria-hidden="true">None</span>
+        <input type="text" class="dz-hex" data-hex="${esc(field.key)}"
+               value="${esc(none ? '' : hexText(value))}" placeholder="None"
+               maxlength="7" spellcheck="false" autocomplete="off"
+               aria-label="${esc(field.label)}, as hex">
         <button type="button" class="dz-icon dz-swatch-clear" data-action="clear-color"
                 data-for="${esc(field.key)}"
                 title="No colour" aria-label="Remove ${esc(field.label)} colour">&times;</button>
     </span>`;
+}
+
+
+/** a colour as the hex box shows it: no hash, upper case */
+function hexText(value) {
+    const text = String(value ?? '');
+    return text.startsWith('#') ? text.slice(1).toUpperCase() : text;
+}
+
+
+/**
+ * What was typed into a hex box, as the picker's #rrggbb - or null while it is
+ * not a colour yet. Three digits only count once the box is left, since "ff9"
+ * is as likely to be the start of "ff9c4b" as it is #ffff99.
+ *
+ * @param {string} text
+ * @param {boolean} final whether the box has been left or Enter pressed
+ * @returns {string|null}
+ */
+export function parseHex(text, final = false) {
+    const bare = String(text ?? '').trim().replace(/^#/, '').toLowerCase();
+
+    if (/^[0-9a-f]{6}$/.test(bare)) return `#${bare}`;
+    if (final && /^[0-9a-f]{3}$/.test(bare)) return `#${[...bare].map(c => c + c).join('')}`;
+
+    return null;
+}
+
+
+/** a column's closed row, kept saying what the column now is */
+function summarise(node, column) {
+    if (!node) return;
+
+    const name = node.querySelector('.dz-column-name');
+    const width = node.querySelector('.dz-column-width');
+
+    if (name) name.textContent = column.label || column.field || '';
+    if (width) width.textContent = String(column.width ?? '');
 }
 
 
@@ -511,39 +644,95 @@ function markSwatch(node, none) {
 
 
 /**
- * A table's columns, one card each. Four controls on one row would be 60px wide
- * apiece in a rail this narrow, so they stack and the card carries the number.
+ * Puts the colour a control now holds into its hex box - unless that box is
+ * the one being typed in, which would move the caret under the typist.
+ */
+function showHex(node, value) {
+    const hex = node.closest?.('.dz-swatch')?.querySelector('.dz-hex');
+    if (!hex || hex === hex.ownerDocument.activeElement) return;
+
+    hex.value = value == null || value === '' ? '' : hexText(value);
+}
+
+
+/**
+ * Which columns are open, by the column object itself.
+ *
+ * A table of ten columns, all open, is a rail ten screens long - so a column
+ * is a row that opens, as a layer is. The rail is rebuilt often (a column
+ * added, the selection changed and changed back), and a column somebody had
+ * open should still be open when it is drawn again, so the state is kept here
+ * rather than in the markup.
+ *
+ * Weak, and keyed by object, so nothing has to be cleaned up: an undo hands
+ * the designer a fresh copy of the layout, whose columns simply start closed.
+ */
+const openColumns = new WeakMap();
+
+/** tables whose columns have been drawn at least once */
+const drawnTables = new WeakSet();
+
+
+/**
+ * Whether a column is drawn open. One that has been opened or closed keeps
+ * that. One never seen before is closed - unless its table has been drawn
+ * already, in which case it has just been added, and is opened to be filled in.
+ */
+function isOpen(table, column) {
+    if (openColumns.has(column)) return openColumns.get(column);
+
+    const open = drawnTables.has(table);
+    openColumns.set(column, open);
+    return open;
+}
+
+
+/**
+ * A table's columns, a row each that opens onto the rail's two-column grid -
+ * field and label side by side, then width and alignment. Closed, the row
+ * still says which column it is, what it shows and how wide it is. Adding one
+ * is the + on the section's title, where a design tool puts it.
  */
 function columns(table, layout) {
     const list = table.columns || [];
 
-    return `
+    const add = `
+        <button type="button" class="dz-icon" data-action="add-column"
+                title="Add column" aria-label="Add column">${PLUS}</button>`;
+
+    const markup = `
     <section class="dz-section dz-columns">
-        <h3>Columns</h3>
+        ${sectionHead('Columns', add)}
         ${list.map((column, index) => `
-            <div class="dz-column">
-                <div class="dz-column-head">
-                    <span>${index + 1}</span>
+            <details class="dz-column" data-index="${index}"${isOpen(table, column) ? ' open' : ''}>
+                <summary class="dz-column-head">
+                    <span class="dz-column-caret" aria-hidden="true"></span>
+                    <span class="dz-column-number">${index + 1}</span>
+                    <span class="dz-column-name">${esc(column.label || column.field || '')}</span>
+                    <span class="dz-column-width">${esc(column.width ?? '')}</span>
                     ${list.length > 1 ? `
                         <button type="button" class="dz-icon"
                                 data-action="remove-column" data-index="${index}"
                                 title="Remove this column"
                                 aria-label="Remove column ${index + 1}">&times;</button>` : ''}
-                </div>
+                </summary>
+                <div class="dz-column-body">
                 ${COLUMN_FIELDS.map(field =>
                     control(column, field, String(index))).join('')}
-                <div class="dz-field dz-field-format">
-                    <label>Format</label>
+                <div class="dz-field dz-field-format is-half">
+                    <label class="dz-label">Format</label>
                     ${formatButton(column, layout, String(index))}
                 </div>
-                <div class="dz-field dz-field-format">
-                    <label>Highlight</label>
+                <div class="dz-field dz-field-format is-half">
+                    <label class="dz-label">Highlight</label>
                     ${highlightButton(column.highlight, 'edit-highlight', String(index))}
                 </div>
-            </div>`).join('')}
-        <button type="button" class="dz-add-row" data-action="add-column">
-            Add column</button>
+                </div>
+            </details>`).join('')}
     </section>`;
+
+    drawnTables.add(table);
+    return markup;
 }
 
 
@@ -558,7 +747,7 @@ function columns(table, layout) {
 function bands(layout) {
     return `
     <section class="dz-section dz-bands">
-        <h3>Bands</h3>
+        ${sectionHead('Bands')}
         ${railBands(layout).map(type => bandRow(layout, type)).join('')}
     </section>`;
 }
@@ -651,12 +840,40 @@ export function attachPanel({
     }
 
 
+    /**
+     * A hex box writes through the picker beside it, once what is typed is a
+     * colour - so a colour typed and a colour picked are the same edit, and
+     * the field, the swatch and the history all hear about it one way.
+     */
+    function onHex(node, final) {
+        const hex = parseHex(node.value, final);
+        if (!hex) return;
+
+        const picker = node.closest('.dz-swatch')?.querySelector('input[type="color"]');
+        if (!picker) return;
+
+        const none = node.closest('.dz-swatch').classList.contains('is-none');
+        if (picker.value === hex && !none) return;
+
+        picker.value = hex;
+        picker.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+
     function onInput(event) {
+        if (event.target.dataset?.hex != null) {
+            onHex(event.target, event.type === 'change');
+            return;
+        }
+
         const node = event.target.closest?.(
             '[data-field], [data-band], [data-band-height], [data-band-fill], [data-group-level], [data-group-option]');
         if (!node) return;
 
         if (node.tagName === 'TEXTAREA') repaint(node);
+
+        /** a choice's button shows what its select holds, however it was set */
+        if (node.tagName === 'SELECT') showChoice(node);
 
         /** how one level's groups are ordered and placed, on the selected table */
         if (node.dataset.groupOption != null) {
@@ -707,6 +924,7 @@ export function attachPanel({
 
             const field = COLUMN_FIELDS.find(f => f.key === node.dataset.field);
             if (field && writeField(column, field, node.value)) {
+                summarise(node.closest('.dz-column'), column);
                 changed(`column:${node.dataset.column}:${field.key}`);
             }
             return;
@@ -719,7 +937,7 @@ export function attachPanel({
         if (!field) return;
 
         if (node.tagName === 'SELECT' && node.value === CUSTOM_CHOICE) {
-            const box = node.parentElement?.querySelector('[data-custom]');
+            const box = node.closest('.dz-choice-custom')?.querySelector('[data-custom]');
             if (box) {
                 box.hidden = false;
                 box.focus();
@@ -730,7 +948,10 @@ export function attachPanel({
         const raw = field.type === 'toggle' ? node.checked : node.value;
 
         /** a colour picked is no longer none, even one picked as black */
-        if (field.type === 'color') markSwatch(node, false);
+        if (field.type === 'color') {
+            markSwatch(node, false);
+            showHex(node, node.value);
+        }
 
         /**
          * A field may say which reading of its object decides the rail's
@@ -785,12 +1006,118 @@ export function attachPanel({
 
             if (field && clearField(bound.target, field)) {
                 markSwatch(node, true);
+                showHex(node, null);
                 changed(`field:${field.key}`);
             }
             return;
         }
 
         act(node.dataset.action, node.dataset);
+    }
+
+    /**
+     * A column opened or closed stays that way through the next rebuild.
+     * `toggle` does not bubble, so this listens on the way down.
+     */
+    function onToggle(event) {
+        const node = event.target;
+        if (!node.classList?.contains('dz-column')) return;
+
+        const column = getItem()?.columns?.[Number(node.dataset.index)];
+        if (column) openColumns.set(column, node.open);
+    }
+
+    /**
+     * A hex box left holding something that is not a colour goes back to the
+     * colour the field has - as a number box does to its last good value.
+     */
+    function onLeave(event) {
+        const node = event.target;
+        if (node.dataset?.hex == null) return;
+
+        const swatch = node.closest('.dz-swatch');
+        const picker = swatch?.querySelector('input[type="color"]');
+        if (!picker) return;
+
+        node.value = swatch.classList.contains('is-none') ? '' : hexText(picker.value);
+    }
+
+    /** Enter in a hex box settles it, three-digit shorthand included */
+    function onKey(event) {
+        if (event.key !== 'Enter' || event.target.dataset?.hex == null) return;
+
+        event.preventDefault();
+        onHex(event.target, true);
+        event.target.blur();
+    }
+
+    /**
+     * Scrubbing: drag a number's label sideways to change it, a unit for every
+     * two pixels and ten with Shift held - Figma's gesture.
+     *
+     * Each step is written into the box and announced as ordinary input, so
+     * the write path, the clamping and the history's merging of one control's
+     * edits into one step all apply without a second route in. A press that
+     * never moves is a click, and puts the caret in the box as a label does.
+     */
+    function onPress(event) {
+        const handle = event.target.closest?.('.dz-scrub');
+        if (!handle || event.button !== 0) return;
+
+        const box = handle.closest('.dz-field')?.querySelector('input[type="number"]');
+        if (!box) return;
+
+        event.preventDefault();
+
+        const startX = event.clientX;
+        const start = Number(box.value) || 0;
+        const min = box.min !== '' ? Number(box.min) : -Infinity;
+        const max = box.max !== '' ? Number(box.max) : Infinity;
+        let moved = false;
+
+        handle.setPointerCapture?.(event.pointerId);
+
+        function move(e) {
+            const dx = e.clientX - startX;
+            if (!moved && Math.abs(dx) < 3) return;
+
+            if (!moved) {
+                moved = true;
+                panel.classList.add('is-scrubbing');
+            }
+
+            const step = e.shiftKey ? 10 : 1;
+            const next = Math.min(max, Math.max(min, start + Math.round(dx / 2) * step));
+
+            if (String(next) === box.value) return;
+
+            box.value = String(next);
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        function end() {
+            handle.removeEventListener('pointermove', move);
+            handle.removeEventListener('pointerup', end);
+            handle.removeEventListener('pointercancel', end);
+            panel.classList.remove('is-scrubbing');
+
+            if (!moved) {
+                box.focus();
+                box.select?.();
+                return;
+            }
+
+            /**
+             * The label is a <label>, whose click would put the caret in the
+             * box at the end of a drag. One click is swallowed, and only the
+             * one that ends this drag.
+             */
+            handle.addEventListener('click', (e) => e.preventDefault(), { once: true, capture: true });
+        }
+
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', end);
+        handle.addEventListener('pointercancel', end);
     }
 
     /**
@@ -810,12 +1137,24 @@ export function attachPanel({
     /** a <select> and a colour picker report on change, not input */
     panel.addEventListener('change', onInput);
     panel.addEventListener('click', onClick);
+    panel.addEventListener('focusout', onLeave);
+    panel.addEventListener('keydown', onKey);
+    panel.addEventListener('pointerdown', onPress);
+    panel.addEventListener('toggle', onToggle, true);
+
+    /** the choices open the shared list rather than the operating system's */
+    const detachChoices = attachChoices(panel);
 
     return function detach() {
+        detachChoices();
+        panel.removeEventListener('toggle', onToggle, true);
         panel.removeEventListener('scroll', onScroll, true);
         panel.removeEventListener('input', onInput);
         panel.removeEventListener('change', onInput);
         panel.removeEventListener('click', onClick);
+        panel.removeEventListener('focusout', onLeave);
+        panel.removeEventListener('keydown', onKey);
+        panel.removeEventListener('pointerdown', onPress);
     };
 }
 
@@ -835,6 +1174,12 @@ export function attachPanel({
 export function syncPanel(panel, item, layout) {
     const target = item ?? layout;
     if (!target) return;
+
+    /** a closed column's row says its name and width, which an undo can change */
+    for (const node of panel.querySelectorAll('.dz-column')) {
+        const column = item?.columns?.[Number(node.dataset.index)];
+        if (column) summarise(node, column);
+    }
 
     const fields = item ? allFields(item) : allReportFields(layout);
 
@@ -856,7 +1201,16 @@ export function syncPanel(panel, item, layout) {
         const value = readField(source, field);
 
         /** an undo can take a colour off, or put one back */
-        if (field.type === 'color') markSwatch(node, value == null || value === '');
+        if (field.type === 'color') {
+            markSwatch(node, value == null || value === '');
+            showHex(node, value);
+        }
+
+        /** a row of glyph buttons: each one only says whether it is the one */
+        if (node.type === 'radio') {
+            node.checked = node.value === String(value ?? '');
+            continue;
+        }
 
         /** a choice with Custom…: the select says which, the box holds any other */
         if (field.custom) {
@@ -884,6 +1238,9 @@ export function syncPanel(panel, item, layout) {
             }
         }
     }
+
+    /** every choice's button says what its select now holds */
+    refreshChoices(panel);
 }
 
 

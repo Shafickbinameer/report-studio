@@ -5,6 +5,13 @@
  * one - the same move theme.css, report.css and modal.css made before it. A
  * second copy is a second thing to keep in step, and the one that falls behind
  * is always the one nobody is looking at.
+ *
+ * Laid out the way a design tool lays out its menus, Figma's in particular -
+ * a quiet grey trigger with a chevron, a compact menu with a tick beside the
+ * chosen item - but in the product's own palette rather than Figma's dark one:
+ * paper, a hairline border, and the accent on the item under the pointer or
+ * the keys. The designer's properties rail opens the same menu from its own
+ * choices (.dz-listbox), so every list in the product looks like this one.
  */
 
 .dropdown {
@@ -18,23 +25,29 @@
   min-width: 92px;
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--surface-muted);
   color: var(--ink);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   cursor: pointer;
 }
 
 .dropdown-trigger:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  border-color: var(--border);
+}
+
+.dropdown-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
 }
 
 .dropdown-trigger[aria-expanded="true"] {
   border-color: var(--accent-strong);
-  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  background: var(--surface);
 }
 
 .dropdown-value {
@@ -43,26 +56,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* drawn rather than typed, so it does not depend on a glyph being present */
+/* a drawn chevron, so it does not depend on a glyph being present */
 .dropdown-caret {
-  width: 7px;
-  height: 7px;
-  margin-top: -3px;
-  border-right: 1.5px solid var(--ink-soft);
-  border-bottom: 1.5px solid var(--ink-soft);
-  transform: rotate(45deg);
-  transition: transform .12s ease;
-}
-
-.dropdown-trigger[aria-expanded="true"] .dropdown-caret {
-  margin-top: 2px;
-  transform: rotate(-135deg);
+  flex: none;
+  width: 9px;
+  height: 6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23667080' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 9px 6px no-repeat;
 }
 
 /* the bar is at the top of the window, so the menu always has room below it */
 .dropdown-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   left: 0;
   min-width: 100%;
   z-index: 30;
@@ -74,7 +79,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(34, 39, 44, .16);
+  box-shadow: 0 8px 24px rgb(34 39 44 / .14);
+
+  color: var(--ink);
 }
 
 .dropdown-menu[hidden] {
@@ -84,53 +91,69 @@
 .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px 7px 8px;
-  border-radius: 5px;
-  font-size: 10px;
-  color: var(--ink);
+  gap: 6px;
+  min-height: 24px;
+  padding: 4px 12px 4px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: inherit;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: default;
   font-variant-numeric: tabular-nums;
 }
 
 /**
  * The tick occupies its width whether or not it is showing, so choosing a
- * different zoom does not shuffle every label sideways.
+ * different item does not shuffle every label sideways.
+ *
+ * Painted through a mask, so its colour is set here: the accent's darker
+ * shade on paper, and ink once the item it sits in is on the accent itself.
  */
 .dropdown-item::before {
   content: "";
+  flex: none;
   width: 12px;
   height: 12px;
-  flex: none;
-  background: none;
 }
 
+/* the chosen item is said twice - the tick, and its label in the accent's ink */
 .dropdown-item[aria-selected="true"] {
-  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
 .dropdown-item[aria-selected="true"]::before {
-  /* a tick drawn from two borders - no glyph, no icon font */
-  width: 5px;
-  height: 9px;
-  margin: -3px 4px 0 3px;
-  border-right: 2px solid var(--accent-ink);
-  border-bottom: 2px solid var(--accent-ink);
-  transform: rotate(45deg);
+  background-color: var(--accent-strong);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5.2' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5.2' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
 }
 
+/* the accent is ink-on-orange, never white: #ff9c4b is a light colour */
 .dropdown-item:hover,
 .dropdown-item.is-active {
-  background: var(--accent-tint);
+  background: var(--accent);
+  color: var(--ink);
+}
+
+/* on the accent, the chosen item's tick and label go to ink with the rest */
+.dropdown-item[aria-selected="true"]:hover,
+.dropdown-item[aria-selected="true"].is-active {
+  color: var(--ink);
+}
+
+.dropdown-item[aria-selected="true"]:hover::before,
+.dropdown-item[aria-selected="true"].is-active::before {
+  background-color: var(--ink);
 }
 
 .dropdown-item:focus {
   outline: none;
 }
 
-.dropdown-item.is-active {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: -2px;
+/* a hairline between groups of items, as the right-click menu has */
+.dropdown-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
