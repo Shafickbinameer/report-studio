@@ -1911,7 +1911,16 @@ export function createDesigner({
          */
         changed: (key, { rebuild = false } = {}) => {
             draw();
+
+            /**
+             * An edit can change more than the box it was typed in - with the
+             * margins' Same value on, a number typed into one side is all four
+             * - so the rest of the rail is brought up to date. syncPanel leaves
+             * the focused box alone, so the caret stays where it is.
+             */
             if (rebuild) redrawRailKeepingFocus();
+            else syncPanel(panel, selected(), state.layout);
+
             record(key);
         },
         act,

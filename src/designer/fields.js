@@ -658,7 +658,6 @@ function marginFields(layout) {
     const linked = {
         key: 'page.marginLinked', label: 'Same value', type: 'toggle', half: true,
         rebuilds: true,
-        hint: 'One number for every side: typing into any side sets all four',
         read: (target) => Boolean(target.page?.marginLinked),
         write: (target, on) => setMarginLinked(target.page, on)
     };

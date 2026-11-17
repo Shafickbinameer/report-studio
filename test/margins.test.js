@@ -291,10 +291,23 @@ describe('margins - in the rail', () => {
         flip('page.marginLinked', true);
 
         const top = control('page.margin.top');
+        top.focus();
         top.value = '16';
         top.dispatchEvent(new Event('input', { bubbles: true }));
 
         expect(designer.layout.page.margin).toEqual({ top: 16, right: 16, bottom: 16, left: 16 });
+
+        /**
+         * And the other three boxes say so. They used to keep showing the old
+         * number - the page had all four at 16 while the rail said 16, 40, 40,
+         * 40 - so the lock looked as if it had done nothing.
+         */
+        for (const side of ['right', 'bottom', 'left']) {
+            expect(control(`page.margin.${side}`).value).toBe('16');
+        }
+
+        /** the box being typed in keeps the focus, so the next digit lands */
+        expect(document.activeElement).toBe(control('page.margin.top'));
     });
 
     it('undo brings a side back, switch and all', () => {
