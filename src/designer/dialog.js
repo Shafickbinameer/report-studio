@@ -17,6 +17,7 @@ import { bandLabel } from './grouping.js';
 import { toId } from '../shared/store.js';
 import { esc } from '../render/items.js';
 import { createDropdown } from '../shared/dropdown.js';
+import { choiceBox, refreshChoices, attachChoices } from './choice.js';
 import {
     effectiveFormat, formatValue, toNumber, DATE_PATTERNS, DATETIME_PATTERNS, MAX_DECIMALS,
     CURRENCY_SYMBOLS
@@ -190,6 +191,12 @@ export function askDiscard(root, name = '') {
  * @param {(host: Element, done: (value: any) => void) => void} wire
  * @returns {Promise<any>} whatever `done` was given, or null if cancelled
  */
+/** the close button's ×, drawn so it sits on the same grid as the other glyphs */
+const CLOSE_GLYPH = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+    aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg>`;
+
+
 function open(root, role, body, wire) {
     return new Promise(resolve => {
         /** created in the document the designer is mounted in, not always this one */
@@ -198,7 +205,20 @@ function open(root, role, body, wire) {
         host.dataset.role = role;
         host.innerHTML = body;
 
+        /**
+         * Every dialog gets the × a design tool's dialog has, in its title
+         * bar. Added here rather than in each dialog's markup, and given a
+         * role of its own: [data-role="cancel"] is a button some dialogs
+         * label and style as something else ("Keep editing").
+         */
+        host.querySelector('.modal-card')?.insertAdjacentHTML('afterbegin', `
+            <button type="button" class="modal-close" data-role="close"
+                    title="Close" aria-label="Close">${CLOSE_GLYPH}</button>`);
+
         root.appendChild(host);
+
+        /** a dialog's choices open the same list the rail's do */
+        const detachChoices = attachChoices(host);
 
         let settled = false;
 
@@ -206,6 +226,7 @@ function open(root, role, body, wire) {
             if (settled) return;
 
             settled = true;
+            detachChoices();
             /** so a dropdown inside can drop its document listener */
             host.dispatchEvent(new CustomEvent('dz-closing'));
             host.remove();
@@ -231,7 +252,8 @@ function open(root, role, body, wire) {
             close(null);
         }
 
-        for (const node of host.querySelectorAll('[data-role="cancel"], [data-role="backdrop"]')) {
+        for (const node of host.querySelectorAll(
+            '[data-role="cancel"], [data-role="backdrop"], [data-role="close"]')) {
             node.addEventListener('click', () => close(null));
         }
 
@@ -806,6 +828,9 @@ export function askFormat(root, current, defaults, { title = 'Format' } = {}) {
             /** zero prints with the places chosen: 0, 0.00, 0.000 */
             const zero = host.querySelector('[data-role="zero"] option[value="zero"]');
             if (zero) zero.textContent = zeroLabel(shown.decimals);
+
+            /** a relabelled zero, a new list of layouts: the buttons say so too */
+            refreshChoices(host);
             host.querySelector('[data-role="sample"]').innerHTML = shown.type === 'text'
                 ? '<span>Printed as the data has it</span>'
                 : (SAMPLES[shown.type] ?? []).map(v =>
@@ -887,27 +912,30 @@ function syncPatterns(host, type, pattern) {
 }
 
 
-function patternOptions(list, type, selected) {
+/** a type's date layouts, each shown as the sample it prints, then Custom… */
+function patternList(list, type) {
     const sample = SAMPLES[type][0];
 
     return [
-        ...list.map(p => `<option value="${esc(p)}"${p === selected ? ' selected' : ''}
-            >${esc(formatValue(sample, { type, pattern: p }))}  (${esc(p)})</option>`),
-        `<option value="${CUSTOM}"${list.includes(selected) ? '' : ' selected'}>Custom…</option>`
-    ].join('');
+        ...list.map(p => ({ value: p, label: `${formatValue(sample, { type, pattern: p })}  (${p})` })),
+        { value: CUSTOM, label: 'Custom…' }
+    ];
+}
+
+
+function patternOptions(list, type, selected) {
+    const chosen = list.includes(selected) ? selected : CUSTOM;
+
+    return patternList(list, type).map(o => `<option value="${esc(o.value)}"
+        ${o.value === chosen ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
 }
 
 
 function formatMarkup(f, title) {
-    const option = (current) => (o) => `<option value="${esc(o.value)}"
-        ${o.value === current ? 'selected' : ''}>${esc(o.label)}</option>`;
-
     const select = (role, label, options, current) => `
         <div class="dz-field">
-            <label for="dz-format-${role}">${esc(label)}</label>
-            <select id="dz-format-${role}" data-role="${role}">
-                ${options.map(option(current)).join('')}
-            </select>
+            <label for="dz-format-${role}" id="dz-format-${role}-label">${esc(label)}</label>
+            ${choiceBox(`dz-format-${role}`, `data-role="${role}"`, options, current)}
         </div>`;
 
     const dateType = f.type === 'datetime' ? 'datetime' : 'date';
@@ -925,12 +953,14 @@ function formatMarkup(f, title) {
         <form>
             <fieldset class="dz-format-types">
                 <legend>Type</legend>
+                <div class="dz-format-track">
                 ${FORMAT_CHOICES.map(o => `
                     <label class="dz-format-type">
                         <input type="radio" name="format-type" value="${o.value}"
                                ${o.value === f.type ? 'checked' : ''}>
                         <span>${esc(o.label)}</span>
                     </label>`).join('')}
+                </div>
             </fieldset>
 
             <div class="dz-format-group" data-role="number-options">
@@ -975,10 +1005,9 @@ function formatMarkup(f, title) {
 
             <div class="dz-format-group" data-role="date-options">
                 <div class="dz-field">
-                    <label for="dz-format-pattern">Layout</label>
-                    <select id="dz-format-pattern" data-role="pattern" data-for="${dateType}">
-                        ${patternOptions(patterns, dateType, isCustom ? CUSTOM : f.pattern)}
-                    </select>
+                    <label for="dz-format-pattern" id="dz-format-pattern-label">Layout</label>
+                    ${choiceBox('dz-format-pattern', `data-role="pattern" data-for="${dateType}"`,
+                        patternList(patterns, dateType), isCustom ? CUSTOM : f.pattern)}
                 </div>
                 <div class="dz-field" data-role="custom-row"${isCustom ? '' : ' hidden'}>
                     <label for="dz-format-custom">Pattern</label>
@@ -1209,8 +1238,6 @@ function ruleMarkup(rule, n, count, subjects, rows, format) {
     const when = rule.when ?? {};
     const style = rule.style ?? {};
     const unary = UNARY_OPS.includes(when.op);
-    const option = (current) => (o) => `<option value="${esc(o.value)}"
-        ${o.value === current ? 'selected' : ''}>${esc(o.label)}</option>`;
 
     const subjectChoices = [
         ...(rows ? [] : [{ value: THIS_VALUE, label: 'this value' }]),
@@ -1243,12 +1270,9 @@ function ruleMarkup(rule, n, count, subjects, rows, format) {
     <div class="dz-hl-rule" data-n="${n}">
         <span class="dz-hl-label">${n === 0 ? 'When' : 'Else when'}</span>
         <div class="dz-hl-when">
-            <select data-key="field" aria-label="What to test">
-                ${subjectChoices.map(option(when.field ?? THIS_VALUE)).join('')}
-            </select>
-            <select data-key="op" aria-label="Test">
-                ${OP_CHOICES.map(option(when.op)).join('')}
-            </select>
+            ${choiceBox(null, 'data-key="field"', subjectChoices, when.field ?? THIS_VALUE,
+                { label: 'What to test' })}
+            ${choiceBox(null, 'data-key="op"', OP_CHOICES, when.op, { label: 'Test' })}
             <span class="dz-hl-values">
                 ${unary ? '<span class="dz-hl-novalue">no value needed</span>' : `
                     <input type="text" data-key="value" value="${esc(when.value ?? '')}"

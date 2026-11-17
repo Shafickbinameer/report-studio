@@ -98,7 +98,15 @@ export interface Margin {
 export interface PageSetup {
     width: number;
     height: number;
+    /** the margins that print; a side switched off is 0 here */
     margin: Margin;
+    /**
+     * The margins switched off in the designer, each with the value it comes
+     * back as when switched on again. Absent when every margin is on.
+     */
+    marginOff?: Partial<Margin>;
+    /** the designer's lock: a value typed into one side is written to all four */
+    marginLinked?: boolean;
     [key: string]: unknown;
 }
 

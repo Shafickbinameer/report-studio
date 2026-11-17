@@ -516,3 +516,45 @@ describe("the report's currency symbol", () => {
         expect(box().value).toBe('CHF');
     });
 });
+
+
+describe('the editor\'s choices', () => {
+    const shown = (role) => dialog().querySelector(`[data-role="${role}"]`)
+        .closest('.dz-choice').querySelector('.dz-choice-value').textContent.trim();
+
+    function open() {
+        mount();
+        designer.select({ band: 'detail', id: 'total' });
+        formatButton().click();
+    }
+
+    it('keeps each choice\'s button saying what its select holds', () => {
+        open();
+        pickType('number');
+        choose('negative', 'brackets');
+
+        expect(shown('negative')).toBe('(1,234)');
+    });
+
+    it('follows a choice the editor relabels as the decimals change', () => {
+        open();
+        pickType('number');
+
+        const places = dialog().querySelector('[data-role="decimals"]');
+        places.value = '3';
+        places.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(shown('zero')).toBe('0.000');
+    });
+
+    it('follows a choice whose list the editor swaps, date for date and time', () => {
+        open();
+        pickType('date');
+        const date = shown('pattern');
+
+        pickType('datetime');
+
+        expect(shown('pattern')).not.toBe(date);
+        expect(shown('pattern')).toMatch(/\d/);
+    });
+});

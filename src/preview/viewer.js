@@ -146,8 +146,6 @@ export function createViewer({ mount, paginated, title } = {}) {
     /** the report itself is what scrolls and what the highlighting sits in */
     const mountEl = viewport;
 
-    const modal = root.querySelector('[data-role="export-modal"]');
-
     /**
      * One search root now that the viewer owns all of its chrome. A control is
      * still found by its role rather than by which container holds it, so
@@ -173,22 +171,15 @@ export function createViewer({ mount, paginated, title } = {}) {
         hitNext: find('hit-next')
     };
 
-    const dialog = modal ? {
-        root: modal,
-        card: modal.querySelector('.modal-card'),
-        backdrop: modal.querySelector('[data-role="export-backdrop"]'),
-        summary: modal.querySelector('[data-role="export-summary"]'),
-        cancel: modal.querySelector('[data-role="export-cancel"]'),
-        confirm: modal.querySelector('[data-role="export-confirm"]'),
-        formats: [...modal.querySelectorAll('input[name="export-format"]')]
-    } : null;
+    /** the export menu: the list under the Export button, and its formats */
+    const menu = find('export-menu');
+    const menuItems = menu ? [...menu.querySelectorAll('[data-format]')] : [];
 
     let index = 0;          // zero-based page index
     let matches = [];       // engine search results
     let hitIndex = -1;      // which match is focused
     let zoom = 1;           // the scale actually applied
     let fitWidth = false;   // recompute zoom from the viewport on resize
-    let returnFocusTo = null;   // what had focus before the dialog opened
 
     const afterPrintSupported = typeof view.onafterprint !== 'undefined';
 
@@ -272,8 +263,8 @@ export function createViewer({ mount, paginated, title } = {}) {
     /* ---------------- exporting ---------------- */
 
     /**
-     * One entry per offered format. Adding a third means a line here and a radio
-     * in the dialog; nothing else in the flow needs to know about it.
+     * One entry per offered format. Adding another means a line here and an
+     * entry in chrome.js's export list; nothing else in the flow needs to know.
      */
     const FORMATS = {
         pdf: {
@@ -431,83 +422,114 @@ export function createViewer({ mount, paginated, title } = {}) {
         setTimeout(() => URL.revokeObjectURL(url), 0);
     }
 
-    /* ---------------- the export dialog ---------------- */
+    /* ---------------- the export menu ---------------- */
 
-    function chosenFormat() {
-        return dialog?.formats.find(input => input.checked)?.value ?? 'pdf';
+    /**
+     * Each item's note, and whether it can be chosen at all - worked out as
+     * the menu opens, since a report with nothing tabular has no CSV to give.
+     * An item that cannot be chosen says why, in the note it would otherwise
+     * use for the file it makes.
+     */
+    function refreshMenu() {
+        for (const item of menuItems) {
+            const format = FORMATS[item.dataset.format];
+            const available = Boolean(format?.available());
+
+            item.disabled = !available;
+            item.setAttribute('aria-disabled', String(!available));
+            item.classList.toggle('is-unavailable', !available);
+
+            const note = item.querySelector('.format-note');
+            if (note) note.textContent = format ? format.summary() : '';
+        }
     }
 
-    /** the note under the radios, plus whether Export can proceed at all */
-    function refreshDialog() {
-        if (!dialog) return;
-
-        for (const input of dialog.formats) {
-            const format = FORMATS[input.value];
-            input.disabled = format ? !format.available() : true;
-            input.closest('.format')?.classList.toggle('is-unavailable', input.disabled);
-        }
-
-        /** never leave a disabled option selected */
-        const current = dialog.formats.find(i => i.checked);
-        if (current?.disabled) {
-            const fallback = dialog.formats.find(i => !i.disabled);
-            if (fallback) fallback.checked = true;
-        }
-
-        const format = FORMATS[chosenFormat()];
-        dialog.summary.textContent = format ? format.summary() : '';
-        dialog.confirm.disabled = !format || !format.available();
-    }
+    const enabledItems = () => menuItems.filter(item => !item.disabled);
 
     function openExport() {
-        if (!dialog) return;
+        if (!menu || !menu.hidden) return;
 
-        returnFocusTo = doc.activeElement;
-        dialog.root.hidden = false;
-        refreshDialog();
+        refreshMenu();
+        menu.hidden = false;
+        ui.exportOpen.setAttribute('aria-expanded', 'true');
 
-        const focusOn = dialog.formats.find(i => i.checked && !i.disabled)
-            ?? dialog.formats.find(i => !i.disabled)
-            ?? dialog.cancel;
-        focusOn.focus();
+        enabledItems()[0]?.focus();
+
+        /**
+         * On the next tick, or the press that opened the menu would reach this
+         * listener on its way up and close it again.
+         */
+        view.setTimeout(() => {
+            if (!menu.hidden) doc.addEventListener('pointerdown', onOutside, true);
+        }, 0);
     }
 
-    function closeExport() {
-        if (!dialog || dialog.root.hidden) return;
+    /**
+     * @param {object} [options]
+     * @param {boolean} [options.refocus] put the focus back on the Export
+     *   button - not when the menu closed because something else was clicked
+     */
+    function closeExport({ refocus = true } = {}) {
+        if (!menu || menu.hidden) return;
 
-        dialog.root.hidden = true;
-        returnFocusTo?.focus?.();
-        returnFocusTo = null;
+        menu.hidden = true;
+        ui.exportOpen.setAttribute('aria-expanded', 'false');
+        doc.removeEventListener('pointerdown', onOutside, true);
+
+        if (refocus && menu.contains(doc.activeElement)) ui.exportOpen.focus();
+        else if (refocus && doc.activeElement === doc.body) ui.exportOpen.focus();
     }
 
-    function confirmExport() {
-        const format = FORMATS[chosenFormat()];
+    /**
+     * Exports in a format: the one asked for, or the item the keys are on, or
+     * PDF - the first in the list and the one every report can give.
+     *
+     * @param {'pdf'|'csv'|'xlsx'} [asked]
+     */
+    function confirmExport(asked) {
+        const focused = menuItems.find(item => item === doc.activeElement);
+        const value = typeof asked === 'string' ? asked : focused?.dataset.format ?? 'pdf';
+
+        const format = FORMATS[value];
         if (!format?.available()) return;
 
         /**
-         * Close first. The print dialog is modal and blocking, so leaving our
-         * own overlay up would put it in the printed page and in the way.
+         * Close first. The print dialog is modal and blocking, so leaving the
+         * menu open would put it in the printed page and in the way.
          */
         closeExport();
         format.run();
     }
 
-    /** keeps Tab inside the card while the dialog is up */
-    function trapFocus(event) {
-        const focusable = [...dialog.card.querySelectorAll('button, input')]
-            .filter(node => !node.disabled);
-        if (!focusable.length) return;
+    function onOutside(event) {
+        if (menu.contains(event.target) || ui.exportOpen.contains(event.target)) return;
+        closeExport({ refocus: false });
+    }
 
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
+    /**
+     * The menu's keys: up and down through what can be chosen, Home and End,
+     * Escape back to the button, Tab on past it. Enter and Space are the
+     * items' own, being buttons. Every key it handles stops here, so the
+     * report does not page behind an open menu.
+     */
+    function onMenuKey(event) {
+        const items = enabledItems();
+        const at = items.indexOf(doc.activeElement);
 
-        if (event.shiftKey && doc.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-        } else if (!event.shiftKey && doc.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-        }
+        const handled = {
+            ArrowDown: () => items[(at + 1) % items.length]?.focus(),
+            ArrowUp: () => items[(at - 1 + items.length) % items.length]?.focus(),
+            Home: () => items[0]?.focus(),
+            End: () => items.at(-1)?.focus(),
+            Escape: () => closeExport(),
+            Tab: () => closeExport({ refocus: false })
+        }[event.key];
+
+        if (!handled) return;
+
+        if (event.key !== 'Tab') event.preventDefault();
+        event.stopPropagation();
+        handled();
     }
 
     /* ---------------- search ---------------- */
@@ -574,6 +596,13 @@ export function createViewer({ mount, paginated, title } = {}) {
             parent.replaceChild(doc.createTextNode(mark.textContent), mark);
             parent.normalize();
         }
+
+        /** and the runs that held a cell's marks together go back to plain text */
+        for (const run of mountEl.querySelectorAll('span.hit-run')) {
+            const parent = run.parentNode;
+            parent.replaceChild(doc.createTextNode(run.textContent), run);
+            parent.normalize();
+        }
     }
 
     /** marks every occurrence on the page currently on screen */
@@ -620,7 +649,24 @@ export function createViewer({ mount, paginated, title } = {}) {
 
         if (from < text.length) fragment.appendChild(doc.createTextNode(text.slice(from)));
 
-        node.parentNode.replaceChild(fragment, node);
+        /**
+         * A table cell lays its text out as a flex column, to centre it
+         * whatever it wraps to - and every child of a flex box is a block of
+         * its own. Split into text, mark, text, a cell reading "Northgate
+         * Stores" stacked "North" over "gate Stores" on lines the row had no
+         * room for. Kept together in one inline run, it reads as it did.
+         */
+        const parent = node.parentNode;
+
+        if (parent.classList?.contains('cell')) {
+            const run = doc.createElement('span');
+            run.className = 'hit-run';
+            run.appendChild(fragment);
+            parent.replaceChild(run, node);
+            return;
+        }
+
+        parent.replaceChild(fragment, node);
     }
 
     /** the focused hit gets a stronger colour and is scrolled into view */
@@ -650,21 +696,26 @@ export function createViewer({ mount, paginated, title } = {}) {
     });
 
     ui.print?.addEventListener('click', printReport);
-    ui.exportOpen.addEventListener('click', openExport);
+    ui.exportOpen.addEventListener('click', () => {
+        if (menu && !menu.hidden) closeExport();
+        else openExport();
+    });
 
-    if (dialog) {
-        dialog.cancel.addEventListener('click', closeExport);
-        dialog.backdrop.addEventListener('click', closeExport);
-        dialog.confirm.addEventListener('click', confirmExport);
+    /** the arrows open the menu from its button, as they would a select */
+    ui.exportOpen.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
 
-        for (const input of dialog.formats) {
-            input.addEventListener('change', refreshDialog);
+        event.preventDefault();
+        event.stopPropagation();
+        openExport();
+    });
+
+    if (menu) {
+        menu.addEventListener('keydown', onMenuKey);
+
+        for (const item of menuItems) {
+            item.addEventListener('click', () => confirmExport(item.dataset.format));
         }
-
-        dialog.root.addEventListener('keydown', (event) => {
-            if (event.key === 'Tab') trapFocus(event);
-            if (event.key === 'Enter') { event.preventDefault(); confirmExport(); }
-        });
     }
 
     ui.zoomIn.addEventListener('click', () => stepZoom(1));
@@ -696,8 +747,8 @@ export function createViewer({ mount, paginated, title } = {}) {
 
     /** paging keys, as long as the user is not typing in the search box */
     const onKeyDown = (event) => {
-        /** while the dialog is up it owns the keyboard, bar Escape */
-        if (dialog && !dialog.root.hidden) {
+        /** while the export menu is open it owns the keyboard, bar Escape */
+        if (menu && !menu.hidden) {
             if (event.key === 'Escape') { event.preventDefault(); closeExport(); }
             return;
         }
@@ -732,7 +783,7 @@ export function createViewer({ mount, paginated, title } = {}) {
          */
         if (event.target === ui.query || event.target === ui.current) return;
 
-        /** ctrl+X opens the export; ctrl+S too, since the browser's save is no use here */
+        /** ctrl+X opens the export menu; ctrl+S too, since the browser's save is no use here */
         if ((event.ctrlKey || event.metaKey) && ['x', 's'].includes(event.key.toLowerCase())) {
             event.preventDefault();
             openExport();
@@ -766,6 +817,7 @@ export function createViewer({ mount, paginated, title } = {}) {
      */
     function destroy() {
         ui.zoom.destroy();
+        doc.removeEventListener('pointerdown', onOutside, true);
         doc.removeEventListener('keydown', onKeyDown);
         view.removeEventListener('resize', onResize);
         view.removeEventListener('afterprint', restoreAfterPrint);
@@ -792,7 +844,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         closeExport,
         confirmExport,
         destroy,
-        get exportOpen() { return dialog ? !dialog.root.hidden : false; },
+        get exportOpen() { return menu ? !menu.hidden : false; },
         setZoom,
         zoomIn: () => stepZoom(1),
         zoomOut: () => stepZoom(-1),
