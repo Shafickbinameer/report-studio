@@ -452,15 +452,35 @@ export function createDesigner({
     }
 
 
+    /**
+     * How far down the rail was, for each kind of thing it has shown - the
+     * report, a box, a text item, several at once.
+     *
+     * Without it, the place someone had scrolled the report's rail to went
+     * whenever an item was selected: a box's rail fits without scrolling, so
+     * the offset collapsed to 0, and deselecting brought the report back at
+     * its top. Kept per kind rather than per item, so stepping from one text
+     * item to the next stays on the font being changed.
+     */
+    const railScroll = new Map();
+    let railShowing = null;
+
     function drawRail() {
         /** a rendered report has no item to describe and no report to restructure */
         if (state.mode === 'preview') return;
 
         const many = state.selection.length;
+        const item = selected();
+        const showing = many > 1 ? 'many' : (item ? `item:${item.type}` : 'report');
+
+        if (railShowing) railScroll.set(railShowing, panel.scrollTop);
 
         panel.innerHTML = many > 1
             ? drawManyPanel(selectedItems())
-            : (selected() ? drawPanel(selected(), state.layout) : drawReportPanel(state.layout));
+            : (item ? drawPanel(item, state.layout) : drawReportPanel(state.layout));
+
+        panel.scrollTop = railScroll.get(showing) ?? 0;
+        railShowing = showing;
     }
 
 

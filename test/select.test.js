@@ -180,6 +180,74 @@ describe('moving', () => {
         expect(itemIn(d, 'detail', 't1')).toMatchObject({ x: 100, y: 100 });
     });
 
+    /**
+     * A hand on a mouse moves it a pixel or two during an ordinary click. That
+     * used to count as a drag, and a drag snaps - so clicking a box at y 44 to
+     * select it put it on 40, and saved the move.
+     */
+    const offGrid = () => layout({
+        bands: [band('detail', [text('t1', { x: 13, y: 44, w: 200, h: 40 })])]
+    });
+
+    function wobble(target, dx, dy) {
+        pointer('pointerdown', target, { x: 50, y: 50 });
+        pointer('pointermove', canvas(), { x: 50 + dx, y: 50 + dy });
+        pointer('pointerup', canvas(), { x: 50 + dx, y: 50 + dy });
+    }
+
+    it('does not move on a click that wobbles a pixel or two', () => {
+        const d = mount(offGrid());
+
+        wobble(drawn('t1'), 1, -2);
+
+        expect(itemIn(d, 'detail', 't1')).toMatchObject({ x: 13, y: 44 });
+        expect(d.selection).toEqual({ band: 'detail', id: 't1' });
+    });
+
+    it('does not move the item it is selecting, either', () => {
+        /** the press that selects is the same press that would start a drag */
+        const d = mount(offGrid());
+        expect(d.selection).toBeNull();
+
+        wobble(drawn('t1'), 0, -1);
+
+        expect(d.selection).toEqual({ band: 'detail', id: 't1' });
+        expect(itemIn(d, 'detail', 't1')).toMatchObject({ x: 13, y: 44 });
+    });
+
+    it('leaves nothing to undo after a wobbled click', () => {
+        const d = mount(offGrid());
+        wobble(drawn('t1'), 2, 2);
+
+        root().dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'z', ctrlKey: true, bubbles: true, cancelable: true
+        }));
+
+        expect(itemIn(d, 'detail', 't1')).toMatchObject({ x: 13, y: 44 });
+    });
+
+    it('starts the drag once the pointer has gone three pixels', () => {
+        const d = mount(offGrid());
+
+        wobble(drawn('t1'), 3, 0);
+
+        /** 13 + 3 = 16, which the grid puts on 20 */
+        expect(itemIn(d, 'detail', 't1').x).toBe(20);
+    });
+
+    it('measures the wobble on the screen, whatever the zoom', () => {
+        /**
+         * Zoomed out, two screen pixels are more than two on the page - more
+         * than the one page pixel the drag used to start at.
+         */
+        const d = mount(offGrid());
+        root().querySelector('[data-action="zoom-out"]').click();
+
+        wobble(drawn('t1'), 2, 2);
+
+        expect(itemIn(d, 'detail', 't1')).toMatchObject({ x: 13, y: 44 });
+    });
+
     it('redraws the item where it was dropped', () => {
         mount();
         drag(drawn('t1'), 50, 50);

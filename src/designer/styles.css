@@ -28,10 +28,14 @@
 
 /**
  * The designer fills the element it was given - a column of the bar and the
- * row below it - so a host can put its own header above it. A mount with no
- * height of its own (the CLI's page, a host that never set one) gets the
- * window's instead: height: 100% has nothing to resolve against there, so the
- * cap is what stops the designer growing to the length of the page.
+ * row below it - so a host can put its own header above it.
+ *
+ * That needs the element to have a height. Where it has none, height: 100% has
+ * nothing to resolve against and the designer is only as tall as what is in
+ * it: the cap stops it growing past the window, but nothing stops it shrinking.
+ * A small page with a box selected - a short rail, a short canvas - left the
+ * whole designer ending two-thirds of the way down the window, its bottom edge
+ * jumping up and down as the selection changed.
  */
 .report-designer {
   display: flex;
@@ -39,6 +43,17 @@
   height: 100%;
   max-height: 100vh;
   background-color: var(--backdrop);
+}
+
+/**
+ * So the designer's own page - the one the CLI serves and the playground runs -
+ * gives it one: the document is the window, and the mount on its body fills
+ * it. A host page does the same for itself, as the README shows; the window
+ * the designer opens in gives its mount 100vh.
+ */
+.report-studio-page,
+.report-studio-page body {
+  height: 100%;
 }
 
 /**
@@ -579,6 +594,13 @@
   flex: none;
   width: var(--dz-panel);
   overflow-y: auto;
+  /**
+   * The scrollbar's room is kept whether or not the rail needs it. A box's
+   * rail fits and the report's does not, and where scrollbars take up width -
+   * Windows, most Linux - every control in the rail used to widen by 16px and
+   * shuffle sideways each time the selection crossed between the two.
+   */
+  scrollbar-gutter: stable;
   padding: 0 0 32px;
 
   background: var(--surface);
@@ -805,6 +827,20 @@
 .dz-panel input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+/**
+ * A number shown but not editable - a margin switched off, showing what it
+ * comes back as. Faded with its letter, no hover outline, and nothing to scrub.
+ */
+.dz-panel .dz-input:has(input:disabled) {
+  opacity: .45;
+  border-color: transparent;
+}
+
+.dz-panel .dz-input:has(input:disabled) .dz-scrub,
+.dz-panel .dz-field input:disabled {
+  cursor: not-allowed;
 }
 
 /**
@@ -2060,10 +2096,10 @@
   text-overflow: ellipsis;
 }
 
+/* exactly the trigger's width - dropdown.js sets it, a fixed menu has no 100% to use */
 .modal-card .dz-field-picker .dropdown-menu {
-  width: 100%;
+  width: var(--dropdown-trigger-width, auto);
   max-height: 40vh;
-  overflow-y: auto;
 }
 
 /**

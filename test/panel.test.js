@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createDesigner } from '../src/designer/designer.js';
 import { syncPanel, parseHex } from '../src/designer/panel.js';
 import { layout, text, table, band, box } from './helpers/layout.js';
@@ -126,6 +127,48 @@ describe('the rail', () => {
         }));
 
         expect(panel().querySelector('.dz-panel-type').textContent).toBe('report');
+    });
+
+    it('brings the report back where it had been scrolled to', () => {
+        /**
+         * A box's rail fits without scrolling, so selecting one used to drop
+         * the offset to 0 - and deselecting showed the report from its top,
+         * far from the margin or the band that was being worked on.
+         */
+        mount();
+        panel().scrollTop = 300;
+
+        select('t1');
+        expect(panel().scrollTop).toBe(0);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        expect(panel().querySelector('.dz-panel-type').textContent).toBe('report');
+        expect(panel().scrollTop).toBe(300);
+    });
+
+    it('keeps each kind of item at its own place in the rail', () => {
+        mount();
+
+        select('t1');
+        panel().scrollTop = 150;
+
+        select('tbl');
+        expect(panel().scrollTop).toBe(0);
+
+        select('t1');
+        expect(panel().scrollTop).toBe(150);
+    });
+
+    it('keeps the scrollbar\'s room whether or not the rail scrolls', () => {
+        /**
+         * Otherwise every control widens by the scrollbar's width whenever
+         * the selection moves between a rail that scrolls and one that fits.
+         */
+        const css = readFileSync(`${process.cwd()}/src/designer/styles.css`, 'utf8')
+            .replace(/\r\n/g, '\n');
+        const rule = css.match(/\n\.dz-panel \{[^}]*\}/)[0];
+
+        expect(rule).toMatch(/scrollbar-gutter:\s*stable/);
     });
 
     it('swaps to the newly selected item', () => {

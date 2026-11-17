@@ -477,11 +477,17 @@ function input(id, bind, field, value) {
             return `<input type="text" id="${id}" ${bind}
                 value="${esc(value ?? '')}" spellcheck="false">`;
 
+        /**
+         * A number can be shown and not be editable - a margin switched off
+         * shows what it will come back as. Disabled rather than hidden, so the
+         * rows beside it in the rail's grid stay where they are.
+         */
         default:
             return `<input type="number" id="${id}" ${bind}
                 value="${esc(value ?? '')}"
                 ${field.min != null ? `min="${field.min}"` : ''}
-                ${field.max != null ? `max="${field.max}"` : ''} step="1">`;
+                ${field.max != null ? `max="${field.max}"` : ''} step="1"
+                ${field.disabled ? 'disabled' : ''}>`;
     }
 }
 
@@ -1065,7 +1071,7 @@ export function attachPanel({
         if (!handle || event.button !== 0) return;
 
         const box = handle.closest('.dz-field')?.querySelector('input[type="number"]');
-        if (!box) return;
+        if (!box || box.disabled) return;
 
         event.preventDefault();
 

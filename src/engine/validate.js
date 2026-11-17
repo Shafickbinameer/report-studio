@@ -351,6 +351,45 @@ function validatePage(page, issues) {
     if (printable <= 0) {
         issues.push(`layout.page margins leave no printable height (${printable}px)`);
     }
+
+    validateMarginSwitches(page, issues);
+}
+
+
+/**
+ * `marginOff` holds the margins switched off in the designer, with the value
+ * each comes back as; `marginLinked` is the lock that makes the four one
+ * number. The engine never reads either - a side that is off prints from
+ * `margin`, as 0 - so the one thing worth catching is a file that says a side
+ * is off while still printing a margin there.
+ */
+function validateMarginSwitches(page, issues) {
+    if (page.marginLinked != null && typeof page.marginLinked !== 'boolean') {
+        issues.push('layout.page.marginLinked must be true or false');
+    }
+
+    if (page.marginOff == null) return;
+
+    if (typeof page.marginOff !== 'object' || Array.isArray(page.marginOff)) {
+        issues.push('layout.page.marginOff must be an object of the margins switched off');
+        return;
+    }
+
+    for (const [side, value] of Object.entries(page.marginOff)) {
+        if (!['top', 'right', 'bottom', 'left'].includes(side)) {
+            issues.push(`layout.page.marginOff.${side} is not a side - use top, right, bottom or left`);
+            continue;
+        }
+
+        if (!(typeof value === 'number' && value >= 0)) {
+            issues.push(`layout.page.marginOff.${side} must be a number of pixels`);
+        }
+
+        if (page.margin[side] !== 0) {
+            issues.push(`layout.page.margin.${side} must be 0 while that margin is switched off ` +
+                '(it is listed in layout.page.marginOff)');
+        }
+    }
 }
 
 

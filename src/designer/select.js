@@ -27,6 +27,13 @@ import {
 
 
 /**
+ * How far, in screen pixels, the pointer goes before a press on an item is a
+ * drag rather than a click. The rail's label scrubbing waits for the same.
+ */
+export const DRAG_START = 3;
+
+
+/**
  * Wires selection, dragging and resizing onto a designer canvas.
  *
  * @param {object} options
@@ -380,7 +387,20 @@ export function attachEditing({
 
         setMeasuring(event.altKey);
 
-        if (!drag.moved && Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        /**
+         * A press only becomes a drag once the pointer has really gone
+         * somewhere - measured on the screen, not the page, so it is the same
+         * flick of the wrist at every zoom.
+         *
+         * It used to be one page pixel, which a hand resting on a mouse moves
+         * during an ordinary click. That click then counted as a drag: the
+         * item went to the nearest 10px grid line and to any edge within
+         * SNAP of it - a box at y 44 clicked to select it landed on 40 - and
+         * the move was saved as an undo step nobody had made.
+         */
+        if (!drag.moved
+            && Math.abs(event.clientX - drag.startX) < DRAG_START
+            && Math.abs(event.clientY - drag.startY) < DRAG_START) return;
         drag.moved = true;
 
         if (drag.mode === 'resize') {

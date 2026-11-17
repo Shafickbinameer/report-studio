@@ -60,15 +60,27 @@ describe.each(SHEETS)('%s', (file) => {
          * A stray closing brace shows up as the depth going negative long
          * before the totals stop matching, so this catches it at the line.
          */
+        /**
+         * Walked once and asserted once. Two expects per character was some
+         * two hundred thousand of them for the designer's sheet, which ran past
+         * the timeout whenever the whole suite shared the machine.
+         */
         let depth = 0;
+        let line = 1;
+        let fault = null;
 
         for (const ch of bare) {
-            if (ch === '{') depth++;
+            if (ch === '\n') line++;
+            else if (ch === '{') depth++;
             else if (ch === '}') depth--;
 
-            expect(depth).toBeGreaterThanOrEqual(0);
-            expect(depth).toBeLessThanOrEqual(2);
+            if (depth < 0 || depth > 2) {
+                fault = `depth ${depth} at line ${line} of the sheet with comments stripped`;
+                break;
+            }
         }
+
+        expect(fault).toBeNull();
     });
 
     it('puts every @import before the first rule', () => {
@@ -432,5 +444,26 @@ describe('report.css - the table chooses its own grid', () => {
     it('draws a hairline for a table that sets nothing', () => {
         expect(css).toContain('var(--rs-rule-width, 1px)');
         expect(css).toContain('var(--rs-rule-style, solid)');
+    });
+});
+
+
+describe('the designer page', () => {
+    /**
+     * The designer is height: 100% of its mount. On its own page nothing gave
+     * the mount a height, so the designer was only as tall as its contents -
+     * and with a small page and a box selected, its bottom edge rose two-thirds
+     * of the way up the window and fell again on deselecting.
+     */
+    it('gives the page, and so the designer on it, the window\'s height', () => {
+        const css = stripNoise(read('src/designer/styles.css'));
+        const rule = css.match(/\.report-studio-page,\s*\.report-studio-page body\s*\{([^}]*)\}/);
+
+        expect(rule).not.toBeNull();
+        expect(rule[1]).toMatch(/height:\s*100%/);
+    });
+
+    it('is the page that carries the class the rule is written for', () => {
+        expect(read('src/designer/index.html')).toMatch(/<html[^>]*class="report-studio-page"/);
     });
 });

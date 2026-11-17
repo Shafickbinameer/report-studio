@@ -502,6 +502,187 @@ function pageFields(layout) {
 }
 
 
+/* ---------------- margins ---------------- */
+
+export const MARGIN_SIDES = ['top', 'right', 'bottom', 'left'];
+
+const SIDE_LABELS = { top: 'Top', right: 'Right', bottom: 'Bottom', left: 'Left' };
+
+
+/**
+ * A margin is switched off by printing it as 0 and keeping what it was beside
+ * it, in `page.marginOff` - `{ left: 40 }` for a left margin switched off at
+ * 40px. Switching it back on puts the 40 back.
+ *
+ * `page.margin` therefore always holds the margins that print, and the engine,
+ * the renderer and the canvas - which all read it directly - never have to
+ * know a margin can be off. Only the rail and the validator do.
+ *
+ * `page.marginLinked` is the lock a design tool has on padding: while it is
+ * set, a number typed into any side is written to all four.
+ *
+ * Both keys are left off the file entirely when they say nothing, as `paper`
+ * is: a report with every margin on and no lock looks as it always did.
+ */
+
+
+/** @returns {boolean} whether the side prints its margin */
+export function marginIsOn(page, side) {
+    return !(page?.marginOff && side in page.marginOff);
+}
+
+
+/** the side's number - what it prints, or what it will print once back on */
+function marginValue(page, side) {
+    return marginIsOn(page, side) ? page?.margin?.[side] : page.marginOff[side];
+}
+
+
+/** an empty `marginOff` says nothing, so it is not written */
+function tidyMarginOff(page) {
+    if (page.marginOff && !Object.keys(page.marginOff).length) delete page.marginOff;
+}
+
+
+/**
+ * Switches one side's margin off or back on.
+ *
+ * @param {object} page mutated in place
+ * @param {string} side
+ * @param {boolean} on
+ * @returns {boolean} whether anything changed
+ */
+export function setMarginOn(page, side, on) {
+    if (marginIsOn(page, side) === on) return false;
+
+    if (on) {
+        page.margin[side] = page.marginOff[side];
+        delete page.marginOff[side];
+        tidyMarginOff(page);
+    } else {
+        page.marginOff = { ...page.marginOff, [side]: page.margin[side] };
+        page.margin[side] = 0;
+    }
+
+    return true;
+}
+
+
+/**
+ * The section's own switch: off takes every margin away, on puts every one
+ * back. It reads as on while any side is, so one click on a page with some
+ * margins switched off clears the rest, and the next brings them all back.
+ *
+ * @param {object} page mutated in place
+ * @param {boolean} on
+ * @returns {boolean} whether anything changed
+ */
+export function setMarginsOn(page, on) {
+    let changed = false;
+    for (const side of MARGIN_SIDES) changed = setMarginOn(page, side, on) || changed;
+    return changed;
+}
+
+
+/**
+ * Sets a side's number. A side that is off keeps the number for when it is
+ * switched on, and still prints nothing. With the lock on, every side takes it.
+ *
+ * @param {object} page mutated in place
+ * @param {string} side
+ * @param {number} value
+ * @returns {boolean} whether anything changed
+ */
+export function setMarginValue(page, side, value) {
+    const sides = page.marginLinked ? MARGIN_SIDES : [side];
+    let changed = false;
+
+    for (const one of sides) {
+        const store = marginIsOn(page, one) ? page.margin : page.marginOff;
+        if (store[one] === value) continue;
+
+        store[one] = value;
+        changed = true;
+    }
+
+    return changed;
+}
+
+
+/**
+ * Turns the lock on or off. Locking makes the four sides one number, so they
+ * all take the first side that is printing one - the top, usually - or the
+ * top's own if none is.
+ *
+ * @param {object} page mutated in place
+ * @param {boolean} linked
+ * @returns {boolean} whether anything changed
+ */
+export function setMarginLinked(page, linked) {
+    if (Boolean(page.marginLinked) === linked) return false;
+
+    if (!linked) {
+        delete page.marginLinked;
+        return true;
+    }
+
+    page.marginLinked = true;
+
+    const lead = MARGIN_SIDES.find(side => marginIsOn(page, side)) ?? 'top';
+    setMarginValue(page, lead, marginValue(page, lead));
+
+    return true;
+}
+
+
+/**
+ * The Margins section: a switch for all of them and the lock across the top,
+ * then a row per side - its switch on the left, its number on the right. A
+ * side that is off shows the number it will come back with, greyed and not
+ * editable; the switches rebuild the rail so the boxes follow them.
+ *
+ * The number boxes keep the paths they always had, so anything that finds a
+ * margin's box by `page.margin.top` still does.
+ *
+ * @param {object} layout
+ * @returns {object[]}
+ */
+function marginFields(layout) {
+    const all = {
+        key: 'page.marginsOn', label: 'All sides', type: 'toggle', half: true,
+        rebuilds: true,
+        read: (target) => MARGIN_SIDES.some(side => marginIsOn(target.page, side)),
+        write: (target, on) => setMarginsOn(target.page, on)
+    };
+
+    const linked = {
+        key: 'page.marginLinked', label: 'Same value', type: 'toggle', half: true,
+        rebuilds: true,
+        hint: 'One number for every side: typing into any side sets all four',
+        read: (target) => Boolean(target.page?.marginLinked),
+        write: (target, on) => setMarginLinked(target.page, on)
+    };
+
+    const rows = MARGIN_SIDES.flatMap(side => [
+        {
+            key: `page.marginOn.${side}`, label: SIDE_LABELS[side], type: 'toggle', half: true,
+            rebuilds: true,
+            read: (target) => marginIsOn(target.page, side),
+            write: (target, on) => setMarginOn(target.page, side, on)
+        },
+        num(`page.margin.${side}`, `${SIDE_LABELS[side]} margin`, {
+            min: 0,
+            short: SIDE_LABELS[side][0],
+            disabled: !marginIsOn(layout.page, side),
+            read: (target) => marginValue(target.page, side),
+            write: (target, value) => setMarginValue(target.page, side, value)
+        })
+    ]);
+
+    return [all, linked, ...rows];
+}
+
+
 /**
  * The report's own properties - what the rail shows when no item is selected.
  *
@@ -538,12 +719,7 @@ export function reportFields(layout) {
         },
         {
             title: 'Margins',
-            fields: [
-                num('page.margin.top', 'Top', { min: 0 }),
-                num('page.margin.right', 'Right', { min: 0 }),
-                num('page.margin.bottom', 'Bottom', { min: 0 }),
-                num('page.margin.left', 'Left', { min: 0 })
-            ]
+            fields: marginFields(layout)
         },
         {
             /**

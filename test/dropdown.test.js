@@ -252,6 +252,98 @@ describe('dropdown - keyboard', () => {
     });
 });
 
+/**
+ * jsdom does no layout, so the boxes are given. The trigger is 100 x 32 at
+ * (40, top); the menu reports a height and starts with its frame at 0,0.
+ */
+function layout({ top = 100, menuHeight = 200, winHeight = 800 } = {}) {
+    vi.spyOn(trigger(), 'getBoundingClientRect').mockReturnValue({
+        top, bottom: top + 32, left: 40, right: 140, width: 100, height: 32
+    });
+    vi.spyOn(menu(), 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0
+    });
+    vi.spyOn(menu(), 'offsetHeight', 'get').mockReturnValue(menuHeight);
+    vi.spyOn(menu(), 'offsetWidth', 'get').mockReturnValue(100);
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(winHeight);
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1200);
+}
+
+describe('dropdown - placing, inside something that scrolls', () => {
+    it('opens under the trigger, at least as wide as it', () => {
+        mount();
+        layout();
+        trigger().click();
+
+        expect(menu().style.top).toBe('136px');
+        expect(menu().style.left).toBe('40px');
+        expect(menu().style.getPropertyValue('--dropdown-trigger-width')).toBe('100px');
+        expect(menu().style.maxHeight).toBe('');
+    });
+
+    it('opens above the trigger when there is more room there', () => {
+        mount();
+        layout({ top: 700, menuHeight: 200 });
+        trigger().click();
+
+        /** 700 - 4 - 200 */
+        expect(menu().style.top).toBe('496px');
+    });
+
+    it('is cut to the room it has, rather than running off the window', () => {
+        mount();
+        layout({ top: 100, menuHeight: 900, winHeight: 400 });
+        trigger().click();
+
+        /** 400 - 132 - 4 - 8 below beats 100 - 4 - 8 above */
+        expect(menu().style.top).toBe('136px');
+        expect(menu().style.maxHeight).toBe('256px');
+    });
+
+    it('focuses the chosen item without scrolling what is around it', () => {
+        mount();
+        const focus = vi.spyOn(item('1'), 'focus');
+        trigger().click();
+
+        expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    });
+
+    it('closes when something around it scrolls, as a select does', () => {
+        mount();
+        const card = document.createElement('div');
+        document.body.appendChild(card);
+        trigger().click();
+
+        card.dispatchEvent(new Event('scroll'));
+        expect(dropdown.isOpen).toBe(false);
+    });
+
+    it('stays open while its own long list scrolls', () => {
+        mount();
+        trigger().click();
+
+        menu().dispatchEvent(new Event('scroll'));
+        expect(dropdown.isOpen).toBe(true);
+    });
+
+    it('closes when the window is resized', () => {
+        mount();
+        trigger().click();
+
+        window.dispatchEvent(new Event('resize'));
+        expect(dropdown.isOpen).toBe(false);
+    });
+
+    it('stops listening for scrolls once closed', () => {
+        mount();
+        const remove = vi.spyOn(document, 'removeEventListener');
+        trigger().click();
+        key(menu(), 'Escape');
+
+        expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function), true);
+    });
+});
+
 describe('dropdown - teardown', () => {
     it('drops its outside-click listener', () => {
         mount();
