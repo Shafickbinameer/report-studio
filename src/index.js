@@ -57,6 +57,12 @@ export {
 export { render } from './render/render.js';
 
 /**
+ * The same pages drawn onto a canvas instead of into markup - for a printer
+ * that takes a bitmap, an image to share, a PDF of page images, a thumbnail.
+ */
+export { renderToCanvas, drawPage, CANVAS_DEFAULTS } from './render/canvas.js';
+
+/**
  * The viewer: paging, zoom, search, print, CSV and Excel over a page list.
  *
  * It takes one empty element and builds the rest, the same way createDesigner

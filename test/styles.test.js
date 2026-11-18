@@ -422,6 +422,21 @@ describe('report.css - the table chooses its own header', () => {
     it('still draws a header for a table that sets nothing', () => {
         expect(css).toMatch(/\.page th\s*\{[^}]*font-weight:\s*600/s);
     });
+
+    /** .cell takes the body colour; inside a header the header's own must win */
+    it('keeps the header colour over the body colour inside the cell box', () => {
+        expect(css).toMatch(/\.page th \.cell\s*\{[^}]*color:\s*var\(--rs-head-color, var\(--rs-cell-color, inherit\)\)/s);
+    });
+});
+
+
+describe('report.css - text breaks where the engine measured it', () => {
+    const css = stripNoise(read('src/render/report.css'));
+
+    /** wrapLines cuts a word wider than its box; the browser has to as well */
+    it('breaks a word too wide for its box rather than running it past the edge', () => {
+        expect(css).toMatch(/\.page p\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+    });
 });
 
 

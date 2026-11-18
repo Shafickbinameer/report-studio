@@ -38,6 +38,15 @@
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.3;
+
+  /**
+   * A word wider than its box breaks inside the box, because that is what the
+   * engine measured: wrapLines cuts it character by character rather than let
+   * it overflow. Without this the browser kept the word whole and ran it past
+   * the edge, so the page printed one line where pagination budgeted two - and
+   * on a fixed-size label, a name that runs off the sticker.
+   */
+  overflow-wrap: anywhere;
 }
 
 .page table {
@@ -151,6 +160,16 @@
   font-weight: 600;
   background: var(--rs-head-bg, var(--surface-muted, #f1f3f5));
   color: var(--rs-head-color, inherit);
+}
+
+/**
+ * The header's text inside its .cell box. .cell takes --rs-cell-color for the
+ * body, and on its own that won over the header's colour too - a table that set
+ * both got its body colour across the header. The header's own wins here, and
+ * a table that names none still falls back to the body's.
+ */
+.page th .cell {
+  color: var(--rs-head-color, var(--rs-cell-color, inherit));
 }
 
 /**

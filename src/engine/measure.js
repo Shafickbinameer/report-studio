@@ -72,7 +72,7 @@ function cellFont(item) {
  * @param {object} item a table
  * @returns {number[]}
  */
-function columnWidths(item) {
+export function columnWidths(item) {
     const declared = (item.columns ?? []).map(c => c.width ?? 0);
     const sum = declared.reduce((a, b) => a + b, 0);
     const table = item.w ?? sum;

@@ -270,6 +270,54 @@ export const LINE_HEIGHT_RATIO: number;
 /** a built report as HTML markup, with no viewer around it */
 export function render(paginated: PaginatedReport): string;
 
+/** colours for what report.css leaves to its variables; a canvas has no stylesheet */
+export interface CanvasTheme {
+    /** the paper; null leaves the canvas transparent. Default '#ffffff' */
+    background?: string | null;
+    /** text with no colour of its own. Default '#000000' */
+    color?: string;
+    /** a table's grid when it names no colour. Default '#cdd4db' */
+    ruleColor?: string;
+    /** a table's header row when it names no fill. Default '#f1f3f5' */
+    headerBackground?: string;
+}
+
+export const CANVAS_DEFAULTS: Readonly<Required<CanvasTheme>>;
+
+export interface RenderToCanvasOptions {
+    /** which page, 0-based. Default 0 */
+    page?: number;
+    /** device pixels per page pixel: 2 for a sharp thumbnail, 203 / 96 for a 203 dpi printer. Default 1 */
+    scale?: number;
+    /** draw into this canvas rather than a new one; it is resized to the page */
+    canvas?: HTMLCanvasElement | OffscreenCanvas;
+    /** how a picture is fetched; resolve null to leave its frame empty */
+    loadImage?: (src: string) => Promise<CanvasImageSource | null>;
+    /** wait for document.fonts to load every face the page uses. Default true */
+    waitForFonts?: boolean;
+    theme?: CanvasTheme;
+}
+
+/**
+ * One page of a built report drawn onto a canvas, once its pictures and fonts
+ * have loaded. Needs a browser, or an OffscreenCanvas, or `options.canvas`.
+ */
+export function renderToCanvas(
+    paginated: PaginatedReport, options?: RenderToCanvasOptions
+): Promise<HTMLCanvasElement | OffscreenCanvas>;
+
+/**
+ * One page drawn into a 2D context synchronously, in page pixels, under the
+ * context's current transform. Pictures must already be loaded, keyed by the
+ * address the engine resolved.
+ */
+export function drawPage(
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    paginated: PaginatedReport,
+    page?: number,
+    options?: { images?: Map<string, CanvasImageSource>; theme?: CanvasTheme }
+): void;
+
 
 /* ---------------------------------------------------------------- viewer */
 

@@ -191,7 +191,7 @@ function box(i) {
 
 
 /** how a picture may be fitted to its box; anything else is `contain` */
-const IMAGE_FITS = ['contain', 'cover', 'fill'];
+export const IMAGE_FITS = ['contain', 'cover', 'fill'];
 
 /**
  * The raster formats a `data:` URI may carry.
@@ -324,10 +324,10 @@ function line(i) {
 
 
 /** what a rule may be drawn in; anything else is not a rule */
-const LINE_STYLES = ['solid', 'dashed', 'dotted', 'double'];
+export const LINE_STYLES = ['solid', 'dashed', 'dotted', 'double'];
 
 /** a table's grid may also be drawn in nothing at all */
-const RULE_STYLES = [...LINE_STYLES, 'none'];
+export const RULE_STYLES = [...LINE_STYLES, 'none'];
 
 
 /**
@@ -342,7 +342,7 @@ const RULE_STYLES = [...LINE_STYLES, 'none'];
  * @param {object} item the table
  * @returns {number} pixels
  */
-function maxRuleWidth(item) {
+export function maxRuleWidth(item) {
     const rowHeight = item.rowHeight ?? 0;
     const headerHeight = item.showHeader ? (item.headerHeight ?? rowHeight) : rowHeight;
 
@@ -559,7 +559,7 @@ function groupedBody(i) {
  * built before nested groups, or by the designer, has only the single
  * headerBand and footerBand.
  */
-function fragmentBands(g) {
+export function fragmentBands(g) {
     const headers = Array.isArray(g.headerBands) ? g.headerBands : [g.headerBand];
     const footers = Array.isArray(g.footerBands)
         ? g.footerBands
