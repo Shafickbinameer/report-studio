@@ -286,9 +286,19 @@ function text(env, i, ox, oy, padX) {
         ctx.fillRect(x, y, w + padX * 2, px(i.h));
     }
 
-    const size = px(measured.fontSize, 12);
+    /** fitted by the engine: its lines, its size, clipped to the box like the HTML */
+    const fitted = Array.isArray(i.fitted?.lines) ? i.fitted : null;
+
+    const size = fitted ? px(fitted.fontSize, 12) : px(measured.fontSize, 12);
     const font = fontString({ ...measured, fontSize: size });
-    const lines = wrapLines(i.text ?? '', w, measured);
+    const lines = fitted ? fitted.lines : wrapLines(i.text ?? '', w, measured);
+
+    if (fitted) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + padX, y, w, px(i.h));
+        ctx.clip();
+    }
 
     fill(ctx, measured.color, env.theme.color);
 
@@ -297,6 +307,8 @@ function text(env, i, ox, oy, padX) {
         left: x + padX, width: w, top: y,
         align: measured.align
     });
+
+    if (fitted) ctx.restore();
 }
 
 
@@ -840,7 +852,8 @@ function pageFonts(page) {
         for (const item of list ?? []) {
             if (item?.type === 'text') {
                 const style = item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : (item.style ?? {});
-                add(fontString({ ...style, fontSize: px(style.fontSize, 12) }), item.text);
+                const size = Array.isArray(item.fitted?.lines) ? item.fitted.fontSize : style.fontSize;
+                add(fontString({ ...style, fontSize: px(size, 12) }), item.text);
             } else if (item?.type === 'table') {
                 const s = item.style ?? {};
                 const base = { fontSize: Number(s.fontSize) > 0 ? Number(s.fontSize) : 12, fontFamily: s.fontFamily || CELL_FAMILY };

@@ -127,6 +127,37 @@ function approximateWidth(str, style = {}) {
 }
 
 
+/** grapheme clusters, where the platform can say; code points where it cannot */
+let segmenter;
+
+/**
+ * A string as the characters a reader sees.
+ *
+ * A word is only ever cut between these. Cutting between UTF-16 code units, as
+ * this used to, split a Tamil or Malayalam conjunct - or a vowel sign from the
+ * consonant it belongs to - and printed half a letter at the end of one line
+ * and a stray mark at the start of the next. An emoji fared no better.
+ *
+ * @param {string} str
+ * @returns {string[]}
+ */
+export function graphemes(str) {
+    if (segmenter === undefined) {
+        try {
+            segmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+                ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+                : null;
+        } catch {
+            segmenter = null;
+        }
+    }
+
+    if (segmenter) return Array.from(segmenter.segment(str), part => part.segment);
+
+    return Array.from(str);
+}
+
+
 /**
  * Greedy word wrap: add words until the line would exceed {width}, then break.
  * A single word longer than the line is broken character by character rather
@@ -170,12 +201,13 @@ export function wrapLines(text, width, style) {
              * whatever now sits on the line may be a single word wider than the
              * item. Break it rather than let it overflow the box silently.
              */
-            while (measureText(line, style) > width && line.trim().length > 1) {
-                let cut = line.length;
-                while (cut > 1 && measureText(line.slice(0, cut), style) > width) cut--;
-                if (cut >= line.length) break;
-                lines.push(line.slice(0, cut));
-                line = line.slice(cut);
+            while (measureText(line, style) > width && graphemes(line.trim()).length > 1) {
+                const parts = graphemes(line);
+                let cut = parts.length;
+                while (cut > 1 && measureText(parts.slice(0, cut).join(''), style) > width) cut--;
+                if (cut >= parts.length) break;
+                lines.push(parts.slice(0, cut).join(''));
+                line = parts.slice(cut).join('');
             }
         }
 
@@ -203,4 +235,95 @@ export function textHeight(text, width, style) {
 /** exposed for tests - measurements are cached for the life of the module */
 export function clearMetricsCache() {
     cache.clear();
+}
+
+
+/** the overflow modes a text item may ask for; anything else wraps and grows */
+export const TEXT_OVERFLOWS = ['wrap', 'shrink', 'ellipsis'];
+
+/** the smallest a shrinking text goes, as a share of its own size, and in pixels */
+const SHRINK_FLOOR = 0.5;
+const SHRINK_MIN_PX = 6;
+
+
+/**
+ * Fits text into a fixed box instead of growing the box round it.
+ *
+ * A label is a fixed size: a product name that wraps onto a third line cannot
+ * make the sticker taller, and a text item that grows pushes the page past the
+ * label and onto a second one. So an item can ask for one of:
+ *
+ *   'shrink'   - the font is made smaller, half a pixel at a time, until every
+ *                line fits the height and no word has to be cut to fit the
+ *                width; past half its size it stops shrinking and cuts instead
+ *   'ellipsis' - the font stays, and the text is cut after the last line that
+ *                fits, ending in "…"
+ *
+ * The answer is the lines to draw and the size to draw them at, so both
+ * renderers print exactly what was fitted rather than wrapping again.
+ *
+ * @param {string} text
+ * @param {number} width
+ * @param {number} height
+ * @param {object} style
+ * @param {'shrink'|'ellipsis'} mode
+ * @returns {{fontSize: number, lines: string[], truncated: boolean}}
+ */
+export function fitText(text, width, height, style, mode) {
+    const source = String(text ?? '');
+    const declared = Number(style?.fontSize) > 0 ? Number(style.fontSize) : 12;
+    const lineHeight = (size) => Math.ceil(size * LINE_HEIGHT_RATIO);
+
+    let size = declared;
+
+    if (mode === 'shrink') {
+        const floor = Math.max(SHRINK_MIN_PX, declared * SHRINK_FLOOR);
+
+        for (; size >= floor; size -= 0.5) {
+            const sized = { ...style, fontSize: size };
+            const lines = wrapLines(source, width, sized);
+
+            if (lines.length * lineHeight(size) <= height && wordsFit(source, width, sized)) {
+                return { fontSize: size, lines, truncated: false };
+            }
+        }
+
+        size = Math.max(floor, Math.min(declared, size + 0.5));
+    }
+
+    const sized = { ...style, fontSize: size };
+    const all = wrapLines(source, width, sized);
+    const room = Math.max(1, Math.floor(height / lineHeight(size)));
+
+    if (all.length <= room) return { fontSize: size, lines: all, truncated: false };
+
+    const lines = all.slice(0, room);
+    lines[room - 1] = withEllipsis(lines[room - 1], width, sized);
+
+    return { fontSize: size, lines, truncated: true };
+}
+
+
+/** whether every word of the text fits the width whole, at this size */
+function wordsFit(text, width, style) {
+    if (!(width > 0)) return true;
+    return text.split(/\s+/).every(word => word === '' || measureText(word, style) <= width);
+}
+
+
+/**
+ * A line with "…" on the end, losing characters from the end until the two
+ * fit. Cut between graphemes, so a conjunct is never left half drawn.
+ * @param {string} line
+ * @param {number} width
+ * @param {object} style
+ * @returns {string}
+ */
+export function withEllipsis(line, width, style) {
+    const parts = graphemes(String(line ?? '').trimEnd());
+    let n = parts.length;
+
+    while (n > 0 && measureText(parts.slice(0, n).join('').trimEnd() + '…', style) > width) n--;
+
+    return n > 0 ? parts.slice(0, n).join('').trimEnd() + '…' : '…';
 }

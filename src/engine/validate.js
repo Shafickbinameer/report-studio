@@ -14,6 +14,7 @@ import {
 import { HIGHLIGHT_OPS, HIGHLIGHT_STYLE_KEYS } from './highlight.js';
 import { parseExpression } from './calculate.js';
 import { designHeight } from './measure.js';
+import { TEXT_OVERFLOWS } from './text-metrics.js';
 
 
 const BAND_TYPES = [
@@ -408,12 +409,20 @@ function validateItem(item, where, issues) {
         issues.push(`${where}.id must be a non-empty string`);
     }
 
+    if (item.layer != null && !Number.isFinite(item.layer)) {
+        issues.push(`${where}.layer must be a number`);
+    }
+
     if (item.type === 'text') {
         if (typeof item.value !== 'string') {
             issues.push(`${where}.value must be a string`);
         }
         validateFormat(item.format, `${where}.format`, issues, true);
         validateHighlight(item.highlight, `${where}.highlight`, issues, false);
+
+        if (item.overflow != null && !TEXT_OVERFLOWS.includes(item.overflow)) {
+            issues.push(`${where}.overflow "${item.overflow}" is not one of: ${TEXT_OVERFLOWS.join(', ')}`);
+        }
         return;
     }
 

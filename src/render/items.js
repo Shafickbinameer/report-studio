@@ -138,19 +138,30 @@ function text(i) {
     const lit = i.highlighted ?? null;
     const style = { ...(i.style ?? {}), ...(lit ?? {}) };
 
+    /**
+     * Text the engine fitted to its box - shrunk, or cut with an ellipsis -
+     * prints the engine's lines at the engine's size, one per line and never
+     * wrapped again, and is clipped to the box it was fitted to.
+     */
+    const fitted = Array.isArray(i.fitted?.lines) ? i.fitted : null;
+    const size = fitted ? px(fitted.fontSize, 12) : px(style.fontSize, 12);
+    const fit = fitted ? 'white-space:pre;overflow:hidden;' : '';
+    const body = fitted ? fitted.lines.join('\n') : i.text;
+
     return `
     <p id="${esc(i.id)}" style="
     ${lit?.background ? `background:${css(lit.background)};` : ''}
+    ${fit}
     width:${px(i.w)}px;
     height:${px(i.h)}px;
     ${position(i)}
-    font-size:${px(style.fontSize, 12)}px;
+    font-size:${size}px;
     font-family:${css(style.fontFamily, 'inherit')};
     font-weight:${css(style.fontWeight, 'normal')};
     font-style:${css(style.fontStyle, 'normal')};
     text-align:${css(style.align, 'left')};
     color:${css(style.color, 'inherit')};
-    " data-item-id="${esc(i.id)}" data-item-type="text">${esc(i.text)}</p>
+    " data-item-id="${esc(i.id)}" data-item-type="text">${esc(body)}</p>
     `
 }
 

@@ -24,7 +24,11 @@ export {
     tablesOf, datasetOf, groupingOf, groupingsOf, groupBandsOf, levelsOf, isGrouped, normalizeGrouping,
     fragmentBandsOf, MAX_GROUP_LEVELS
 } from './tables.js';
-export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
+export {
+    measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO, fitText, graphemes, TEXT_OVERFLOWS
+} from './text-metrics.js';
+export { mm, toMM, pageSize, PAPER, PX_PER_MM, PT_PER_PX } from './units.js';
+export { toPDF, pdfImage, PDF_MIME } from './pdf.js';
 export {
     formatValue, describeFormat, excelNumberFormat, DEFAULT_FORMAT, INDIAN_DEFAULTS
 } from './format.js';

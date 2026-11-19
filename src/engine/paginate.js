@@ -199,7 +199,7 @@ function calPages(bands, context) {
      * @returns {object} the new, empty calBand
      */
     const breakPage = (calBand, band, shiftTo) => {
-        if (calBand.items.length > 0) currentPage.bands.push(calBand);
+        if (calBand.items.length > 0) currentPage.bands.push(byLayer(calBand));
 
         currentPage = newPage(pages.length + 1, context);
         pages.push(currentPage);
@@ -656,7 +656,7 @@ function calPages(bands, context) {
 
         /** after the loop if their is any kind of data is their in calBand */
         if (calBand.items.length > 0) {
-            currentPage.bands.push(calBand);
+            currentPage.bands.push(byLayer(calBand));
             calBand = {
                 ...band, items: []
             };
@@ -689,6 +689,30 @@ function calPages(bands, context) {
     anchorBands(pages);
 
     return pages;
+}
+
+
+/**
+ * A finished band's items in the order they are drawn, bottom to top.
+ *
+ * Items are placed - and so drawn - top to bottom by `y`, which puts a frame
+ * behind what sits inside it. An item may say otherwise with `layer`: in a
+ * band where any item has one, items are drawn by layer, lowest first, and
+ * those on the same layer (0 when unset) keep their top-to-bottom order. A
+ * designer that lets a person bring something to the front writes layers.
+ *
+ * Only done once a band is finished on its page: while it is being built, the
+ * last item in it is the one just placed, which the float-down bookkeeping
+ * reads.
+ * @param {object} calBand the band as built for one page
+ * @returns {object} calBand, sorted in place
+ */
+function byLayer(calBand) {
+    const layerOf = (item) => (Number.isFinite(item.layer) ? item.layer : 0);
+    if (calBand.items.some(item => Number.isFinite(item.layer))) {
+        calBand.items.sort((a, b) => layerOf(a) - layerOf(b));
+    }
+    return calBand;
 }
 
 

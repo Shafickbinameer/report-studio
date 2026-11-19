@@ -7,7 +7,7 @@
  *   band  - the fixed `height` field, or the computed height where it holds a table
  */
 
-import { textHeight } from './text-metrics.js';
+import { textHeight, fitText } from './text-metrics.js';
 import { levelsOf, groupFrame } from './tables.js';
 import { formatValue } from './format.js';
 import { cellHighlight } from './highlight.js';
@@ -299,9 +299,20 @@ function measureItem(item, json) {
  */
 function measureTextItem(item) {
     const declared = item.h ?? 0;
-    const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0,
-        item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : item.style);
-    return Math.max(declared, wrapped);
+    const style = item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : item.style;
+    const text = item.text ?? item.value ?? '';
+
+    /**
+     * A box that may not grow - a label's product name - is fitted instead,
+     * and the fit is written onto the item so the renderers draw these lines
+     * at this size rather than wrapping the text again for themselves.
+     */
+    if (item.overflow === 'shrink' || item.overflow === 'ellipsis') {
+        item.fitted = fitText(text, item.w ?? 0, declared, style, item.overflow);
+        return declared;
+    }
+
+    return Math.max(declared, textHeight(text, item.w ?? 0, style));
 }
 
 
