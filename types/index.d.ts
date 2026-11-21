@@ -264,11 +264,141 @@ export function textHeight(text: string, width: number, style?: TextStyle): numb
 /** CSS line-height multiplier the report draws text at */
 export const LINE_HEIGHT_RATIO: number;
 
+/** the overflow modes a text item may ask for */
+export const TEXT_OVERFLOWS: ReadonlyArray<'wrap' | 'shrink' | 'ellipsis'>;
+
+/** text fitted into a fixed box: the lines to draw and the size to draw them at */
+export function fitText(
+    text: string, width: number, height: number, style: TextStyle | undefined, mode: 'shrink' | 'ellipsis'
+): { fontSize: number; lines: string[]; truncated: boolean };
+
+/** a string as the characters a reader sees (grapheme clusters) */
+export function graphemes(text: string): string[];
+
+/* ----------------------------------------------------------------- units */
+
+/** CSS pixels in a millimetre (96 dpi) */
+export const PX_PER_MM: number;
+/** PDF points in a CSS pixel */
+export const PT_PER_PX: number;
+/** millimetres as layout pixels */
+export function mm(value: number): number;
+/** layout pixels as millimetres */
+export function toMM(value: number): number;
+/** paper sizes, portrait, in millimetres */
+export const PAPER: Readonly<Record<'A4' | 'A5' | 'A6' | 'Letter' | 'Legal', Readonly<{ width: number; height: number }>>>;
+
+type Sides = { top?: number; right?: number; bottom?: number; left?: number };
+
+/** a layout's page block for a paper name or a size in millimetres; margins in millimetres */
+export function pageSize(
+    size: keyof typeof PAPER | { width: number; height: number },
+    options?: { orientation?: 'portrait' | 'landscape'; margin?: number | Sides }
+): { width: number; height: number; margin: Required<Sides> };
+
+/* ------------------------------------------------------------------- pdf */
+
+export type PdfImage =
+    | { width: number; height: number; data: Uint8ClampedArray | Uint8Array }
+    | { width: number; height: number; jpeg: Uint8Array };
+
+export const PDF_MIME: 'application/pdf';
+
+/** a PDF whose pages are images; page sizes in layout pixels */
+export function toPDF(
+    pages: Array<{ width: number; height: number; image: PdfImage | Awaited<ReturnType<typeof pdfImage>> }>,
+    options?: { title?: string; producer?: string }
+): Promise<Uint8Array>;
+
+/** compresses a page image now, so its pixels can be let go of; toPDF takes the result */
+export function pdfImage(image: PdfImage): Promise<
+    { width: number; height: number; flate: Uint8Array } | { width: number; height: number; jpeg: Uint8Array }
+>;
+
 
 /* ---------------------------------------------------------------- render */
 
 /** a built report as HTML markup, with no viewer around it */
 export function render(paginated: PaginatedReport): string;
+
+/** colours for what report.css leaves to its variables; a canvas has no stylesheet */
+export interface CanvasTheme {
+    /** the paper; null leaves the canvas transparent. Default '#ffffff' */
+    background?: string | null;
+    /** text with no colour of its own. Default '#000000' */
+    color?: string;
+    /** a table's grid when it names no colour. Default '#cdd4db' */
+    ruleColor?: string;
+    /** a table's header row when it names no fill. Default '#f1f3f5' */
+    headerBackground?: string;
+}
+
+export const CANVAS_DEFAULTS: Readonly<Required<CanvasTheme>>;
+
+export interface RenderToCanvasOptions {
+    /** which page, 0-based. Default 0 */
+    page?: number;
+    /** device pixels per page pixel: 2 for a sharp thumbnail, 203 / 96 for a 203 dpi printer. Default 1 */
+    scale?: number;
+    /** draw into this canvas rather than a new one; it is resized to the page */
+    canvas?: HTMLCanvasElement | OffscreenCanvas;
+    /** how a picture is fetched; resolve null to leave its frame empty */
+    loadImage?: (src: string) => Promise<CanvasImageSource | null>;
+    /** wait for document.fonts to load every face the page uses. Default true */
+    waitForFonts?: boolean;
+    theme?: CanvasTheme;
+}
+
+/**
+ * One page of a built report drawn onto a canvas, once its pictures and fonts
+ * have loaded. Needs a browser, or an OffscreenCanvas, or `options.canvas`.
+ */
+export function renderToCanvas(
+    paginated: PaginatedReport, options?: RenderToCanvasOptions
+): Promise<HTMLCanvasElement | OffscreenCanvas>;
+
+/**
+ * One page drawn into a 2D context synchronously, in page pixels, under the
+ * context's current transform. Pictures must already be loaded, keyed by the
+ * address the engine resolved.
+ */
+export function drawPage(
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    paginated: PaginatedReport,
+    page?: number,
+    options?: { images?: Map<string, CanvasImageSource>; theme?: CanvasTheme }
+): void;
+
+
+/** every picture address one built page draws, so they can be loaded before drawPage */
+export function pageImageSources(page: Page): Set<string>;
+
+/** the default picture loader renderToCanvas uses: CORS for http(s), null when it fails */
+export function loadImage(src: string): Promise<CanvasImageSource | null>;
+
+/** device pixels per layout pixel reportToPDF draws at by default (192 dpi) */
+export const PDF_SCALE: number;
+
+/** a built report as PDF bytes, each page drawn with renderToCanvas */
+export function reportToPDF(
+    paginated: PaginatedReport,
+    options?: Omit<RenderToCanvasOptions, 'page' | 'canvas' | 'waitForFonts'> & { title?: string; pages?: number[] }
+): Promise<Uint8Array>;
+
+/**
+ * a built report as a vector PDF: selectable text in the built-in Helvetica,
+ * Times or Courier, rules and boxes as lines, pictures embedded once. What the
+ * built-in fonts cannot show (the rupee sign, a Tamil or Malayalam word) is
+ * drawn by the browser and placed in the line as a picture, once per document;
+ * a line in a web font is a picture whole
+ */
+export function reportToVectorPDF(
+    paginated: PaginatedReport,
+    options?: Pick<RenderToCanvasOptions, 'theme' | 'loadImage' | 'waitForFonts'> & { title?: string; pages?: number[] }
+): Promise<Uint8Array>;
+
+/** a canvas's pixels as toPDF takes them */
+export function canvasImage(canvas: HTMLCanvasElement | OffscreenCanvas): { width: number; height: number; data: Uint8ClampedArray };
 
 
 /* ---------------------------------------------------------------- viewer */
@@ -288,12 +418,26 @@ export interface ViewerHandle {
     next(): void;
     prev(): void;
     find(query: string): void;
-    print(): void;
-    /** false when the report has nothing to write */
+    /**
+     * opens the print dialog - with the report's PDF in desktop Chromium
+     * browsers, the page itself elsewhere. The Print button spins meanwhile;
+     * settles once the dialog has been asked for
+     */
+    print(): Promise<void>;
+    /**
+     * writes the report as a vector PDF (reportToVectorPDF) and downloads it;
+     * the file follows a moment later. Opens the print dialog should writing fail
+     */
+    downloadPDF(): boolean;
+    /**
+     * false when the report has nothing to write. The file follows a moment
+     * later, once the Export button's spinner is on screen
+     */
     downloadCSV(): boolean;
     /**
-     * false when the report has nothing to write. A report with pictures
-     * from URLs fetches them first, so its download starts a moment later
+     * false when the report has nothing to write. The file follows a moment
+     * later, once the Export button's spinner is on screen; a report with
+     * pictures from URLs fetches them first
      */
     downloadXLSX(): boolean;
     /** opens the export menu under the toolbar's Export button */

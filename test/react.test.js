@@ -56,10 +56,14 @@ const pagesIn = () => container.querySelectorAll('.page').length;
 
 describe('ReportViewer', () => {
     it('builds the pages from a layout and data, and mounts the viewer', () => {
-        draw(createElement(ReportViewer, { layout: report(), data: { items: rows(80) } }));
+        const ref = createRef();
+        draw(createElement(ReportViewer, { ref, layout: report(), data: { items: rows(80) } }));
 
         expect(container.querySelector('.report-viewer')).not.toBeNull();
-        expect(pagesIn()).toBeGreaterThan(1);
+        expect(ref.current.pageCount).toBeGreaterThan(1);
+
+        /** the page on screen; the others are drawn as they are turned to */
+        expect(pagesIn()).toBe(1);
     });
 
     it('takes pages already built instead', () => {
@@ -85,7 +89,7 @@ describe('ReportViewer', () => {
         expect(element.style.height).toBe('600px');
     });
 
-    it('gives the ref the viewer controls', () => {
+    it('gives the ref the viewer controls', async () => {
         const ref = createRef();
         draw(createElement(ReportViewer, { ref, layout: report(), data: { items: rows(80) } }));
 
@@ -95,7 +99,8 @@ describe('ReportViewer', () => {
         act(() => ref.current.next());
         expect(ref.current.page).toBe(2);
 
-        act(() => ref.current.print());
+        /** print() settles once the print dialog has been asked for */
+        await act(async () => { await ref.current.print(); });
         expect(window.print).toHaveBeenCalledOnce();
     });
 

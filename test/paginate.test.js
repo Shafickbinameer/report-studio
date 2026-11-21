@@ -330,6 +330,38 @@ describe('paginate - the detail band stays inside its zone', () => {
         expect(itemIdsOn(out.pages[0])).toEqual(['above', 'tbl']);
     });
 
+    it('draws by layer when the items have one, top to bottom within a layer', () => {
+        const json = layout({
+            bands: [
+                band('detail', [
+                    { ...text('back', { y: 40, h: 20 }), layer: -1 },
+                    { ...text('front', { y: 0, h: 20 }), layer: 2 },
+                    text('a', { y: 30, h: 20 }),
+                    text('b', { y: 10, h: 20 })
+                ])
+            ]
+        });
+        const out = run(json, { items: rows(1) });
+
+        expect(itemIdsOn(out.pages[0])).toEqual(['back', 'b', 'a', 'front']);
+    });
+
+    it('keeps a layered band in layer order on every page it reaches', () => {
+        const json = layout({
+            bands: [
+                band('detail', [
+                    { ...table({ y: 30 }), layer: 1 },
+                    { ...text('under', { y: 0, h: 20 }), layer: 0 }
+                ]),
+                band('pageFooter', [text('pf', { h: 20 })], { height: 40 })
+            ]
+        });
+        const out = run(json, { items: rows(80) });
+
+        expect(out.pages.length).toBeGreaterThan(1);
+        expect(itemIdsOn(out.pages[0])).toEqual(['under', 'tbl']);
+    });
+
     /**
      * The group footer only prints on the fragment that ends a group, and its
      * height used to be added to that fragment without ever being reserved.

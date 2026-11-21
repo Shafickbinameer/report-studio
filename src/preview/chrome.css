@@ -339,6 +339,44 @@
   cursor: default;
 }
 
+/**
+ * A button at work - Print readying the print, Export writing a PDF, a
+ * workbook or a CSV - spins where its glyph was until the work is done. A
+ * long report takes seconds over any of them, and a button that does nothing
+ * visible for that long gets pressed again.
+ */
+.report-viewer .toolbar button[aria-busy="true"] {
+  cursor: progress;
+}
+
+.report-viewer .toolbar button[aria-busy="true"] > svg {
+  display: none;
+}
+
+.report-viewer .toolbar button[aria-busy="true"]::before {
+  content: '';
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: .8;
+  animation: report-viewer-spin .7s linear infinite;
+}
+
+@keyframes report-viewer-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* still turning, so it still reads as busy, only slowly */
+@media (prefers-reduced-motion: reduce) {
+  .report-viewer .toolbar button[aria-busy="true"]::before {
+    animation-duration: 2.4s;
+  }
+}
+
 .report-viewer .toolbar-save {
   gap: 6px;
 }

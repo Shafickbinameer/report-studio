@@ -43,7 +43,7 @@ const GLYPHS = {
  * available; this is only what they are called.
  */
 const EXPORT_FORMATS = [
-    { value: 'pdf', name: 'PDF', keys: 'Ctrl P' },
+    { value: 'pdf', name: 'PDF', keys: '' },
     { value: 'csv', name: 'CSV', keys: '' },
     { value: 'xlsx', name: 'Excel', keys: '' }
 ];

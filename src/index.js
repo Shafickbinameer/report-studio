@@ -51,13 +51,32 @@ export {
     measureText,
     wrapLines,
     textHeight,
-    LINE_HEIGHT_RATIO
+    LINE_HEIGHT_RATIO,
+    fitText,
+    graphemes,
+    TEXT_OVERFLOWS,
+    mm,
+    toMM,
+    pageSize,
+    PAPER,
+    PX_PER_MM,
+    PT_PER_PX,
+    toPDF,
+    pdfImage,
+    PDF_MIME
 } from './engine/index.js';
 
 export { render } from './render/render.js';
 
 /**
- * The viewer: paging, zoom, search, print, CSV and Excel over a page list.
+ * The same pages drawn onto a canvas instead of into markup - for a printer
+ * that takes a bitmap, an image to share, a PDF of page images, a thumbnail.
+ */
+export { renderToCanvas, drawPage, pageImageSources, loadImage, CANVAS_DEFAULTS } from './render/canvas.js';
+export { reportToPDF, reportToVectorPDF, canvasImage, PDF_SCALE } from './render/pdf.js';
+
+/**
+ * The viewer: paging, zoom, search, print, PDF, CSV and Excel over a page list.
  *
  * It takes one empty element and builds the rest, the same way createDesigner
  * does. Link `report-studio/viewer.css` beside it - the report's own stylesheet

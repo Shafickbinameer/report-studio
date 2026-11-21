@@ -7,7 +7,7 @@
  *   band  - the fixed `height` field, or the computed height where it holds a table
  */
 
-import { textHeight } from './text-metrics.js';
+import { textHeight, fitText } from './text-metrics.js';
 import { levelsOf, groupFrame } from './tables.js';
 import { formatValue } from './format.js';
 import { cellHighlight } from './highlight.js';
@@ -72,7 +72,7 @@ function cellFont(item) {
  * @param {object} item a table
  * @returns {number[]}
  */
-function columnWidths(item) {
+export function columnWidths(item) {
     const declared = (item.columns ?? []).map(c => c.width ?? 0);
     const sum = declared.reduce((a, b) => a + b, 0);
     const table = item.w ?? sum;
@@ -224,14 +224,35 @@ export function designHeight(item) {
 }
 
 
+/**
+ * Measures a grouped layout: every item's height, every row's, every band's.
+ * The layout handed in is left as it was; what comes back is a copy.
+ * @param {object} json a group() result
+ * @returns {object}
+ */
 export function measure(json) {
-    const measureJson = structuredClone(json);
-    for (const band of measureJson.bands) {
+    return measureInPlace(structuredClone(json));
+}
+
+
+/**
+ * measure() without the copy: writes the measurements onto `json` itself.
+ *
+ * For buildPages, whose layout at this stage is one group() has only just
+ * made and nobody else holds. The copy measure() takes is of every row of the
+ * report, so skipping it where nothing can see the difference is most of a
+ * second on a large one. Rows are only read here, never written.
+ *
+ * @param {object} json a group() result this caller owns
+ * @returns {object} the same object, measured
+ */
+export function measureInPlace(json) {
+    for (const band of json.bands) {
         if (!band.items) continue;
-        measureBand(band, measureJson);
+        measureBand(band, json);
     }
 
-    return measureJson;
+    return json;
 }
 
 
@@ -299,9 +320,20 @@ function measureItem(item, json) {
  */
 function measureTextItem(item) {
     const declared = item.h ?? 0;
-    const wrapped = textHeight(item.text ?? item.value ?? '', item.w ?? 0,
-        item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : item.style);
-    return Math.max(declared, wrapped);
+    const style = item.highlighted ? { ...(item.style ?? {}), ...item.highlighted } : item.style;
+    const text = item.text ?? item.value ?? '';
+
+    /**
+     * A box that may not grow - a label's product name - is fitted instead,
+     * and the fit is written onto the item so the renderers draw these lines
+     * at this size rather than wrapping the text again for themselves.
+     */
+    if (item.overflow === 'shrink' || item.overflow === 'ellipsis') {
+        item.fitted = fitText(text, item.w ?? 0, declared, style, item.overflow);
+        return declared;
+    }
+
+    return Math.max(declared, textHeight(text, item.w ?? 0, style));
 }
 
 

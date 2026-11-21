@@ -8,8 +8,8 @@
 
 import { resolve } from './resolve.js';
 import { group } from './group.js';
-import { measure } from './measure.js';
-import { paginate } from './paginate.js';
+import { measureInPlace } from './measure.js';
+import { paginateInPlace } from './paginate.js';
 
 export { resolve } from './resolve.js';
 export { group } from './group.js';
@@ -24,7 +24,11 @@ export {
     tablesOf, datasetOf, groupingOf, groupingsOf, groupBandsOf, levelsOf, isGrouped, normalizeGrouping,
     fragmentBandsOf, MAX_GROUP_LEVELS
 } from './tables.js';
-export { measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO } from './text-metrics.js';
+export {
+    measureText, wrapLines, textHeight, LINE_HEIGHT_RATIO, fitText, graphemes, TEXT_OVERFLOWS
+} from './text-metrics.js';
+export { mm, toMM, pageSize, PAPER, PX_PER_MM, PT_PER_PX } from './units.js';
+export { toPDF, pdfImage, PDF_MIME } from './pdf.js';
 export {
     formatValue, describeFormat, excelNumberFormat, DEFAULT_FORMAT, INDIAN_DEFAULTS
 } from './format.js';
@@ -37,7 +41,16 @@ export { highlightFor, cellHighlight, describeHighlight } from './highlight.js';
  * @param {object} data the host application's data, keyed by dataset name
  * @returns {object} the layout, with a `pages` array of positioned bands
  * @throws {ReportError} when the layout or data cannot be used
+ *
+ * The layout is not changed. The data is not changed either, and is not
+ * copied: the rows on the pages are the rows that were passed in (or copies
+ * of them, for a table with calculated columns), so a large report is not
+ * paid for twice in memory.
  */
 export function buildPages(layout, data) {
-    return paginate(measure(group(resolve(layout, data), data)));
+    /**
+     * resolve and group each hand back a layout of their own, so the stages
+     * after them can work on it in place rather than copy every row again.
+     */
+    return paginateInPlace(measureInPlace(group(resolve(layout, data), data)));
 }

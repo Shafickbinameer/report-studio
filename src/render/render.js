@@ -28,16 +28,30 @@ export function render(json) {
     const pageConf = json.page;
     let html = `
         <main id="main-page">
-            ${json.pages.map(p =>
-        `
-                <section id="page-${esc(p.pageNO)}" class="page"  style="height:${px(pageConf.height)}px; width:${px(pageConf.width)}px; ${padding(pageConf.margin)};position:relative">
-                    ${page(p, pageConf)}
-                </section>
-                `
-    ).join('')}
+            ${json.pages.map(p => renderPage(p, pageConf)).join('')}
         </main>
     `;
     return html;
+}
+
+
+/**
+ * One page's markup, the <section> render() puts in its stack for each page.
+ *
+ * The viewer shows one page at a time, so it draws them one at a time too: a
+ * long report's 500 pages written out up front cost seconds before the first
+ * one could be read, and were then hidden.
+ *
+ * @param {object} p a page from buildPages
+ * @param {object} pageConf the layout's page block
+ * @returns {string}
+ */
+export function renderPage(p, pageConf) {
+    return `
+                <section id="page-${esc(p.pageNO)}" class="page"  style="height:${px(pageConf.height)}px; width:${px(pageConf.width)}px; ${padding(pageConf.margin)};position:relative">
+                    ${page(p, pageConf)}
+                </section>
+                `;
 }
 
 

@@ -363,34 +363,68 @@ describe('viewer - export menu', () => {
         expect(note('xlsx')).toContain('spec.xlsx');
     });
 
-    it('prints when PDF is chosen', () => {
+    it('writes and downloads a PDF file when PDF is chosen, without the print dialog', async () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
         item('pdf').click();
 
-        expect(window.print).toHaveBeenCalledOnce();
-        expect(clicked).toHaveLength(0);
+        /** the export button says it is busy while the file is written */
+        expect(el('export').getAttribute('aria-busy')).toBe('true');
+
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
+
+        expect(clicked[0].download).toBe('spec.pdf');
+        expect(window.print).not.toHaveBeenCalled();
+        expect(el('export').hasAttribute('aria-busy')).toBe(false);
+
+        const blob = URL.createObjectURL.mock.calls[0][0];
+        expect(blob.type).toBe('application/pdf');
+        expect(blob.size).toBeGreaterThan(0);
     });
 
-    it('downloads when CSV is chosen', () => {
+    it('writes one PDF however often it is asked for while it is being written', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        expect(viewer.downloadPDF()).toBe(true);
+        expect(viewer.downloadPDF()).toBe(true);
+
+        await vi.waitFor(() => expect(el('export').hasAttribute('aria-busy')).toBe(false));
+        expect(clicked).toHaveLength(1);
+    });
+
+    it('falls back to the print dialog when the PDF cannot be written', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        vi.stubGlobal('CompressionStream', undefined);
+
+        try {
+            viewer.downloadPDF();
+            await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
+            expect(clicked).toHaveLength(0);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('downloads when CSV is chosen', async () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
         item('csv').click();
 
-        expect(clicked).toHaveLength(1);
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
         expect(clicked[0].download).toBe('spec.csv');
         expect(window.print).not.toHaveBeenCalled();
     });
 
-    it('downloads a workbook when Excel is chosen', () => {
+    it('downloads a workbook when Excel is chosen', async () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
         item('xlsx').click();
 
-        expect(clicked).toHaveLength(1);
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
         expect(clicked[0].download).toBe('spec.xlsx');
         expect(window.print).not.toHaveBeenCalled();
 
@@ -399,10 +433,11 @@ describe('viewer - export menu', () => {
         expect(blob.size).toBeGreaterThan(0);
     });
 
-    it('downloads a workbook from code', () => {
+    it('downloads a workbook from code', async () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         expect(viewer.downloadXLSX()).toBe(true);
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
         expect(clicked[0].download).toBe('spec.xlsx');
     });
 
@@ -443,26 +478,26 @@ describe('viewer - export menu', () => {
         expect(document.activeElement).toBe(el('export'));
     });
 
-    it('closes before the print dialog opens, so the menu is not printed', () => {
+    it('closes before the PDF is written', async () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
-
-        window.print = vi.fn(() => {
-            expect(menu().hidden).toBe(true);
-        });
 
         viewer.openExport();
         item('pdf').click();
-        expect(window.print).toHaveBeenCalledOnce();
+        expect(menu().hidden).toBe(true);
+
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
     });
 
-    it('exports from code: the format asked for, or PDF', () => {
+    it('exports from code: the format asked for, or PDF', async () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         viewer.confirmExport('csv');
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
         expect(clicked[0].download).toBe('spec.csv');
 
         viewer.confirmExport();
-        expect(window.print).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(clicked).toHaveLength(2));
+        expect(clicked[1].download).toBe('spec.pdf');
     });
 
     it('closes on a press anywhere else, exporting nothing', async () => {
@@ -520,33 +555,37 @@ describe('viewer - export menu', () => {
         expect(document.activeElement).toBe(item('pdf'));
     });
 
-    it('prints on the Print button', () => {
+    it('prints on the Print button', async () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('print').click();
-        expect(window.print).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
     });
 
-    it('prints on ctrl+P rather than letting the browser do it', () => {
+    it('prints on ctrl+P rather than letting the browser do it', async () => {
         const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         document.dispatchEvent(
             new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }));
 
-        expect(window.print).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
         expect(viewer.exportOpen).toBe(false);
     });
 
-    it('clears highlights on a ctrl+P print, same as the button', () => {
+    it('clears highlights on a ctrl+P print, same as the button', async () => {
         const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
         viewer.find('row-2');
         expect(document.querySelectorAll('mark.hit').length).toBeGreaterThan(0);
 
+        let marksAtPrint;
+        window.print = vi.fn(() => { marksAtPrint = document.querySelectorAll('mark.hit').length; });
+
         document.dispatchEvent(
             new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }));
 
-        expect(document.querySelectorAll('mark.hit')).toHaveLength(0);
+        await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
+        expect(marksAtPrint).toBe(0);
     });
 
     it('opens the export menu on ctrl+X', () => {
@@ -589,24 +628,99 @@ describe('viewer - export menu', () => {
         expect(visible()[0].id).toBe('page-1');
     });
 
-    it('releases the object url it created', () => {
+    it('releases the object url it created', async () => {
         vi.useFakeTimers();
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
         item('csv').click();
-        vi.runAllTimers();
+        await vi.runAllTimersAsync();
 
         expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
         vi.useRealTimers();
     });
 
-    it('leaves no stray anchor behind', () => {
+    /**
+     * A file being written shows on the Export button as a spinner, and the
+     * writing waits for the spinner to be painted: an Excel workbook of a long
+     * report holds the page for seconds, and a spinner set just before it
+     * would only have shown once it was over.
+     */
+    it('spins Export while a file is written, painted before the writing starts', async () => {
+        mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        el('export').click();
+        item('xlsx').click();
+
+        expect(el('export').getAttribute('aria-busy')).toBe('true');
+        expect(clicked).toHaveLength(0);
+
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
+        await vi.waitFor(() => expect(el('export').hasAttribute('aria-busy')).toBe(false));
+    });
+
+    it('spins Print until the print dialog is asked for', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        let busyAtPrint;
+        window.print = vi.fn(() => { busyAtPrint = el('print').getAttribute('aria-busy'); });
+
+        const printed = viewer.print();
+        expect(el('print').getAttribute('aria-busy')).toBe('true');
+        expect(window.print).not.toHaveBeenCalled();
+
+        await printed;
+        expect(busyAtPrint).toBe('true');
+        expect(el('print').hasAttribute('aria-busy')).toBe(false);
+    });
+
+    it('writes a file once however often it is asked for while it is being written', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        expect(viewer.downloadCSV()).toBe(true);
+        expect(viewer.downloadCSV()).toBe(true);
+        expect(viewer.downloadXLSX()).toBe(true);
+        expect(viewer.downloadXLSX()).toBe(true);
+
+        await vi.waitFor(() => expect(el('export').hasAttribute('aria-busy')).toBe(false));
+        expect(clicked.map(c => c.download).sort()).toEqual(['spec.csv', 'spec.xlsx']);
+    });
+
+    it('keeps Export spinning until the last of its files is written', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        viewer.downloadCSV();
+        viewer.downloadPDF();
+
+        await vi.waitFor(() => expect(clicked.map(c => c.download)).toContain('spec.csv'));
+        if (clicked.length < 2) expect(el('export').getAttribute('aria-busy')).toBe('true');
+
+        await vi.waitFor(() => expect(clicked).toHaveLength(2));
+        await vi.waitFor(() => expect(el('export').hasAttribute('aria-busy')).toBe(false));
+    });
+
+    it('drops work a destroyed viewer had asked for', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        viewer.downloadCSV();
+        const printed = viewer.print();
+        viewer.destroy();
+        mounted = null;
+
+        await printed;
+        await new Promise(done => setTimeout(done, 50));
+
+        expect(clicked).toHaveLength(0);
+        expect(window.print).not.toHaveBeenCalled();
+    });
+
+    it('leaves no stray anchor behind', async () => {
         mountReport({ items: rows(12), customer: { name: 'Anand' } });
 
         el('export').click();
         item('csv').click();
 
+        await vi.waitFor(() => expect(clicked).toHaveLength(1));
         expect(document.querySelectorAll('a[download]')).toHaveLength(0);
     });
 
@@ -620,7 +734,7 @@ describe('viewer - export menu', () => {
             .toBe(`@page { size: ${width}px ${height}px; margin: 0; }`);
     });
 
-    it('restores highlights on afterprint rather than straight after print()', () => {
+    it('restores highlights on afterprint rather than straight after print()', async () => {
         const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
         viewer.find('row-2');
@@ -628,14 +742,14 @@ describe('viewer - export menu', () => {
         expect(before).toBeGreaterThan(0);
 
         /** jsdom supports onafterprint, so print() must leave the marks cleared */
-        viewer.print();
+        await viewer.print();
         expect(document.querySelectorAll('mark.hit')).toHaveLength(0);
 
         window.dispatchEvent(new Event('afterprint'));
         expect(document.querySelectorAll('mark.hit')).toHaveLength(before);
     });
 
-    it('clears search highlights before printing and restores them after', () => {
+    it('clears search highlights before printing and restores them after', async () => {
         const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
 
         viewer.find('row-2');
@@ -646,13 +760,299 @@ describe('viewer - export menu', () => {
             expect(document.querySelectorAll('mark.hit')).toHaveLength(0);
         });
 
-        viewer.openExport();
-        item('pdf').click();
+        el('print').click();
 
-        expect(window.print).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
 
         window.dispatchEvent(new Event('afterprint'));
         expect(document.querySelectorAll('mark.hit')).toHaveLength(before);
+    });
+});
+
+/**
+ * The viewer shows one page at a time and draws one at a time. A 500-page
+ * statement used to be written out whole before its first page appeared -
+ * seconds of building pages that were hidden - so only the page on screen is
+ * in the document, until printing wants them all.
+ */
+/**
+ * Print hands the report's own PDF to the print dialog where the browser can
+ * print one from the page - a desktop Chromium - so the dialog has no pages
+ * to lay out first. Everywhere else the page prints, as it always has.
+ */
+describe('viewer - printing the PDF', () => {
+    const CHROME = { brands: [{ brand: 'Chromium', version: '130' }, { brand: 'Google Chrome', version: '130' }], mobile: false };
+
+    let blobs;
+
+    function browser(userAgentData, pdfViewerEnabled = true) {
+        Object.defineProperty(window.navigator, 'userAgentData', { value: userAgentData, configurable: true });
+        Object.defineProperty(window.navigator, 'pdfViewerEnabled', { value: pdfViewerEnabled, configurable: true });
+    }
+
+    beforeEach(() => {
+        window.print = vi.fn();
+        blobs = [];
+        URL.createObjectURL = vi.fn((blob) => { blobs.push(blob); return `blob:fake-${blobs.length}`; });
+        URL.revokeObjectURL = vi.fn();
+        browser(CHROME);
+    });
+
+    afterEach(() => {
+        delete window.navigator.userAgentData;
+        delete window.navigator.pdfViewerEnabled;
+        vi.useRealTimers();
+    });
+
+    const frames = () => [...document.querySelectorAll('iframe')];
+
+    /** the frame the PDF went into, loaded, with a print() to watch */
+    async function loadedFrame() {
+        await vi.waitFor(() => expect(frames()).toHaveLength(1));
+        const [frame] = frames();
+        const print = vi.fn();
+        frame.contentWindow.print = print;
+        frame.contentWindow.focus = vi.fn();
+        frame.dispatchEvent(new Event('load'));
+        return { frame, print };
+    }
+
+    it('prints the PDF in desktop Chrome, not the page', async () => {
+        mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        el('print').click();
+        expect(el('print').getAttribute('aria-busy')).toBe('true');
+
+        const { frame, print } = await loadedFrame();
+
+        expect(print).toHaveBeenCalledOnce();
+        expect(window.print).not.toHaveBeenCalled();
+        expect(blobs[0].type).toBe('application/pdf');
+        expect(frame.src).toBe('blob:fake-1');
+        await vi.waitFor(() => expect(el('print').hasAttribute('aria-busy')).toBe(false));
+
+        /** none of the report's pages had to be drawn for it */
+        expect(document.querySelectorAll('#main-page > .page')).toHaveLength(1);
+    });
+
+    it('keeps the frame out of sight, but loaded', async () => {
+        mountReport({ items: rows(12), customer: { name: 'Anand' } });
+        el('print').click();
+
+        const { frame } = await loadedFrame();
+
+        expect(frame.style.visibility).toBe('hidden');
+        expect(frame.style.display).not.toBe('none');
+        expect(frame.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('prints the PDF on ctrl+P too', async () => {
+        mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }));
+
+        const { print } = await loadedFrame();
+        expect(print).toHaveBeenCalledOnce();
+        expect(window.print).not.toHaveBeenCalled();
+    });
+
+    it('prints once however often Print is pressed while the PDF is on its way', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        viewer.print();
+        viewer.print();
+
+        const { print } = await loadedFrame();
+        expect(print).toHaveBeenCalledOnce();
+        expect(frames()).toHaveLength(1);
+    });
+
+    it('replaces the last print frame with the next, and takes it away on destroy', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        const first = viewer.print();
+        await loadedFrame();
+        await first;
+
+        viewer.print();
+        await vi.waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-1'));
+        expect(frames()).toHaveLength(1);
+        expect(frames()[0].src).toBe('blob:fake-2');
+
+        viewer.destroy();
+        mounted = null;
+        expect(frames()).toHaveLength(0);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-2');
+    });
+
+    it('prints the page instead when the PDF does not load', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        el('print').click();
+        await vi.waitFor(() => expect(frames()).toHaveLength(1));
+
+        vi.advanceTimersByTime(15000);
+
+        await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
+        expect(frames()).toHaveLength(0);
+        await vi.waitFor(() => expect(el('print').hasAttribute('aria-busy')).toBe(false));
+    });
+
+    it('prints the page instead when the PDF cannot be written', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        /** the PDF viewer is on but the writer's compression is missing */
+        vi.stubGlobal('CompressionStream', undefined);
+        try {
+            await viewer.print();
+            expect(window.print).toHaveBeenCalledOnce();
+            expect(frames()).toHaveLength(0);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it.each([
+        ['Firefox and Safari, which have no userAgentData', undefined, true],
+        ['a phone', { ...CHROME, mobile: true }, true],
+        ['a Chrome with its PDF viewer turned off', CHROME, false],
+        ['a browser that is not Chromium', { brands: [{ brand: 'Other', version: '1' }], mobile: false }, true]
+    ])('prints the page in %s', async (_, userAgentData, pdfViewerEnabled) => {
+        browser(userAgentData, pdfViewerEnabled);
+        mountReport({ items: rows(12), customer: { name: 'Anand' } });
+
+        el('print').click();
+
+        await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce());
+        expect(frames()).toHaveLength(0);
+    });
+
+    it('writes the PDF once for Print and Download alike', async () => {
+        const { viewer } = mountReport({ items: rows(12), customer: { name: 'Anand' } });
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => { });
+
+        viewer.print();
+        await loadedFrame();
+
+        viewer.downloadPDF();
+        await vi.waitFor(() => expect(blobs).toHaveLength(2));
+
+        /** the same bytes in both */
+        const [printed, downloaded] = await Promise.all(blobs.map(b => b.arrayBuffer()));
+        expect(new Uint8Array(downloaded)).toEqual(new Uint8Array(printed));
+    });
+});
+
+describe('viewer - drawing the page on screen only', () => {
+    const pagesInDocument = () => [...document.querySelectorAll('#main-page > .page')];
+
+    it('has only the page on screen in the document', () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        expect(viewer.pageCount).toBeGreaterThan(2);
+        expect(pagesInDocument().map(p => p.id)).toEqual(['page-1']);
+        expect(visible().map(p => p.id)).toEqual(['page-1']);
+    });
+
+    it('draws a page as it is turned to, and lets the last one go', () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        viewer.next();
+        expect(pagesInDocument().map(p => p.id)).toEqual(['page-2']);
+
+        viewer.show(viewer.pageCount - 1);
+        expect(pagesInDocument().map(p => p.id)).toEqual([`page-${viewer.pageCount}`]);
+        expect(pagesInDocument()[0].textContent)
+            .toContain(`Page ${viewer.pageCount} of ${viewer.pageCount}`);
+    });
+
+    it('draws what the full render drew, page for page', () => {
+        const { viewer, paginated } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        const whole = document.createElement('div');
+        whole.innerHTML = render(paginated);
+        const expected = [...whole.querySelectorAll('.page')];
+
+        for (let n = 0; n < viewer.pageCount; n++) {
+            viewer.show(n);
+            const shown = pagesInDocument()[0].cloneNode(true);
+            shown.classList.remove('is-current');
+            expect(shown.outerHTML).toBe(expected[n].outerHTML);
+        }
+    });
+
+    it('draws every page in order for printing, the one on screen kept as it was', async () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        viewer.show(1);
+        const onScreen = pagesInDocument()[0];
+
+        let atPrint;
+        window.print = vi.fn(() => { atPrint = pagesInDocument(); });
+        await viewer.print();
+
+        expect(atPrint.map(p => p.id))
+            .toEqual(Array.from({ length: viewer.pageCount }, (_, n) => `page-${n + 1}`));
+        expect(atPrint[1]).toBe(onScreen);
+        expect(visible()).toEqual([onScreen]);
+    });
+
+    it('lets the other pages go after printing, and pages on as before', async () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        viewer.show(1);
+        const onScreen = pagesInDocument()[0];
+
+        await viewer.print();
+        expect(pagesInDocument()).toHaveLength(viewer.pageCount);
+        window.dispatchEvent(new Event('afterprint'));
+
+        expect(pagesInDocument()).toEqual([onScreen]);
+
+        viewer.next();
+        expect(pagesInDocument().map(p => p.id)).toEqual(['page-3']);
+    });
+
+    it('pages through the printed pages while they are all drawn', async () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        await viewer.print();
+        viewer.show(2);
+
+        expect(pagesInDocument()).toHaveLength(viewer.pageCount);
+        expect(visible().map(p => p.id)).toEqual(['page-3']);
+    });
+
+    /** the browser's own Print menu does not go through viewer.print() */
+    it('draws every page when the browser prints on its own', () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        window.dispatchEvent(new Event('beforeprint'));
+        expect(pagesInDocument()).toHaveLength(viewer.pageCount);
+
+        window.dispatchEvent(new Event('afterprint'));
+        expect(pagesInDocument()).toHaveLength(1);
+    });
+
+    it('stops listening for printing once destroyed', () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+        viewer.destroy();
+        mounted = null;
+
+        expect(() => window.dispatchEvent(new Event('beforeprint'))).not.toThrow();
+        expect(document.querySelectorAll('.page')).toHaveLength(0);
+    });
+
+    it('highlights a search hit on a page that had not been drawn yet', () => {
+        const { viewer } = mountReport({ items: rows(120), customer: { name: 'Anand' } });
+
+        viewer.find('row-110');
+
+        expect(viewer.page).toBeGreaterThan(1);
+        const marks = [...document.querySelectorAll('mark.hit')];
+        expect(marks.length).toBeGreaterThan(0);
+        expect(marks.every(m => m.closest('.page') === pagesInDocument()[0])).toBe(true);
     });
 });
 
@@ -1096,20 +1496,20 @@ describe('a viewer mounted in a window of its own', () => {
         return viewer;
     };
 
-    it('prints the window it is in, not the one it was mounted from', () => {
+    it('prints the window it is in, not the one it was mounted from', async () => {
         const there = vi.fn();
         const here = vi.fn();
 
         frame.contentWindow.print = there;
         window.print = here;
 
-        mountThere().print();
+        await mountThere().print();
 
         expect(there).toHaveBeenCalledOnce();
         expect(here, 'the host tab was printed instead').not.toHaveBeenCalled();
     });
 
-    it('prints that window from its own Print button too', () => {
+    it('prints that window from its own Print button too', async () => {
         const there = vi.fn();
         frame.contentWindow.print = there;
         window.print = vi.fn();
@@ -1118,7 +1518,7 @@ describe('a viewer mounted in a window of its own', () => {
         frame.contentDocument
             .querySelector('[data-role="print"]').click();
 
-        expect(there).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(there).toHaveBeenCalledOnce());
         expect(window.print).not.toHaveBeenCalled();
     });
 

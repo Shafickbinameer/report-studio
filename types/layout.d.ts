@@ -129,6 +129,12 @@ interface ItemBase {
     y?: number;
     w?: number;
     h?: number;
+    /**
+     * Where the item stacks. Items are drawn top to bottom by `y`; in a band
+     * where any item has a layer, they are drawn by layer instead, lowest
+     * first - a higher layer covers a lower one. Unset counts as 0.
+     */
+    layer?: number;
     [key: string]: unknown;
 }
 
@@ -141,6 +147,13 @@ export interface TextItem extends ItemBase {
     format?: ValueFormat | null;
     /** styles the item by the one value it prints, or by a field of the data */
     highlight?: HighlightRule[] | null;
+    /**
+     * What happens when the text does not fit `w` x `h`. 'wrap' (the default)
+     * grows the item; 'shrink' makes the font smaller, down to half its size;
+     * 'ellipsis' cuts it after the last line that fits. The last two keep the
+     * box its declared size - what a fixed-size label needs.
+     */
+    overflow?: 'wrap' | 'shrink' | 'ellipsis' | null;
 }
 
 export interface TableColumn {
