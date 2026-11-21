@@ -385,6 +385,18 @@ export function reportToPDF(
     options?: Omit<RenderToCanvasOptions, 'page' | 'canvas' | 'waitForFonts'> & { title?: string; pages?: number[] }
 ): Promise<Uint8Array>;
 
+/**
+ * a built report as a vector PDF: selectable text in the built-in Helvetica,
+ * Times or Courier, rules and boxes as lines, pictures embedded once. What the
+ * built-in fonts cannot show (the rupee sign, a Tamil or Malayalam word) is
+ * drawn by the browser and placed in the line as a picture, once per document;
+ * a line in a web font is a picture whole
+ */
+export function reportToVectorPDF(
+    paginated: PaginatedReport,
+    options?: Pick<RenderToCanvasOptions, 'theme' | 'loadImage' | 'waitForFonts'> & { title?: string; pages?: number[] }
+): Promise<Uint8Array>;
+
 /** a canvas's pixels as toPDF takes them */
 export function canvasImage(canvas: HTMLCanvasElement | OffscreenCanvas): { width: number; height: number; data: Uint8ClampedArray };
 
@@ -406,12 +418,26 @@ export interface ViewerHandle {
     next(): void;
     prev(): void;
     find(query: string): void;
-    print(): void;
-    /** false when the report has nothing to write */
+    /**
+     * opens the print dialog - with the report's PDF in desktop Chromium
+     * browsers, the page itself elsewhere. The Print button spins meanwhile;
+     * settles once the dialog has been asked for
+     */
+    print(): Promise<void>;
+    /**
+     * writes the report as a vector PDF (reportToVectorPDF) and downloads it;
+     * the file follows a moment later. Opens the print dialog should writing fail
+     */
+    downloadPDF(): boolean;
+    /**
+     * false when the report has nothing to write. The file follows a moment
+     * later, once the Export button's spinner is on screen
+     */
     downloadCSV(): boolean;
     /**
-     * false when the report has nothing to write. A report with pictures
-     * from URLs fetches them first, so its download starts a moment later
+     * false when the report has nothing to write. The file follows a moment
+     * later, once the Export button's spinner is on screen; a report with
+     * pictures from URLs fetches them first
      */
     downloadXLSX(): boolean;
     /** opens the export menu under the toolbar's Export button */

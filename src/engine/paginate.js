@@ -15,8 +15,29 @@ const PAGE_KEYS = ['page', 'totalPages'];
 
 
 
+/**
+ * Lays a measured layout out on pages. The layout handed in is left as it
+ * was; what comes back is a copy, with its `pages`.
+ * @param {object} json a measure() result
+ * @returns {object}
+ */
 export function paginate(json) {
-    const paginateJSON = structuredClone(json);
+    return paginateInPlace(structuredClone(json));
+}
+
+
+/**
+ * paginate() without the copy: lays out `json` itself and adds its `pages`.
+ *
+ * For buildPages, which hands over a layout measure has only just written
+ * and nobody else holds - copying it would copy every row of the report once
+ * more, for nothing. Rows are only read here, never written.
+ *
+ * @param {object} json a measure() result this caller owns
+ * @returns {object} the same object, with its pages
+ */
+export function paginateInPlace(json) {
+    const paginateJSON = json;
 
 
     let context = {
@@ -89,6 +110,31 @@ function rowsThatFit(heights, from, room, limit = Infinity) {
     }
 
     return taken;
+}
+
+
+/**
+ * A copy of a table for one page's slice of it, with `parts` - the slice's
+ * rows or groups, where it sits, how tall it is - in place of the table's own.
+ *
+ * Only what the slice keeps is copied. The table it is cut from holds every
+ * row of the report, and copying all of them for each page, only to replace
+ * them with that page's share, made a report's build time grow with pages x
+ * rows: 29,000 rows over 509 pages took a minute and a half, nearly all of it
+ * copying. The keys keep their order, as the copy-then-assign this replaced
+ * left them.
+ *
+ * @param {object} item a table
+ * @param {object} parts what the slice has of its own
+ * @returns {object}
+ */
+function sliceOf(item, parts) {
+    const shell = {};
+    for (const [key, value] of Object.entries(item)) {
+        shell[key] = Object.hasOwn(parts, key) ? undefined : value;
+    }
+
+    return Object.assign(structuredClone(shell), parts);
 }
 
 
@@ -442,12 +488,9 @@ function calPages(bands, context) {
                          * the group before it is on, whatever room is left.
                          */
                         if (startsPage(item, grp, n) && calGroups.length > 0) {
-                            const dupItem = structuredClone(item);
-
-                            dupItem.groups = calGroups;
-                            dupItem.y = tableY;
-                            dupItem.measuredHeight = calItemHeight;
-                            place(calBand, dupItem);
+                            place(calBand, sliceOf(item, {
+                                groups: calGroups, y: tableY, measuredHeight: calItemHeight
+                            }));
 
                             calBand = breakPage(calBand, band, itemY);
                             calGroups = [];
@@ -494,12 +537,9 @@ function calPages(bands, context) {
                             /** nothing fits in what is left - carry the group to a new page */
                             if (canFitRows < 1) {
                                 if (calGroups.length > 0) {
-                                    let dupItem = structuredClone(item);
-
-                                    dupItem.groups = calGroups;
-                                    dupItem.y = tableY;
-                                    dupItem.measuredHeight = calItemHeight;
-                                    place(calBand, dupItem);
+                                    place(calBand, sliceOf(item, {
+                                        groups: calGroups, y: tableY, measuredHeight: calItemHeight
+                                    }));
                                 }
 
                                 calBand = breakPage(calBand, band, itemY);
@@ -526,14 +566,10 @@ function calPages(bands, context) {
                     }
 
                     if (calGroups.length > 0) {
-                        const dupItem = structuredClone(item);
-
-                        dupItem.groups = calGroups;
-                        dupItem.y = tableY;
-                        dupItem.measuredHeight = calItemHeight;
-
                         /** measure after the push so the band height includes its own table */
-                        place(calBand, dupItem);
+                        place(calBand, sliceOf(item, {
+                            groups: calGroups, y: tableY, measuredHeight: calItemHeight
+                        }));
 
                         calGroups = [];
                     }
@@ -590,20 +626,18 @@ function calPages(bands, context) {
 
                         canFitRows = Math.min(canFitRows, rowLen - currIdx);
 
-                        let dupItem = structuredClone(item);
-
                         const rows = item.row.slice(currIdx, currIdx + canFitRows);
 
                         const occHgt =
                             sliceHeight(heights, currIdx, canFitRows) + tblHeaderHgt;
 
-                        dupItem.row = rows;
-                        /** the slice carries its own heights, so the renderer needs no arithmetic */
-                        dupItem.rowHeights = heights.slice(currIdx, currIdx + canFitRows);
-                        dupItem.y = tableY;
-                        dupItem.measuredHeight = occHgt;
-
-                        place(calBand, dupItem);
+                        place(calBand, sliceOf(item, {
+                            row: rows,
+                            /** the slice carries its own heights, so the renderer needs no arithmetic */
+                            rowHeights: heights.slice(currIdx, currIdx + canFitRows),
+                            y: tableY,
+                            measuredHeight: occHgt
+                        }));
 
                         currIdx += rows.length;
                         const hasMoreRows = currIdx < rowLen;

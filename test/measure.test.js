@@ -325,3 +325,81 @@ describe('measure - a column label wraps too', () => {
         expect(headerHeightFor({ ...narrow, wrap: false })).toBe(20);
     });
 });
+
+
+/**
+ * Telling a canvas its font parses the font, every time. A long table
+ * measures in a few fonts by turns, so each font gets a context of its own
+ * that keeps it - until web fonts finish loading, when a context told the
+ * font earlier may still mean the fallback face.
+ */
+describe('text-metrics - measuring in a browser', () => {
+    let made;
+    let told;
+
+    class CountingCanvas {
+        constructor() { made++; }
+
+        getContext() {
+            let font = '10px sans-serif';
+            return {
+                get font() { return font; },
+                set font(value) { told++; font = value; },
+                measureText: (str) => ({ width: String(str).length * (/bold/.test(font) ? 7 : 6) })
+            };
+        }
+    }
+
+    async function fresh() {
+        vi.resetModules();
+        made = 0;
+        told = 0;
+
+        const faces = new EventTarget();
+        vi.stubGlobal('OffscreenCanvas', CountingCanvas);
+        vi.stubGlobal('self', { fonts: faces });
+
+        const metrics = await import('../src/engine/text-metrics.js');
+        return { ...metrics, faces };
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    const regular = { fontSize: 12, fontFamily: 'Arial' };
+    const bold = { ...regular, fontWeight: 'bold' };
+
+    it('tells each font to a context once, however the measuring takes turns', async () => {
+        const { measureText } = await fresh();
+
+        for (let n = 0; n < 50; n++) {
+            measureText(`a${n}`, regular);
+            measureText(`b${n}`, bold);
+        }
+
+        expect(told).toBe(2);
+        expect(measureText('abcd', regular)).toBe(24);
+        expect(measureText('abcd', bold)).toBe(28);
+    });
+
+    it('tells the fonts again once web fonts have loaded', async () => {
+        const { measureText, faces } = await fresh();
+
+        measureText('a', regular);
+        expect(told).toBe(1);
+
+        faces.dispatchEvent(new Event('loadingdone'));
+
+        measureText('b', regular);
+        expect(told).toBe(2);
+    });
+
+    it('goes back to telling one shared context past a handful of fonts', async () => {
+        const { measureText } = await fresh();
+
+        for (let size = 8; size < 48; size++) measureText('a', { ...regular, fontSize: size });
+
+        /** the shared context, and one each for the first sixteen fonts */
+        expect(made).toBe(17);
+        expect(measureText('ab', { ...regular, fontSize: 40 })).toBe(12);
+    });
+});

@@ -247,11 +247,14 @@ describe('printing a report with pictures', () => {
         Object.defineProperty(img, 'complete', { value: false });
         img.decode = () => new Promise(done => { loaded = done; });
 
-        viewer.print();
+        const printed = viewer.print();
+
+        /** asked to decode, and still waiting on it */
+        await vi.waitFor(() => expect(loaded).toBeTypeOf('function'));
         expect(window.print).not.toHaveBeenCalled();
 
         loaded();
-        await new Promise(done => setTimeout(done, 0));
+        await printed;
 
         expect(window.print).toHaveBeenCalledOnce();
     });
@@ -263,17 +266,19 @@ describe('printing a report with pictures', () => {
         Object.defineProperty(img, 'complete', { value: false });
         img.decode = () => Promise.reject(new Error('broken'));
 
-        viewer.print();
-        await new Promise(done => setTimeout(done, 0));
+        await viewer.print();
 
         expect(window.print).toHaveBeenCalledOnce();
     });
 
-    it('prints at once when every picture is in', () => {
+    it('prints at once when every picture is in', async () => {
         const viewer = view();
-        Object.defineProperty(document.querySelector('#report img'), 'complete', { value: true });
+        const img = document.querySelector('#report img');
+        Object.defineProperty(img, 'complete', { value: true });
+        img.decode = vi.fn();
 
-        viewer.print();
+        await viewer.print();
         expect(window.print).toHaveBeenCalledOnce();
+        expect(img.decode).not.toHaveBeenCalled();
     });
 });

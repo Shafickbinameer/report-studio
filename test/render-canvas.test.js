@@ -294,9 +294,52 @@ describe('drawPage - tables', () => {
         const ctx = recorder();
         drawPage(ctx, built({ items: rows(2) }));
 
-        /** 3 columns x 3 rows, two rules each, + 3 right edges + 3 bottom edges */
+        /** one stroke for the table: 3 columns x 3 rows, two edges each, + 3 right edges + 3 bottom edges */
         const rules = ops(ctx, 'stroke').filter(s => s.strokeStyle === '#cccccc');
-        expect(rules).toHaveLength(9 * 2 + 3 + 3);
+        expect(rules).toHaveLength(1);
+
+        const edges = rules[0].path.filter(p => p.move);
+        expect(edges).toHaveLength(9 * 2 + 3 + 3);
+
+        /** each edge a subpath of its own, a move and a line, so a dash starts again at each */
+        expect(rules[0].path.filter(p => p.line)).toHaveLength(edges.length);
+        rules[0].path.forEach((p, n) => expect(Object.keys(p)[0]).toBe(n % 2 ? 'line' : 'move'));
+    });
+
+    it('puts each edge where the cell box puts it, a 1px rule centred half a pixel in', () => {
+        const ctx = recorder();
+        drawPage(ctx, built({ items: rows(2) }));
+
+        const [rules] = ops(ctx, 'stroke').filter(s => s.strokeStyle === '#cccccc');
+        const segments = [];
+        for (let n = 0; n < rules.path.length; n += 2) segments.push([...rules.path[n].move, ...rules.path[n + 1].line]);
+
+        const [x1, y1] = segments[0];
+        const top = y1 - 0.5;
+
+        /** the header's first cell: its top edge, then its left edge down the 32px header */
+        expect(x1).toBe(MARGIN);
+        expect(segments[1]).toEqual([MARGIN + 0.5, top, MARGIN + 0.5, top + 32]);
+
+        /** every edge is level or upright */
+        for (const [ax, ay, bx, by] of segments) expect(ax === bx || ay === by).toBe(true);
+
+        /** the right edge inside the table's 714px, a rule's width in from the end */
+        const right = Math.max(...segments.filter(([ax, , bx]) => ax === bx).map(([ax]) => ax));
+        expect(right).toBe(MARGIN + 714 - 1 + 0.5);
+    });
+
+    it('lays a dashed table out as one dashed stroke', () => {
+        const t = table();
+        t.style = { ...(t.style ?? {}), borderStyle: 'dashed', borderWidth: 2 };
+
+        const ctx = recorder();
+        drawPage(ctx, built({ items: rows(2) }, t));
+
+        const rules = ops(ctx, 'stroke').filter(s => s.dash.length > 0);
+        expect(rules).toHaveLength(1);
+        expect(rules[0].dash).toEqual([6, 6]);
+        expect(rules[0].lineWidth).toBe(2);
     });
 
     it('steps rows by the heights measure.js wrote onto the table', () => {
@@ -319,6 +362,42 @@ describe('drawPage - tables', () => {
 
         expect(ops(ctx, 'fillRect').filter(f => f.fillStyle === '#ffeeee')).toHaveLength(1);
         expect(ops(ctx, 'fillText').find(e => e.text === '2').fillStyle).toBe('#cc0000');
+    });
+
+    /**
+     * A cell is overflow: hidden, which cuts nothing from text that fits it -
+     * so only text that would spill out pays for a clip.
+     */
+    it('clips a cell only where its text would spill out of it', () => {
+        const clipsFor = (t) => {
+            const ctx = recorder();
+            drawPage(ctx, built({ items: rows(2) }, t));
+            return ops(ctx, 'clip').length;
+        };
+
+        const plain = table();
+        plain.wrap = false;
+
+        /** a column narrower than its padding leaves its text no room at all */
+        const narrow = table();
+        narrow.wrap = false;
+        narrow.columns[1].width = 10;
+
+        /** the narrow column's header and its two rows */
+        expect(clipsFor(narrow)).toBe(clipsFor(plain) + 3);
+    });
+
+    it('draws text that fits without a clip of its own', () => {
+        const ctx = recorder();
+        drawPage(ctx, built({ items: rows(2) }));
+
+        const clips = ops(ctx, 'clip').map(c => c.path[0]?.rect);
+        const texts = ops(ctx, 'fillText').filter(e => /^row-|^Item$/.test(e.text));
+
+        expect(texts.length).toBeGreaterThan(0);
+        for (const t of texts) {
+            expect(clips.some(r => r && r[2] <= 400 && t.x >= r[0] && t.x <= r[0] + r[2] && t.y >= r[1] && t.y <= r[1] + r[3])).toBe(false);
+        }
     });
 
     it('cuts a cell that may not wrap with an ellipsis', () => {
@@ -350,6 +429,22 @@ describe('drawPage - tables', () => {
         expect(all.filter(t => t.startsWith('Subtotal'))).toHaveLength(2);
 
         expect(ops(ctx, 'fillText').find(e => e.text === 'Region: A').x).toBe(MARGIN + 8);
+    });
+
+    it('keeps a group band\'s padding inside the text\'s box, as the viewer draws it', () => {
+        const right = { ...text('gf', { value: 'Total', x: 514, w: 200, h: 20 }) };
+        right.style = { ...right.style, align: 'right' };
+
+        const report = run(layout({
+            groupBy: 'name',
+            bands: [band('detail', [table()]), band('groupFooter', [right], { height: 20 })]
+        }), { items: groupedRows(['A'], 2) });
+
+        const ctx = recorder();
+        drawPage(ctx, report);
+
+        /** right-aligned at the box's right edge less its 8px of padding: 514 + 200 - 8 */
+        expect(ops(ctx, 'fillText').find(e => e.text === 'Total').x).toBe(MARGIN + 706);
     });
 });
 

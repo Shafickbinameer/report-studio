@@ -1,6 +1,6 @@
 /**
  * viewer.js turns a page list into a page-at-a-time viewer: navigation, zoom,
- * search, print, CSV and Excel.
+ * search, print, PDF, CSV and Excel.
  *
  * It takes one empty element and builds everything inside it - the chrome is
  * chrome.js and the report is render.js - so an application mounts it the same
@@ -18,7 +18,9 @@ import { reportTables } from '../engine/rows.js';
 import { toXLSX, toXLSXAsync, reportImageSources, XLSX_MIME } from '../engine/xlsx.js';
 import { openWindow, closeWithOpener } from '../shared/window.js';
 import { createDropdown } from '../shared/dropdown.js';
-import { render } from '../render/render.js';
+import { render, renderPage } from '../render/render.js';
+import { reportToVectorPDF } from '../render/pdf.js';
+import { PDF_MIME } from '../engine/pdf.js';
 import { chrome } from './chrome.js';
 
 
@@ -33,6 +35,34 @@ export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 export const MIN_ZOOM = ZOOM_STEPS[0];
 export const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+
+
+/** how long Print waits for the report's PDF to load before printing the page instead */
+const PRINT_LOAD_TIMEOUT = 15000;
+
+/**
+ * Whether Print can hand the report's PDF to the browser's print dialog:
+ * a desktop Chromium - Chrome, Edge, Brave, Opera - with its PDF viewer on.
+ *
+ * Those print a PDF in a frame of the page as they print any PDF. Firefox
+ * prints one by redrawing every page itself, Safari is unreliable at it, and
+ * a phone's browser does not show a PDF in a page at all, so they print the
+ * page as before. A browser this cannot tell apart is left printing the
+ * page too, which works everywhere.
+ *
+ * @param {Window} view the window the viewer is in
+ * @returns {boolean}
+ */
+function canPrintPDF(view) {
+    const nav = view?.navigator;
+    const ua = nav?.userAgentData;
+
+    if (!ua || ua.mobile) return false;
+    if (nav.pdfViewerEnabled === false) return false;
+    if (typeof globalThis.CompressionStream === 'undefined') return false;
+
+    return (ua.brands ?? []).some(entry => entry?.brand === 'Chromium');
+}
 
 
 /**
@@ -136,12 +166,26 @@ export function createViewer({ mount, paginated, title } = {}) {
     root.innerHTML = chrome({ title });
 
     const viewport = root.querySelector('[data-role="viewport"]');
-    viewport.innerHTML = render(paginated);
 
-    const pages = [...viewport.querySelectorAll('.page')];
-    const total = pages.length;
+    /**
+     * The stack starts empty and holds the page on screen, drawn as it is
+     * shown. The viewer shows one page at a time, and drawing all of them up
+     * front - half a million elements for a 500-page statement - took seconds
+     * before the first page appeared, to build pages nobody was looking at.
+     *
+     * Printing is the one time every page is wanted, so they are all drawn
+     * for it and let go of again afterwards (drawAll, dropAll).
+     */
+    viewport.innerHTML = render({ ...paginated, pages: [] });
 
+    const total = paginated.pages.length;
     const stack = viewport.querySelector('#main-page');
+
+    /** the page element on screen */
+    let current = null;
+
+    /** every page's element, while they are all drawn for printing */
+    let drawn = null;
 
     /** the report itself is what scrolls and what the highlighting sits in */
     const mountEl = viewport;
@@ -191,7 +235,7 @@ export function createViewer({ mount, paginated, title } = {}) {
     function show(next) {
         index = Math.min(Math.max(next, 0), total - 1);
 
-        pages.forEach((page, i) => page.classList.toggle('is-current', i === index));
+        place();
 
         ui.current.value = String(index + 1);
         ui.prev.disabled = index === 0;
@@ -200,6 +244,54 @@ export function createViewer({ mount, paginated, title } = {}) {
         paint();
         /** absent in jsdom, so a consumer testing there is not stopped by it */
         mountEl.scrollTo?.({ top: 0 });
+    }
+
+    /** puts the page at `index` on screen: drawn now, or picked out of `drawn` */
+    function place() {
+        if (total === 0) {
+            stack.replaceChildren();
+            current = null;
+            return;
+        }
+
+        if (drawn) {
+            drawn.forEach((page, i) => page.classList.toggle('is-current', i === index));
+            current = drawn[index];
+            return;
+        }
+
+        const holder = doc.createElement('div');
+        holder.innerHTML = renderPage(paginated.pages[index], paginated.page);
+
+        current = holder.querySelector('.page');
+        current.classList.add('is-current');
+        stack.replaceChildren(current);
+    }
+
+    /**
+     * Every page in the stack, for the print dialog - which snapshots the
+     * document as it stands and prints what the print stylesheet reveals. The
+     * page on screen is kept as it is, pictures already loaded and all, and
+     * the others are drawn either side of it.
+     */
+    function drawAll() {
+        if (drawn || !current) return;
+
+        const markup = (from, to) => paginated.pages.slice(from, to)
+            .map(page => renderPage(page, paginated.page)).join('');
+
+        current.insertAdjacentHTML('beforebegin', markup(0, index));
+        current.insertAdjacentHTML('afterend', markup(index + 1));
+
+        drawn = [...stack.querySelectorAll(':scope > .page')];
+    }
+
+    /** back to the one page on screen, as it is, once printing is over */
+    function dropAll() {
+        if (!drawn) return;
+
+        drawn = null;
+        stack.replaceChildren(current);
     }
 
     /* ---------------- zoom ---------------- */
@@ -263,18 +355,27 @@ export function createViewer({ mount, paginated, title } = {}) {
     /* ---------------- exporting ---------------- */
 
     /**
+     * The report as CSV text, written when first asked for and kept: the
+     * export menu asks whether there is any as it opens, and the download
+     * wants the same text. Unkept, a long report wrote it out four times
+     * over just to open the menu.
+     */
+    let csvText = null;
+    const reportCSV = () => (csvText ??= toReportCSV(paginated.pages));
+
+    /**
      * One entry per offered format. Adding another means a line here and an
      * entry in chrome.js's export list; nothing else in the flow needs to know.
      */
     const FORMATS = {
         pdf: {
             available: () => true,
-            summary: () => `${total} page${total === 1 ? '' : 's'}, ` +
-                `${paginated.page.width}×${paginated.page.height}px each.`,
-            run: () => printReport()
+            summary: () => `Downloads ${reportFilename(paginated, 'pdf')}, ` +
+                `${total} page${total === 1 ? '' : 's'}.`,
+            run: () => downloadPDF()
         },
         csv: {
-            available: () => toReportCSV(paginated.pages) !== '',
+            available: () => reportCSV() !== '',
             summary: () => FORMATS.csv.available()
                 ? `Downloads ${reportFilename(paginated, 'csv')}.`
                 : 'This report has nothing to write out.',
@@ -290,32 +391,293 @@ export function createViewer({ mount, paginated, title } = {}) {
         }
     };
 
+    /* ---------------- work that takes a while ---------------- */
+
+    /** the jobs under way, by name, and how many of them each button is showing */
+    const jobs = new Map();
+    const busyOn = new Map();
+
     /**
-     * Spec 6: PDF is window.print(). It costs nothing, and it matches the
-     * preview exactly because it *is* the preview - the print stylesheet just
-     * reveals every page and drops the chrome.
+     * Set by destroy(). A job still under way then stops where it is rather
+     * than print, download or add a frame for a viewer that has gone.
+     */
+    let destroyed = false;
+
+    /**
+     * Runs `work` - writing a file, readying a print - with `button` showing
+     * a spinner until it is done, and gives back the job.
      *
-     * Search highlights are cleared first so they do not end up in the file.
+     * The work starts once the spinner has been painted. An Excel workbook of
+     * a long report is seconds of work that holds the page while it runs, and
+     * a spinner set just before it would only appear once it was over.
+     *
+     * Asking for a job already under way gets that one rather than a second,
+     * so a press repeated while a file is written writes it once.
+     *
+     * @param {string} name
+     * @param {HTMLElement} button
+     * @param {() => any} work
+     * @returns {Promise<void>}
+     */
+    function busyWith(name, button, work) {
+        if (jobs.has(name)) return jobs.get(name);
+
+        setBusy(button, 1);
+
+        const job = afterPaint()
+            .then(() => (destroyed ? undefined : work()))
+            .catch(error => console.warn(`report-studio: ${name} did not finish.`, error))
+            .finally(() => {
+                jobs.delete(name);
+                setBusy(button, -1);
+            });
+
+        jobs.set(name, job);
+        return job;
+    }
+
+    /** a button shows busy while any of its jobs is under way - Export has three */
+    function setBusy(button, step) {
+        if (!button) return;
+
+        const count = (busyOn.get(button) ?? 0) + step;
+
+        if (count > 0) {
+            busyOn.set(button, count);
+            button.setAttribute('aria-busy', 'true');
+        } else {
+            busyOn.delete(button);
+            button.removeAttribute('aria-busy');
+        }
+    }
+
+    /** settles once the browser has painted what was changed before it was asked */
+    function afterPaint() {
+        return new Promise((resolve) => {
+            const next = () => view.setTimeout(resolve, 0);
+
+            /** a hidden tab paints nothing, and its animation frames never come */
+            if (typeof view.requestAnimationFrame === 'function' && doc.visibilityState !== 'hidden') {
+                view.requestAnimationFrame(next);
+            } else {
+                next();
+            }
+        });
+    }
+
+    /* ---------------- files ---------------- */
+
+    /**
+     * The report as a PDF file, written here rather than by the browser's
+     * print: the print path lays out every page of the report at once (the
+     * screen only ever lays out the one in view) and Chrome then builds the
+     * file twice, once for its preview and again to save it - minutes, for a
+     * long report. reportToVectorPDF draws the pages the engine already built
+     * straight into PDF.
+     *
+     * Search highlights are not part of the drawing, so they never reach it.
+     * Should the writer fail, the print dialog is still a way to a PDF.
+     *
+     * @returns {boolean} true: a file is on its way
+     */
+    function downloadPDF() {
+        busyWith('pdf', ui.exportOpen, () => pdfBytes().then(
+            (bytes) => {
+                if (!destroyed) download(new Blob([bytes], { type: PDF_MIME }), reportFilename(paginated, 'pdf'));
+            },
+            (error) => {
+                if (destroyed) return;
+                console.warn('report-studio: the PDF could not be written; opening the print dialog instead.', error);
+                busyWith('print', ui.print, printPage);
+            }));
+
+        return true;
+    }
+
+    /**
+     * The report's PDF, written once for this viewer and shared by Download
+     * and Print - the pages do not change while it is open. A write that
+     * failed is not kept, so the next ask tries again.
+     */
+    let pdfWritten = null;
+
+    function pdfBytes() {
+        if (!pdfWritten) {
+            pdfWritten = reportToVectorPDF(paginated, { title: paginated.name || undefined });
+            pdfWritten.catch(() => { pdfWritten = null; });
+        }
+
+        return pdfWritten;
+    }
+
+    /**
+     * The report as text: every line and every table row, in the order the
+     * pages draw them. Boxes and rules are the only things left behind, having
+     * nothing to write.
+     *
+     * @returns {boolean} true: a file is on its way; false: there is nothing to write
+     */
+    function downloadCSV() {
+        if (!FORMATS.csv.available()) return false;
+
+        busyWith('csv', ui.exportOpen, () => {
+            /** the BOM is what makes Excel read the file as UTF-8 rather than latin-1 */
+            download(
+                new Blob(['﻿', reportCSV()], { type: 'text/csv;charset=utf-8' }),
+                reportFilename(paginated, 'csv')
+            );
+        });
+
+        return true;
+    }
+
+    /**
+     * The report as an Excel workbook: a sheet that reads like the report, and
+     * a sheet per table with typed, sortable cells.
+     *
+     * A report whose pictures come from URLs fetches them first, to embed
+     * them. Should building with the fetched pictures fail, the workbook goes
+     * without them rather than not at all.
+     *
+     * @returns {boolean} true: a file is on its way; false: there is nothing to write
+     */
+    function downloadXLSX() {
+        if (!FORMATS.xlsx.available()) return false;
+
+        const save = (bytes) => {
+            if (bytes.length > 0 && !destroyed) {
+                download(new Blob([bytes], { type: XLSX_MIME }), reportFilename(paginated, 'xlsx'));
+            }
+        };
+
+        busyWith('xlsx', ui.exportOpen, () => {
+            if (reportImageSources(paginated.pages).length > 0) {
+                return toXLSXAsync(paginated.pages).then(save, () => save(toXLSX(paginated.pages)))
+                    .then(() => undefined);
+            }
+
+            save(toXLSX(paginated.pages));
+        });
+
+        return true;
+    }
+
+    function download(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = doc.createElement('a');
+
+        link.href = url;
+        link.download = filename;
+        doc.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        /** give the browser a tick to start the download before dropping the url */
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    /* ---------------- printing ---------------- */
+
+    /**
+     * Print. Where the browser can print a PDF from the page, the report's
+     * own PDF goes to the print dialog; anywhere else the page itself does.
+     *
+     * Printing the page makes the browser lay out every page of the report
+     * as a web page before its dialog can show the first - seconds for a
+     * short report, minutes for a long one - only to arrive at what the PDF
+     * already is. Handed the PDF, the dialog has nothing left to prepare, and
+     * what is left is the dialog: which printer, how many copies.
+     *
+     * @returns {Promise<void>} settles once the print dialog has been asked for
      */
     function printReport() {
+        return busyWith('print', ui.print, () => (canPrintPDF(view) ? printPDF() : printPage()));
+    }
+
+    /** the frame the last PDF was printed from, kept until the next print: taking it away sooner can cancel the job */
+    let printFrame = null;
+
+    /** the report's PDF into a frame out of sight, and the frame's print; the page prints should any of it fail */
+    function printPDF() {
+        const instead = (error) => {
+            console.warn('report-studio: the PDF could not be printed; printing the page instead.', error);
+            removePrintFrame();
+            return printPage();
+        };
+
+        return pdfBytes().then(bytes => new Promise((resolve) => {
+            if (destroyed) return resolve();
+
+            removePrintFrame();
+
+            const url = URL.createObjectURL(new Blob([bytes], { type: PDF_MIME }));
+            const frame = doc.createElement('iframe');
+
+            /**
+             * Out of sight but not display: none, or the browser does not
+             * load the PDF into it at all.
+             */
+            frame.setAttribute('aria-hidden', 'true');
+            frame.tabIndex = -1;
+            frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+
+            printFrame = { frame, url };
+
+            /** a PDF that never shows up (its viewer turned off by policy) should not leave Print doing nothing */
+            const stalled = view.setTimeout(
+                () => resolve(destroyed ? undefined : instead(new Error('the PDF did not load'))),
+                PRINT_LOAD_TIMEOUT);
+
+            frame.addEventListener('load', () => {
+                view.clearTimeout(stalled);
+
+                try {
+                    frame.contentWindow.focus();
+                    frame.contentWindow.print();
+                    resolve();
+                } catch (error) {
+                    resolve(instead(error));
+                }
+            }, { once: true });
+
+            frame.src = url;
+            doc.body.appendChild(frame);
+        }), instead);
+    }
+
+    function removePrintFrame() {
+        if (!printFrame) return;
+
+        printFrame.frame.remove();
+        URL.revokeObjectURL(printFrame.url);
+        printFrame = null;
+    }
+
+    /**
+     * Printing the page itself: what every browser can do, and the preview
+     * exactly, because it *is* the preview - every page is drawn for it, and
+     * the print stylesheet reveals them all and drops the chrome.
+     *
+     * Search highlights are cleared first so they do not end up on paper.
+     */
+    function printPage() {
+        if (destroyed) return Promise.resolve();
+
+        drawAll();
+
         /**
          * A picture still loading prints as a blank frame, and the print dialog
          * snapshots the page the moment it opens. So a report with pictures on
-         * the way waits for them - loaded or failed, either way settled - and a
-         * report with none, which is most, prints at once as it always has.
+         * the way waits for them - loaded or failed, either way settled.
          */
         const pending = [...viewport.querySelectorAll('img')].filter(img => !img.complete);
 
-        if (pending.length > 0) {
-            Promise.all(pending.map(img => img.decode().catch(() => { })))
-                .then(printNow);
-            return;
-        }
-
-        printNow();
+        return Promise.all(pending.map(img => img.decode().catch(() => { }))).then(printNow);
     }
 
     function printNow() {
+        if (destroyed) return;
+
         clearMarks();
 
         /** the window the report is in, which is not always the one this ran from */
@@ -332,6 +694,16 @@ export function createViewer({ mount, paginated, title } = {}) {
 
     function restoreAfterPrint() {
         if (ui.query.value.trim() !== '') paint();
+    }
+
+    /**
+     * afterprint is also when the pages drawn for printing go again. A
+     * browser without it keeps them - hidden, as every page but the current
+     * one used to be - since there is no telling when its dialog is done.
+     */
+    function onAfterPrint() {
+        dropAll();
+        restoreAfterPrint();
     }
 
 
@@ -358,68 +730,6 @@ export function createViewer({ mount, paginated, title } = {}) {
         }
 
         style.textContent = `@page { size: ${width}px ${height}px; margin: 0; }`;
-    }
-
-    /**
-     * The report as text: every line and every table row, in the order the
-     * pages draw them. Boxes and rules are the only things left behind, having
-     * nothing to write.
-     */
-    function downloadCSV() {
-        const csv = toReportCSV(paginated.pages);
-        if (csv === '') return false;
-
-        /** the BOM is what makes Excel read the file as UTF-8 rather than latin-1 */
-        download(
-            new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }),
-            reportFilename(paginated, 'csv')
-        );
-
-        return true;
-    }
-
-    /**
-     * The report as an Excel workbook: a sheet that reads like the report, and
-     * a sheet per table with typed, sortable cells.
-     *
-     * A report whose pictures come from URLs has to fetch them before they can
-     * be embedded, so its download starts a moment later; true still means a
-     * file is on its way. Should building with the fetched pictures fail, the
-     * workbook goes without them rather than not at all.
-     */
-    function downloadXLSX() {
-        if (!FORMATS.xlsx.available()) return false;
-
-        const save = (bytes) => {
-            if (bytes.length > 0) {
-                download(new Blob([bytes], { type: XLSX_MIME }), reportFilename(paginated, 'xlsx'));
-            }
-        };
-
-        if (reportImageSources(paginated.pages).length > 0) {
-            toXLSXAsync(paginated.pages).then(save, () => save(toXLSX(paginated.pages)));
-            return true;
-        }
-
-        const bytes = toXLSX(paginated.pages);
-        if (bytes.length === 0) return false;
-
-        save(bytes);
-        return true;
-    }
-
-    function download(blob, filename) {
-        const url = URL.createObjectURL(blob);
-        const link = doc.createElement('a');
-
-        link.href = url;
-        link.download = filename;
-        doc.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        /** give the browser a tick to start the download before dropping the url */
-        setTimeout(() => URL.revokeObjectURL(url), 0);
     }
 
     /* ---------------- the export menu ---------------- */
@@ -493,10 +803,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         const format = FORMATS[value];
         if (!format?.available()) return;
 
-        /**
-         * Close first. The print dialog is modal and blocking, so leaving the
-         * menu open would put it in the printed page and in the way.
-         */
+        /** close first: a download, or the print dialog it can fall back to, should not have the menu over it */
         closeExport();
         format.run();
     }
@@ -612,7 +919,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         const query = ui.query.value.trim();
         if (query === '') return;
 
-        const page = pages[index];
+        const page = current;
         if (!page) return;
 
         const needle = query.toLowerCase();
@@ -767,9 +1074,11 @@ export function createViewer({ mount, paginated, title } = {}) {
         }
 
         /**
-         * ctrl+P is taken from the browser deliberately: printing through
-         * printReport clears the search highlights first, so they do not end up
-         * in the PDF the way the browser's own shortcut would leave them.
+         * ctrl+P is taken from the browser deliberately: printReport prints
+         * the report's PDF where it can, which is far quicker for a long
+         * report, and clears the search highlights where it prints the page,
+         * so they do not end up on paper the way the browser's own shortcut
+         * would leave them.
          */
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
             event.preventDefault();
@@ -806,8 +1115,15 @@ export function createViewer({ mount, paginated, title } = {}) {
     doc.addEventListener('keydown', onKeyDown);
 
     if (afterPrintSupported) {
-        view.addEventListener('afterprint', restoreAfterPrint);
+        view.addEventListener('afterprint', onAfterPrint);
     }
+
+    /**
+     * The browser's own print - its menu, or a print started by the host
+     * rather than through printReport - finds only the page on screen in
+     * the document, so it gets every page drawn the moment it starts.
+     */
+    view.addEventListener('beforeprint', drawAll);
 
     /**
      * The listeners above are on the viewer's own document and window, which
@@ -820,7 +1136,10 @@ export function createViewer({ mount, paginated, title } = {}) {
         doc.removeEventListener('pointerdown', onOutside, true);
         doc.removeEventListener('keydown', onKeyDown);
         view.removeEventListener('resize', onResize);
-        view.removeEventListener('afterprint', restoreAfterPrint);
+        view.removeEventListener('afterprint', onAfterPrint);
+        view.removeEventListener('beforeprint', drawAll);
+        destroyed = true;
+        removePrintFrame();
 
         /** the viewer built everything in here, so it takes it all away again */
         root.innerHTML = '';
@@ -838,6 +1157,7 @@ export function createViewer({ mount, paginated, title } = {}) {
         prev: () => show(index - 1),
         find: (q) => { ui.query.value = q; runSearch(); },
         print: printReport,
+        downloadPDF,
         downloadCSV,
         downloadXLSX,
         openExport,

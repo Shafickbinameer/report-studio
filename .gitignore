@@ -175,3 +175,7 @@ reports/
 # in. This ignores the whole thing - the generated pages and the sources under
 # site/build/ that produce them.
 /site/
+
+# the mobile and desktop apps - their own git repo (report-studio-app), which
+# uses this engine from source two folders up
+/app/

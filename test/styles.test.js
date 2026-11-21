@@ -238,6 +238,27 @@ describe('what each sheet is responsible for', () => {
         expect(chrome).not.toContain('@import');
     });
 
+    /** Print and Export at work spin where their glyph was, more slowly for reduced motion */
+    it('gives a busy toolbar button a spinner in place of its glyph', () => {
+        const chrome = read('src/preview/chrome.css');
+
+        const rule = (selector) => {
+            const at = chrome.indexOf(`${selector} {`);
+            return at === -1 ? '' : chrome.slice(at, chrome.indexOf('}', at));
+        };
+
+        const busy = '.report-viewer .toolbar button[aria-busy="true"]';
+
+        expect(rule(`${busy} > svg`)).toContain('display: none');
+        expect(rule(`${busy}::before`)).toContain('animation: report-viewer-spin');
+        expect(chrome).toContain('@keyframes report-viewer-spin');
+
+        /** one of the reduced-motion blocks slows the spinner */
+        const reduced = chrome.split('@media (prefers-reduced-motion: reduce)').slice(1)
+            .map(block => block.slice(0, block.indexOf('}\n}')));
+        expect(reduced.some(block => block.includes(`${busy}::before`))).toBe(true);
+    });
+
     it('leaves the sheet a consumer links a complete one', () => {
         /** report-studio/viewer.css is documented as the only file to link */
         const css = read('src/preview/styles.css');

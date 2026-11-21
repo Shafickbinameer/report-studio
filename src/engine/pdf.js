@@ -151,13 +151,39 @@ async function encodeImage(image, n) {
 
 
 /** zlib-wrapped deflate, which is what /FlateDecode reads */
-async function deflate(bytes) {
+export async function deflate(bytes) {
     if (typeof CompressionStream !== 'function') {
         throw new Error('toPDF needs CompressionStream (any current browser, or Node 18+).');
     }
 
-    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    /**
+     * Written and read by hand rather than through Blob and Response, which a
+     * DOM stand-in (jsdom) may replace with versions that cannot stream. The
+     * write is not awaited: it only settles once the output is being read.
+     */
+    const stream = new CompressionStream('deflate');
+    const writer = stream.writable.getWriter();
+    writer.write(bytes).catch(() => { });
+    writer.close().catch(() => { });
+
+    const chunks = [];
+    let length = 0;
+    const reader = stream.readable.getReader();
+
+    for (; ;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        length += value.length;
+    }
+
+    const out = new Uint8Array(length);
+    let at = 0;
+    for (const chunk of chunks) {
+        out.set(chunk, at);
+        at += chunk.length;
+    }
+    return out;
 }
 
 
@@ -180,7 +206,7 @@ function num(n) {
  * UTF-16BE hex with a byte order mark, so a Tamil shop name in the title
  * survives.
  */
-function pdfString(value) {
+export function pdfString(value) {
     const str = String(value);
 
     if (/^[\x20-\x7e]*$/.test(str)) return `(${str.replace(/[\\()]/g, '\\$&')})`;
@@ -192,7 +218,7 @@ function pdfString(value) {
 
 
 /** a growing byte buffer; offsets in a PDF are bytes, so text is written as latin1 */
-class Writer {
+export class Writer {
     constructor() {
         this.chunks = [];
         this.length = 0;

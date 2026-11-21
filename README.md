@@ -10,7 +10,7 @@ JS or React.**
 You draw the report once in a visual designer — headers, footers, groups,
 tables, text, images — and it is saved as a plain JSON file. At runtime your
 app feeds that layout its own data and gets back a page-by-page report viewer,
-with navigation, zoom, search, print, CSV and Excel export.
+with navigation, zoom, search, print, and PDF, CSV and Excel export.
 
 * **Zero runtime dependencies.** The renderer is plain DOM. No server to run,
   no framework required.
@@ -203,6 +203,23 @@ be totalled this way.
 
 Any number of tables can be grouped, each by a field of its own — see
 [Grouping](#grouping).
+
+For PDF, the viewer's export writes the file itself, with no extra dependency
+and no print dialog. It takes a second or two even for a report of a few
+hundred pages, where the browser's print takes minutes. The text is real text
+you can select and search, set in the PDF's built-in Helvetica, Times or
+Courier, and lines, boxes and pictures are drawn as on the page. What those
+fonts can't show, such as the ₹ sign or a Tamil or Malayalam word, is drawn by
+the browser and placed in the line as a small picture, once per document. A
+line in a web font becomes a picture as a whole. From code, call
+`reportToVectorPDF(pages)`.
+
+The toolbar's Print button (and ctrl+P) opens the browser's print dialog. In
+Chrome, Edge and other Chromium browsers on a computer, it hands the dialog
+that same PDF, so the dialog opens in about the time the PDF takes to write
+and only asks which printer. Firefox, Safari and phone browsers print the
+page itself, as before, which is slower for a long report. Printing from the
+browser's own menu also prints the page.
 
 For CSV, the viewer's export writes every table in the order they print. From
 code, `toCSV(pages, { table: 'refunds' })` writes one table, and

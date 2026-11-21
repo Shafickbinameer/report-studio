@@ -280,10 +280,19 @@ function text(env, i, ox, oy, padX) {
     const y = oy + px(i.y);
     const w = px(i.w);
 
-    /** the highlight's fill covers the paragraph's padding box */
+    /**
+     * The viewer and the designer draw every box border-box (theme.css), so a
+     * group band's 8px of padding is inside `w`, not added to it: the text has
+     * w - 16 to sit in. Drawn as padding outside `w`, a right-aligned subtotal
+     * ran 16px past where the screen shows it and lost its last digit to the
+     * table's edge.
+     */
+    const inner = Math.max(0, w - padX * 2);
+
+    /** the highlight's fill covers the paragraph's border box */
     if (lit?.background) {
         fill(ctx, lit.background, 'transparent');
-        ctx.fillRect(x, y, w + padX * 2, px(i.h));
+        ctx.fillRect(x, y, w, px(i.h));
     }
 
     /** fitted by the engine: its lines, its size, clipped to the box like the HTML */
@@ -291,12 +300,12 @@ function text(env, i, ox, oy, padX) {
 
     const size = fitted ? px(fitted.fontSize, 12) : px(measured.fontSize, 12);
     const font = fontString({ ...measured, fontSize: size });
-    const lines = fitted ? fitted.lines : wrapLines(i.text ?? '', w, measured);
+    const lines = fitted ? fitted.lines : wrapLines(i.text ?? '', inner, measured);
 
     if (fitted) {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(x + padX, y, w, px(i.h));
+        ctx.rect(x + padX, y, inner, px(i.h));
         ctx.clip();
     }
 
@@ -304,7 +313,7 @@ function text(env, i, ox, oy, padX) {
 
     textLines(env, lines, {
         font, size,
-        left: x + padX, width: w, top: y,
+        left: x + padX, width: inner, top: y,
         align: measured.align
     });
 
@@ -489,6 +498,9 @@ function table(env, i, ox, oy) {
         });
     }
 
+    /** every th and td, and every group band between them, where it lands */
+    const cells = [];
+    const bands = [];
     let y = oy + px(i.y);
 
     for (const section of sections) {
@@ -496,17 +508,18 @@ function table(env, i, ox, oy) {
             const last = !section.head && n === section.rows.length - 1;
 
             if (r.kind === 'band') {
-                y += groupBandRow(env, r.band, x0, y, tableWidth);
+                bands.push({ band: r.band, y });
+                y += bandRowHeight(r.band);
                 return;
             }
 
             columns.forEach((column, c) => {
                 const head = r.kind === 'head';
-                const lit = head ? null : cellHighlight(i, column, r.row);
 
-                cell(env, look, {
+                cells.push({
                     x: lefts[c], y, w: widths[c], h: r.height,
-                    head, lit,
+                    head,
+                    lit: head ? null : cellHighlight(i, column, r.row),
                     align: column.align,
                     value: head ? column.label : formatValue(r.row?.[column.field], column.format),
                     lastColumn: c === columns.length - 1,
@@ -517,100 +530,155 @@ function table(env, i, ox, oy) {
             y += r.height;
         });
     }
+
+    /**
+     * Drawn in three passes - fills, rules, text - rather than a cell at a
+     * time. Nothing of one cell reaches into another, so the page comes out
+     * the same, and the rules go down as one stroke for the whole table: a
+     * PDF page of a long statement spent most of its bytes, and much of its
+     * time, setting the pen up again for each edge of each cell.
+     */
+    const { ctx } = env;
+
+    ctx.save();
+    for (const c of cells) cellFill(env, look, c);
+    ctx.restore();
+
+    for (const b of bands) groupBandRow(env, b.band, x0, b.y, tableWidth);
+    tableRules(env, look, cells);
+
+    ctx.save();
+    for (const c of cells) cellText(env, look, c);
+    ctx.restore();
 }
 
 
-/** one th or td, with its .cell box inside */
-function cell(env, look, c) {
+/** a th's or a highlighted td's background */
+function cellFill(env, look, c) {
+    const background = c.head ? look.headBackground : c.lit?.background;
+    if (!background) return;
+
+    fill(env.ctx, background, 'transparent');
+    env.ctx.fillRect(c.x, c.y, c.w, c.h);
+}
+
+
+/**
+ * Every cell's rules - top and left, the last column's right, the last row's
+ * bottom - as one path, each edge a subpath of its own. A dash pattern starts
+ * again at each subpath, on a canvas and in a PDF alike, so a dashed edge
+ * begins where it did when every edge was a stroke of its own.
+ */
+function tableRules(env, look, cells) {
+    const { ctx } = env;
+    const { rule } = look;
+    if (!(rule > 0) || cells.length === 0) return;
+
+    ctx.save();
+    stroke(ctx, look.ruleColor, CANVAS_DEFAULTS.ruleColor);
+
+    strokeRule(ctx, rule, look.pen, (inset) => {
+        ctx.beginPath();
+
+        for (const c of cells) {
+            ctx.moveTo(c.x, c.y + inset);
+            ctx.lineTo(c.x + c.w, c.y + inset);
+
+            ctx.moveTo(c.x + inset, c.y);
+            ctx.lineTo(c.x + inset, c.y + c.h);
+
+            if (c.lastColumn) {
+                ctx.moveTo(c.x + c.w - rule + inset, c.y);
+                ctx.lineTo(c.x + c.w - rule + inset, c.y + c.h);
+            }
+
+            if (c.bottom) {
+                ctx.moveTo(c.x, c.y + c.h - rule + inset);
+                ctx.lineTo(c.x + c.w, c.y + c.h - rule + inset);
+            }
+        }
+    });
+
+    ctx.restore();
+}
+
+
+/** a cell's text, inside its .cell box */
+function cellText(env, look, c) {
     const { ctx } = env;
     const { rule } = look;
 
-    ctx.save();
-
-    /** th, td { overflow: hidden } */
-    ctx.beginPath();
-    ctx.rect(c.x, c.y, c.w, c.h);
-    ctx.clip();
-
-    const background = c.head ? look.headBackground : c.lit?.background;
-
-    if (background) {
-        fill(ctx, background, 'transparent');
-        ctx.fillRect(c.x, c.y, c.w, c.h);
-    }
-
-    if (rule > 0) {
-        stroke(ctx, look.ruleColor, CANVAS_DEFAULTS.ruleColor);
-
-        const edges = [
-            [c.x, c.y, c.x + c.w, c.y, false],
-            [c.x, c.y, c.x, c.y + c.h, true]
-        ];
-        if (c.lastColumn) edges.push([c.x + c.w - rule, c.y, c.x + c.w - rule, c.y + c.h, true]);
-        if (c.bottom) edges.push([c.x, c.y + c.h - rule, c.x + c.w, c.y + c.h - rule, false]);
-
-        for (const [x1, y1, x2, y2, vertical] of edges) {
-            strokeRule(ctx, rule, look.pen, (inset) => {
-                ctx.beginPath();
-                if (vertical) {
-                    ctx.moveTo(x1 + inset, y1);
-                    ctx.lineTo(x2 + inset, y2);
-                } else {
-                    ctx.moveTo(x1, y1 + inset);
-                    ctx.lineTo(x2, y2 + inset);
-                }
-            });
-        }
-    }
-
     const value = c.value == null ? '' : String(c.value);
+    if (value === '') return;
 
-    if (value !== '') {
-        /** the header is bold; a highlight may make a body cell bold or slanted */
-        const font = {
-            ...look.font,
-            fontWeight: c.head ? 600 : (c.lit?.fontWeight || 'normal'),
-            fontStyle: c.lit?.fontStyle || 'normal'
-        };
+    /** the header is bold; a highlight may make a body cell bold or slanted */
+    const font = {
+        ...look.font,
+        fontWeight: c.head ? 600 : (c.lit?.fontWeight || 'normal'),
+        fontStyle: c.lit?.fontStyle || 'normal'
+    };
 
-        const left = c.x + rule + CELL_PADDING;
-        const width = c.w - CELL_PADDING * 2 - rule * (c.lastColumn ? 2 : 1);
+    const left = c.x + rule + CELL_PADDING;
+    const width = c.w - CELL_PADDING * 2 - rule * (c.lastColumn ? 2 : 1);
 
-        const top = c.y + rule;
-        const inner = c.h - rule * (c.bottom ? 2 : 1);
+    const top = c.y + rule;
+    const inner = c.h - rule * (c.bottom ? 2 : 1);
 
-        const lines = look.wrap ? wrapLines(value, width, font) : [ellipsis(value, width, font)];
-        const lineHeight = font.fontSize * LINE_HEIGHT_RATIO;
+    const lines = look.wrap ? wrapLines(value, width, font) : [ellipsis(value, width, font)];
+    const lineHeight = font.fontSize * LINE_HEIGHT_RATIO;
 
-        /**
-         * The header's colour is the header's; a body cell's is its highlight's,
-         * then the table's. (report.css lets --rs-cell-color win over the
-         * header's own colour, which reads as an accident rather than a rule.)
-         */
-        const color = c.head
-            ? (look.headColor || look.color)
-            : (c.lit?.color || look.color);
+    /**
+     * th, td { overflow: hidden } - which cuts nothing from text that sits
+     * inside the cell, as nearly all of it does: lines that fit inside its
+     * rules, each no wider than its text box. The padding either side is room
+     * to spare. Only the rest pay for a clip, which in a PDF is a saved and
+     * restored state around the cell's text. (The widths were measured while
+     * the lines were wrapped or cut, so asking again costs a cache lookup.)
+     */
+    const fits = lines.length * lineHeight <= inner &&
+        lines.every(line => measureText(line, font) <= width);
 
-        fill(ctx, color, env.theme.color);
-
-        textLines(env, lines, {
-            font: fontString(font),
-            size: font.fontSize,
-            left, width,
-            /** .cell is a column centred on the main axis: lines sit in the middle */
-            top: top + (inner - lines.length * lineHeight) / 2,
-            align: c.align
-        });
+    if (!fits) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(c.x, c.y, c.w, c.h);
+        ctx.clip();
     }
 
-    ctx.restore();
+    /**
+     * The header's colour is the header's; a body cell's is its highlight's,
+     * then the table's. (report.css lets --rs-cell-color win over the
+     * header's own colour, which reads as an accident rather than a rule.)
+     */
+    const color = c.head
+        ? (look.headColor || look.color)
+        : (c.lit?.color || look.color);
+
+    fill(ctx, color, env.theme.color);
+
+    textLines(env, lines, {
+        font: fontString(font),
+        size: font.fontSize,
+        left, width,
+        /** .cell is a column centred on the main axis: lines sit in the middle */
+        top: top + (inner - lines.length * lineHeight) / 2,
+        align: c.align
+    });
+
+    if (!fits) ctx.restore();
+}
+
+
+/** how tall a group band drawn across a table is */
+function bandRowHeight(band) {
+    return px(band.measuredHeight > 0 ? band.measuredHeight : (band.height ?? 0));
 }
 
 
 /** a group header or footer: a designed band stretched across the table */
 function groupBandRow(env, band, x, y, width) {
     const { ctx } = env;
-    const height = px(band.measuredHeight > 0 ? band.measuredHeight : (band.height ?? 0));
+    const height = bandRowHeight(band);
 
     ctx.save();
     ctx.beginPath();
@@ -837,7 +905,7 @@ export function loadImage(src) {
  * characters matter: a font split by unicode-range (Noto's Tamil and Malayalam
  * faces are) only downloads the part a text asks for.
  */
-function pageFonts(page) {
+export function pageFonts(page) {
     const fonts = new Map();
 
     const add = (font, value) => {
@@ -879,7 +947,7 @@ function pageFonts(page) {
 }
 
 
-async function loadFonts(fonts) {
+export async function loadFonts(fonts) {
     const set = typeof document !== 'undefined' ? document.fonts
         : (typeof self !== 'undefined' ? self.fonts : undefined);
 

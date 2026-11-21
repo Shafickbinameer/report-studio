@@ -50,6 +50,73 @@ function context() {
 
 
 /**
+ * A context with `font` already set on it, one each for the first few fonts.
+ *
+ * Setting a canvas's font parses it, every time - and a long table measures
+ * in two or three fonts by turns (a cell's own, its bold header, the PDF's
+ * built-in faces), so one shared context spent as long being told its font
+ * as measuring. A handful of contexts that keep theirs costs nothing; past
+ * that, the shared one is told each time, as before.
+ * @param {string} font
+ * @returns {CanvasRenderingContext2D|null}
+ */
+function contextFor(font) {
+    const shared = context();
+    if (!shared) return null;
+
+    const kept = fontContexts.get(font);
+    if (kept) return kept;
+
+    let c = shared;
+
+    if (fontContexts.size < FONT_CONTEXTS) {
+        try {
+            c = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(1, 1).getContext('2d')
+                : document.createElement('canvas').getContext('2d');
+        } catch {
+            c = null;
+        }
+
+        if (c) {
+            watchFontLoads();
+            c.font = font;
+            fontContexts.set(font, c);
+            return c;
+        }
+
+        c = shared;
+    }
+
+    c.font = font;
+    return c;
+}
+
+/** contexts kept with a font set, by font */
+const fontContexts = new Map();
+const FONT_CONTEXTS = 16;
+
+let watching = false;
+
+/**
+ * A canvas settles which face a font means when it is told the font. One
+ * told while a web font was still on its way keeps the fallback after the
+ * font arrives, where the shared context, told afresh each time, picked the
+ * real one up - so the kept contexts go whenever fonts finish loading, and
+ * are made again told the font as it now is.
+ */
+function watchFontLoads() {
+    if (watching) return;
+    watching = true;
+
+    const faces = typeof document !== 'undefined' ? document.fonts
+        : (typeof self !== 'undefined' ? self.fonts : undefined);
+
+    faces?.addEventListener?.('loadingdone', () => fontContexts.clear());
+}
+
+
+/**
  * Builds the CSS font shorthand measureText expects.
  * @param {object} style an item's style block
  * @returns {string}
@@ -79,11 +146,10 @@ export function measureText(text, style) {
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
 
-    const c = context();
+    const c = contextFor(font);
     let width;
 
     if (c) {
-        c.font = font;
         width = c.measureText(str).width;
     } else {
         width = approximateWidth(str, style);
@@ -235,6 +301,8 @@ export function textHeight(text, width, style) {
 /** exposed for tests - measurements are cached for the life of the module */
 export function clearMetricsCache() {
     cache.clear();
+    /** a font that has since loaded measures differently in a context of its own too */
+    fontContexts.clear();
 }
 
 

@@ -224,14 +224,35 @@ export function designHeight(item) {
 }
 
 
+/**
+ * Measures a grouped layout: every item's height, every row's, every band's.
+ * The layout handed in is left as it was; what comes back is a copy.
+ * @param {object} json a group() result
+ * @returns {object}
+ */
 export function measure(json) {
-    const measureJson = structuredClone(json);
-    for (const band of measureJson.bands) {
+    return measureInPlace(structuredClone(json));
+}
+
+
+/**
+ * measure() without the copy: writes the measurements onto `json` itself.
+ *
+ * For buildPages, whose layout at this stage is one group() has only just
+ * made and nobody else holds. The copy measure() takes is of every row of the
+ * report, so skipping it where nothing can see the difference is most of a
+ * second on a large one. Rows are only read here, never written.
+ *
+ * @param {object} json a group() result this caller owns
+ * @returns {object} the same object, measured
+ */
+export function measureInPlace(json) {
+    for (const band of json.bands) {
         if (!band.items) continue;
-        measureBand(band, measureJson);
+        measureBand(band, json);
     }
 
-    return measureJson;
+    return json;
 }
 
 

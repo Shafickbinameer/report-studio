@@ -73,10 +73,10 @@ export { render } from './render/render.js';
  * that takes a bitmap, an image to share, a PDF of page images, a thumbnail.
  */
 export { renderToCanvas, drawPage, pageImageSources, loadImage, CANVAS_DEFAULTS } from './render/canvas.js';
-export { reportToPDF, canvasImage, PDF_SCALE } from './render/pdf.js';
+export { reportToPDF, reportToVectorPDF, canvasImage, PDF_SCALE } from './render/pdf.js';
 
 /**
- * The viewer: paging, zoom, search, print, CSV and Excel over a page list.
+ * The viewer: paging, zoom, search, print, PDF, CSV and Excel over a page list.
  *
  * It takes one empty element and builds the rest, the same way createDesigner
  * does. Link `report-studio/viewer.css` beside it - the report's own stylesheet

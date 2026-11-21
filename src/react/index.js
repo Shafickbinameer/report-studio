@@ -24,7 +24,7 @@ import { createViewer } from '../preview/viewer.js';
 
 /** the viewer's methods, forwarded from the ref to whichever viewer is mounted */
 const VIEWER_METHODS = [
-    'show', 'next', 'prev', 'find', 'print', 'downloadCSV', 'downloadXLSX',
+    'show', 'next', 'prev', 'find', 'print', 'downloadPDF', 'downloadCSV', 'downloadXLSX',
     'openExport', 'closeExport', 'confirmExport',
     'setZoom', 'zoomIn', 'zoomOut', 'fitWidth'
 ];
@@ -52,7 +52,7 @@ const VIEWER_METHODS = [
  * @param {string} [props.className]
  * @param {object} [props.style]
  * @param {object} ref receives the viewer's controls: show, next, prev, find,
- *   print, downloadCSV, downloadXLSX, setZoom, zoomIn, zoomOut, fitWidth, and page, pageCount
+ *   print, downloadPDF, downloadCSV, downloadXLSX, setZoom, zoomIn, zoomOut, fitWidth, and page, pageCount
  *   and zoom
  */
 export const ReportViewer = forwardRef(function ReportViewer(
